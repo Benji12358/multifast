@@ -1,0 +1,8 @@
+
+1. Importer les valeurs du scalaire passif aux limites (sca_wall21) dans la subroutine read_velocity_file
+
+2. Implémentation des IBM pour le scalaire passif
+	--> Implémenter les Open boundaries (condition en entrée et en sortie) pour le scalaire passif
+	--> Rajouter une subroutine outflowing pour le scalaire passif
+
+3. Corriger le bug O2 en 3D (divergence non nulle en open boundary).

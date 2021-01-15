@@ -1,0 +1,20 @@
+include $(PATHS_FILE)
+include $(SYSTEM_INFO_FILE)
+include $(COMPILER_OPTIONS_FILE)
+
+FFLAGS= -c $(COMPILER_OPTIONS)
+SOURCES=sources
+
+build: ./lib/libmiscellaneous.a
+
+./lib/libmiscellaneous.a: $(SOURCES)/boundaries_types.f90 $(SOURCES)/mathematical_constants.f90
+	$(FF) $(FFLAGS)  $(SOURCES)/boundaries_types.f90; 						\
+	$(FF) $(FFLAGS)  $(SOURCES)/mathematical_constants.f90; 					\
+	$(FF) $(FFLAGS)  $(SOURCES)/file_copy.f90; 							\
+	$(FF) $(FFLAGS)  $(SOURCES)/formatter.f90; 							\
+	$(AR_CMD) -q ./lib/libmiscellaneous.a boundaries_types.o  mathematical_constants.o file_copy.o formatter.o; 	\
+	mv ./*.mod ./include;										\
+	rm ./*.o;
+
+clean:
+	rm ./lib/*; rm ./include/*

@@ -1,0 +1,21 @@
+include $(PATHS_FILE)
+include $(EXTERN_LIBS)
+include $(COMPILER_OPTIONS_FILE)
+
+FFLAGS		= -c $(COMPILER_OPTIONS)
+SOURCES		= sources
+DATAS		= ./datas
+SCALAR		= ./passive_scalar
+INCS 		= $(FLAG_FFT) $(HDF5_INC) $(IO_INC) $(SOLVERS_INC) $(MISCELLANEOUS_INC) $(SCHEMES_INC)
+
+$(SCALAR)/initializer.o 	: $(DATAS)/mesh_settings.o
+$(SCALAR)/solver.o 	: $(DATAS)/mesh_settings.o $(DATAS)/schemes_interface.o  $(DATAS)/boundaries.o 
+
+
+build: ./libPassiveScalar.a
+	
+$(SCALAR)/%.o:	$(SCALAR)/%.f90
+	$(FF) -o $@ $(FFLAGS) $(INCS)  $<
+	
+%.o:	%.f90
+	$(FF) $(FFLAGS) $(INCS) $<

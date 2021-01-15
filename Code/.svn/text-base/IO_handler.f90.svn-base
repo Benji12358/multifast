@@ -1,0 +1,1540 @@
+module IO_handler
+
+    use mpi
+    use decomp_2d
+    use decomp_2d_io
+    use scalar_datas
+
+    implicit none
+    integer, parameter  :: SEQUENTIAL_FILE=0, DECOMP2D_FILE=1
+    integer, parameter  :: BINARY_FILE=0, ASCII_FILE=1
+    integer, parameter  :: SIMPLE_FILE=0, DIRECTORY=1
+
+contains
+
+    subroutine read_a_field(fields_dir, field_name, field, stencil, decomp_XYZ)
+
+        implicit none
+
+        character(*)                    :: fields_dir, field_name
+        integer                         :: stencil
+        real(mytype), dimension(:,:,:)  :: field
+        type(DECOMP_INFO), optional     :: decomp_XYZ
+
+        character(200)      :: file_path
+        integer             :: fh
+        integer (kind=MPI_OFFSET_KIND) :: disp
+        integer             :: mpi_err
+
+
+        file_path=trim(fields_dir)//'/'//trim(field_name)//'.dat'
+        call MPI_FILE_OPEN(MPI_COMM_WORLD, file_path, MPI_MODE_RDONLY, MPI_INFO_NULL, fh, mpi_err)
+        disp = 0_MPI_OFFSET_KIND
+
+        if (present(decomp_XYZ)) then
+            call decomp_2d_read_var(fh,disp,stencil,field, decomp_XYZ)
+        else
+            call decomp_2d_read_var(fh,disp,stencil,field)
+        end if
+
+        call MPI_FILE_CLOSE(fh, mpi_err)
+
+
+    end subroutine read_a_field
+
+    subroutine write_a_field(fields_dir, field_name, field, stencil)
+
+        implicit none
+
+        character(*)                    :: fields_dir, field_name
+        integer                         :: stencil
+        real(mytype), dimension(:,:,:)  :: field
+
+        character(200)      :: file_path
+        integer             :: fh
+        integer (kind=MPI_OFFSET_KIND) :: filesize, disp
+        integer             :: mpi_err
+
+
+        file_path=trim(fields_dir)//'/'//trim(field_name)//'.dat'
+        call MPI_FILE_OPEN(MPI_COMM_WORLD, trim(file_path), MPI_MODE_CREATE+MPI_MODE_WRONLY, MPI_INFO_NULL, fh, mpi_err)
+
+
+        filesize = 0_MPI_OFFSET_KIND
+        call MPI_FILE_SET_SIZE(fh, filesize, mpi_err)  ! guarantee overwriting
+        disp = 0_MPI_OFFSET_KIND
+
+        call decomp_2d_write_var(fh,disp,stencil, field)
+
+        call MPI_FILE_CLOSE(fh, mpi_err)
+
+
+
+    end subroutine write_a_field
+
+
+    subroutine write_velocity_file(fields_dir, field_it, field_time)
+
+        use physical_fields
+        use mesh
+        use DNS_settings
+        use HDF5_IO
+
+        implicit none
+        integer         :: field_it
+        real*8          :: field_time
+        character(*)    :: fields_dir
+
+
+        character(200)    :: file_path
+
+        if (nrank==0) then
+            open(15,file=trim(fields_dir)//'/advancement.d')
+            write(15,*)field_it
+            write(15,*)field_time
+            close(15)
+        end if
+
+        file_path=trim(fields_dir)//"/U"
+        if(nrank==0)  call hdf_create_emptyfile(file_path)
+        call hdf_add_3Dfield(file_path, q3_z(:,:,:), "U", nx_global, ny_global, nz_global, zstart(1),zend(1),zstart(2),zend(2),zstart(3),zend(3))
+
+        file_path=trim(fields_dir)//"/V"
+        if(nrank==0)  call hdf_create_emptyfile(file_path)
+        call hdf_add_3Dfield(file_path, q2_y(:,:,:), "V", nx_global, ny_global, nz_global, ystart(1),yend(1),ystart(2),yend(2),ystart(3),yend(3))
+
+        file_path=trim(fields_dir)//"/W"
+        if(nrank==0)  call hdf_create_emptyfile(file_path)
+        call hdf_add_3Dfield(file_path, q1_x(:,:,:), "W", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+
+        file_path=trim(fields_dir)//"/P"
+        if(nrank==0)  call hdf_create_emptyfile(file_path)
+        call hdf_add_3Dfield(file_path, dp_x(:,:,:), "P", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+
+        file_path=trim(fields_dir)//"/sca1"
+        if(nrank==0)  call hdf_create_emptyfile(file_path)
+        call hdf_add_3Dfield(file_path, sca_x(1, :,:,:), "sca1", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+
+        file_path=trim(fields_dir)//"/Wall"
+        if(nrank==0)  call hdf_create_emptyfile(file_path)
+        if(nrank==0)  call hdf_addgroup(file_path, "Wall10")
+        call hdf_add_2Dfield(file_path, q1_wall10(:,:), "Wall10/q1", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
+        call hdf_add_2Dfield(file_path, q2_wall10(:,:), "Wall10/q2", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
+        call hdf_add_2Dfield(file_path, q3_wall10(:,:), "Wall10/q3", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
+        call hdf_add_2Dfield(file_path, sca_wall10(:,:), "Wall10/sca", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
+        if(nrank==0)  call hdf_addgroup(file_path, "Wall11")
+        call hdf_add_2Dfield(file_path, q1_wall11(:,:), "Wall11/q1", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
+        call hdf_add_2Dfield(file_path, q2_wall11(:,:), "Wall11/q2", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
+        call hdf_add_2Dfield(file_path, q3_wall11(:,:), "Wall11/q3", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
+        call hdf_add_2Dfield(file_path, sca_wall11(:,:), "Wall11/sca", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
+
+        if(nrank==0)  call hdf_addgroup(file_path, "Wall20")
+        call hdf_add_2Dfield(file_path, q1_wall20(:,:), "Wall20/q1", nx_global, nz_global, ystart(1),yend(1), ystart(3),yend(3))
+        call hdf_add_2Dfield(file_path, q2_wall20(:,:), "Wall20/q2", nx_global, nz_global, ystart(1),yend(1), ystart(3),yend(3))
+        call hdf_add_2Dfield(file_path, q3_wall20(:,:), "Wall20/q3", nx_global, nz_global, ystart(1),yend(1), ystart(3),yend(3))
+        call hdf_add_2Dfield(file_path, sca_wall20(:,:), "Wall20/sca", nx_global, nz_global, ystart(1),yend(1), ystart(3),yend(3))
+        if(nrank==0)  call hdf_addgroup(file_path, "Wall21")
+        call hdf_add_2Dfield(file_path, q1_wall21(:,:), "Wall21/q1", nx_global, nz_global, ystart(1),yend(1), ystart(3),yend(3))
+        call hdf_add_2Dfield(file_path, q2_wall21(:,:), "Wall21/q2", nx_global, nz_global, ystart(1),yend(1), ystart(3),yend(3))
+        call hdf_add_2Dfield(file_path, q3_wall21(:,:), "Wall21/q3", nx_global, nz_global, ystart(1),yend(1), ystart(3),yend(3))
+        call hdf_add_2Dfield(file_path, sca_wall21(:,:), "Wall21/sca", nx_global, nz_global, ystart(1),yend(1), ystart(3),yend(3))
+
+        if(nrank==0)  call hdf_addgroup(file_path, "Wall30")
+        call hdf_add_2Dfield(file_path, q1_wall30(:,:), "Wall30/q1", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
+        call hdf_add_2Dfield(file_path, q2_wall30(:,:), "Wall30/q2", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
+        call hdf_add_2Dfield(file_path, q3_wall30(:,:), "Wall30/q3", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
+        call hdf_add_2Dfield(file_path, sca_wall30(:,:), "Wall30/sca", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
+        if(nrank==0)  call hdf_addgroup(file_path, "Wall31")
+        call hdf_add_2Dfield(file_path, q1_wall31(:,:), "Wall31/q1", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
+        call hdf_add_2Dfield(file_path, q2_wall31(:,:), "Wall31/q2", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
+        call hdf_add_2Dfield(file_path, q3_wall31(:,:), "Wall31/q3", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
+        call hdf_add_2Dfield(file_path, sca_wall31(:,:), "Wall31/sca", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
+
+    end subroutine write_velocity_file
+
+    subroutine read_velocity_file(fields_dir, u_x_XYZ, v_x_XYZ, w_x_XYZ, pr_x_XYZ, sca_x_XYZ, decomp_XYZ, field_it, field_time, files_exist)
+
+        use HDF5_IO
+        use physical_fields
+        implicit none
+        character(*)   :: fields_dir
+        character(200)    :: file_path
+        logical, optional   :: files_exist(4)
+        logical             :: fexist
+
+        type(DECOMP_INFO)   :: decomp_XYZ
+        real(mytype), dimension(decomp_XYZ%xst(1):decomp_XYZ%xen(1), decomp_XYZ%xst(2):decomp_XYZ%xen(2),     &
+        decomp_XYZ%xst(3):decomp_XYZ%xen(3))   :: u_x_XYZ, v_x_XYZ, w_x_XYZ, pr_x_XYZ, sca_x_XYZ
+
+        integer         :: field_it
+        real*8          :: field_time
+
+        open(15,file=trim(fields_dir)//'/advancement.d')
+        read(15,*)field_it
+        read(15,*)field_time
+        close(15)
+
+        ! ATTENTION : NON VERIFIE POUR REPRISE DEPUIS CHAMP GROSSIER
+        file_path=trim(fields_dir)//"/U"
+        call hdf_read_3Dfield(file_path, u_x_XYZ, "U", decomp_XYZ%xsz(1),decomp_XYZ%ysz(2),decomp_XYZ%zsz(3), decomp_XYZ%xst(1),decomp_XYZ%xen(1),  decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
+
+        file_path=trim(fields_dir)//"/V"
+        call hdf_read_3Dfield(file_path, v_x_XYZ, "V", decomp_XYZ%xsz(1),decomp_XYZ%ysz(2),decomp_XYZ%zsz(3), decomp_XYZ%xst(1),decomp_XYZ%xen(1),  decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
+
+        file_path=trim(fields_dir)//"/W"
+        call hdf_read_3Dfield(file_path, w_x_XYZ, "W", decomp_XYZ%xsz(1),decomp_XYZ%ysz(2),decomp_XYZ%zsz(3), decomp_XYZ%xst(1),decomp_XYZ%xen(1),  decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
+
+        file_path=trim(fields_dir)//"/P"
+        call hdf_read_3Dfield(file_path, pr_x_XYZ, "P", decomp_XYZ%xsz(1),decomp_XYZ%ysz(2),decomp_XYZ%zsz(3), decomp_XYZ%xst(1),decomp_XYZ%xen(1),  decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
+
+
+        file_path=trim(fields_dir)//"/sca1"
+
+        inquire( file=trim(file_path)//".h5", exist=fexist)
+        if (fexist) then
+            call hdf_read_3Dfield(file_path, sca_x_XYZ, "sca1", decomp_XYZ%xsz(1),decomp_XYZ%ysz(2),decomp_XYZ%zsz(3), decomp_XYZ%xst(1),decomp_XYZ%xen(1),  decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
+        endif
+
+        if (present(files_exist)) then
+            files_exist(4)=fexist
+        endif
+
+        file_path=trim(fields_dir)//"/Wall"
+        call hdf_read_2Dfield(file_path, q1_wall10(:,:), "Wall10/q1", decomp_XYZ%yen(2), decomp_XYZ%zen(3), decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
+        call hdf_read_2Dfield(file_path, q2_wall10(:,:), "Wall10/q2", decomp_XYZ%yen(2), decomp_XYZ%zen(3), decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
+        call hdf_read_2Dfield(file_path, q3_wall10(:,:), "Wall10/q3", decomp_XYZ%yen(2), decomp_XYZ%zen(3), decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
+        call hdf_read_2Dfield(file_path, q1_wall11(:,:), "Wall11/q1", decomp_XYZ%yen(2), decomp_XYZ%zen(3), decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
+        call hdf_read_2Dfield(file_path, q2_wall11(:,:), "Wall11/q2", decomp_XYZ%yen(2), decomp_XYZ%zen(3), decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
+        call hdf_read_2Dfield(file_path, q3_wall11(:,:), "Wall11/q3", decomp_XYZ%yen(2), decomp_XYZ%zen(3), decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
+
+        call hdf_read_2Dfield(file_path, q1_wall20(:,:), "Wall20/q1", decomp_XYZ%xen(1), decomp_XYZ%zen(3), decomp_XYZ%yst(1),decomp_XYZ%yen(1), decomp_XYZ%yst(3),decomp_XYZ%yen(3))
+        call hdf_read_2Dfield(file_path, q2_wall20(:,:), "Wall20/q2", decomp_XYZ%xen(1), decomp_XYZ%zen(3), decomp_XYZ%yst(1),decomp_XYZ%yen(1), decomp_XYZ%yst(3),decomp_XYZ%yen(3))
+        call hdf_read_2Dfield(file_path, q3_wall20(:,:), "Wall20/q3", decomp_XYZ%xen(1), decomp_XYZ%zen(3), decomp_XYZ%yst(1),decomp_XYZ%yen(1), decomp_XYZ%yst(3),decomp_XYZ%yen(3))
+        call hdf_read_2Dfield(file_path, q1_wall21(:,:), "Wall21/q1", decomp_XYZ%xen(1), decomp_XYZ%zen(3), decomp_XYZ%yst(1),decomp_XYZ%yen(1), decomp_XYZ%yst(3),decomp_XYZ%yen(3))
+        call hdf_read_2Dfield(file_path, q2_wall21(:,:), "Wall21/q2", decomp_XYZ%xen(1), decomp_XYZ%zen(3), decomp_XYZ%yst(1),decomp_XYZ%yen(1), decomp_XYZ%yst(3),decomp_XYZ%yen(3))
+        call hdf_read_2Dfield(file_path, q3_wall21(:,:), "Wall21/q3", decomp_XYZ%xen(1), decomp_XYZ%zen(3), decomp_XYZ%yst(1),decomp_XYZ%yen(1), decomp_XYZ%yst(3),decomp_XYZ%yen(3))
+
+        call hdf_read_2Dfield(file_path, q1_wall30(:,:), "Wall30/q1", decomp_XYZ%xen(1), decomp_XYZ%yen(2), decomp_XYZ%zst(1),decomp_XYZ%zen(1), decomp_XYZ%zst(2),decomp_XYZ%zen(2))
+        call hdf_read_2Dfield(file_path, q2_wall30(:,:), "Wall30/q2", decomp_XYZ%xen(1), decomp_XYZ%yen(2), decomp_XYZ%zst(1),decomp_XYZ%zen(1), decomp_XYZ%zst(2),decomp_XYZ%zen(2))
+        call hdf_read_2Dfield(file_path, q3_wall30(:,:), "Wall30/q3", decomp_XYZ%xen(1), decomp_XYZ%yen(2), decomp_XYZ%zst(1),decomp_XYZ%zen(1), decomp_XYZ%zst(2),decomp_XYZ%zen(2))
+        call hdf_read_2Dfield(file_path, q1_wall31(:,:), "Wall31/q1", decomp_XYZ%xen(1), decomp_XYZ%yen(2), decomp_XYZ%zst(1),decomp_XYZ%zen(1), decomp_XYZ%zst(2),decomp_XYZ%zen(2))
+        call hdf_read_2Dfield(file_path, q2_wall31(:,:), "Wall31/q2", decomp_XYZ%xen(1), decomp_XYZ%yen(2), decomp_XYZ%zst(1),decomp_XYZ%zen(1), decomp_XYZ%zst(2),decomp_XYZ%zen(2))
+        call hdf_read_2Dfield(file_path, q3_wall31(:,:), "Wall31/q3", decomp_XYZ%xen(1), decomp_XYZ%yen(2), decomp_XYZ%zst(1),decomp_XYZ%zen(1), decomp_XYZ%zst(2),decomp_XYZ%zen(2))
+
+    end subroutine read_velocity_file
+
+    ! ATTENTION BC3 remplacé par NS_DEF_BC3 (pareil pour les autres directions)
+    subroutine build_fine_field(q1_x_XYZ, q2_x_XYZ, q3_x_XYZ, press_3D_x_XYZ, q1_z, q2_z, q3_z, press_3D_z, decomp_XYZ)
+        use schemes_interface
+        use boundaries
+
+        use mesh
+
+        implicit none
+
+        type(DECOMP_INFO)   :: decomp_XYZ, decomp_YZ, decomp_Z
+
+        real*8, dimension(decomp_XYZ%xst(1):decomp_XYZ%xen(1), decomp_XYZ%xst(2):decomp_XYZ%xen(2), decomp_XYZ%xst(3):decomp_XYZ%xen(3))   :: q3_x_XYZ, q2_x_XYZ, q1_x_XYZ, press_3D_x_XYZ
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))   :: q3_z, q2_z, q1_z, press_3D_z
+        integer                     :: n1c, n2c, n3c
+
+        real*8, dimension(:,:,:), allocatable   :: q1_x_YZ, q2_x_YZ, q3_x_YZ, press_3D_x_YZ
+        real*8, dimension(:,:,:), allocatable   :: q1_y_YZ, q2_y_YZ, q3_y_YZ, press_3D_y_YZ
+        real*8, dimension(:,:,:), allocatable   :: q1_y_Z, q2_y_Z, q3_y_Z, press_3D_y_Z
+        real*8, dimension(:,:,:), allocatable   :: q1_z_Z, q2_z_Z, q3_z_Z, press_3D_z_Z
+        real*8, dimension(:,:,:), allocatable   :: q1_y
+
+        real*8, dimension(4, decomp_XYZ%xsz(1))    :: tmp_x_c
+        real*8, dimension(4, decomp_XYZ%ysz(2))    :: tmp_y_c
+        real*8, dimension(4, 2*decomp_XYZ%ysz(2)-1)    :: tmp_y_f
+        real*8, dimension(4, decomp_XYZ%zsz(3))    :: tmp_z_c
+
+        integer :: i, j, k
+
+        n1c=decomp_XYZ%xsz(1)
+        n2c=decomp_XYZ%ysz(2)
+        n3c=decomp_XYZ%zsz(3)
+
+
+        call decomp_info_init(xsize(1), n2c, n3c, decomp_YZ)
+        call decomp_info_init(xsize(1), ysize(2), n3c, decomp_Z)
+
+        ! X INTERPOLATION_________________________________________________________________________________________________
+        allocate(q1_x_YZ(decomp_YZ%xst(1):decomp_YZ%xen(1), decomp_YZ%xst(2):decomp_YZ%xen(2), decomp_YZ%xst(3):decomp_YZ%xen(3)))
+        allocate(q2_x_YZ(decomp_YZ%xst(1):decomp_YZ%xen(1), decomp_YZ%xst(2):decomp_YZ%xen(2), decomp_YZ%xst(3):decomp_YZ%xen(3)))
+        allocate(q3_x_YZ(decomp_YZ%xst(1):decomp_YZ%xen(1), decomp_YZ%xst(2):decomp_YZ%xen(2), decomp_YZ%xst(3):decomp_YZ%xen(3)))
+        allocate(press_3D_x_YZ(decomp_YZ%xst(1):decomp_YZ%xen(1), decomp_YZ%xst(2):decomp_YZ%xen(2), decomp_YZ%xst(3):decomp_YZ%xen(3)))
+
+        do k=decomp_XYZ%xst(3), min(n3m, decomp_XYZ%xen(3))
+            do j=decomp_XYZ%xst(2), min(n2, decomp_XYZ%xen(2))
+                call D0s(q1_x_XYZ(:,j,k), tmp_x_c(1, :), n1c, 0.d0, .false., NS_DEF_BC3)
+                call D0s(q2_x_XYZ(:,j,k), tmp_x_c(2, :), n1c, 0.d0, .true., NS_DEF_BC3)
+                call D0s(q3_x_XYZ(:,j,k), tmp_x_c(3, :), n1c, 0.d0, .true., NS_DEF_BC3)
+                call D0s(press_3D_x_XYZ(:,j,k), tmp_x_c(4, :), n1c, 0.d0, .true., NS_DEF_BC3)
+
+                do i = 1, n1c-1
+                    q1_x_YZ(2*i, j, k)=tmp_x_c(1, i)
+                    q1_x_YZ(2*i-1, j, k)=q1_x_XYZ(i, j, k)
+
+                    q2_x_YZ(2*i, j, k)=q2_x_XYZ(i, j, k)
+                    q2_x_YZ(2*i-1, j, k)=tmp_x_c(2, i)
+
+                    q3_x_YZ(2*i, j, k)=q3_x_XYZ(i, j, k)
+                    q3_x_YZ(2*i-1, j, k)=tmp_x_c(3, i)
+
+                    press_3D_x_YZ(2*i, j, k)=press_3D_x_XYZ(i, j, k)
+                    press_3D_x_YZ(2*i-1, j, k)=tmp_x_c(4, i)
+                end do
+            enddo
+        enddo
+
+        allocate(q1_y_YZ(decomp_YZ%yst(1):decomp_YZ%yen(1), decomp_YZ%yst(2):decomp_YZ%yen(2), decomp_YZ%yst(3):decomp_YZ%yen(3)))
+        allocate(q2_y_YZ(decomp_YZ%yst(1):decomp_YZ%yen(1), decomp_YZ%yst(2):decomp_YZ%yen(2), decomp_YZ%yst(3):decomp_YZ%yen(3)))
+        allocate(q3_y_YZ(decomp_YZ%yst(1):decomp_YZ%yen(1), decomp_YZ%yst(2):decomp_YZ%yen(2), decomp_YZ%yst(3):decomp_YZ%yen(3)))
+        allocate(press_3D_y_YZ(decomp_YZ%yst(1):decomp_YZ%yen(1), decomp_YZ%yst(2):decomp_YZ%yen(2), decomp_YZ%yst(3):decomp_YZ%yen(3)))
+
+        call transpose_x_to_y(q1_x_YZ, q1_y_YZ, decomp_YZ)
+        call transpose_x_to_y(q2_x_YZ, q2_y_YZ, decomp_YZ)
+        call transpose_x_to_y(q3_x_YZ, q3_y_YZ, decomp_YZ)
+        call transpose_x_to_y(press_3D_x_YZ, press_3D_y_YZ, decomp_YZ)
+
+        deallocate(q1_x_YZ, q2_x_YZ, q3_x_YZ, press_3D_x_YZ)
+
+
+        ! Y INTERPOLATION
+        allocate(q1_y_Z(decomp_Z%yst(1):decomp_Z%yen(1), decomp_Z%yst(2):decomp_Z%yen(2), decomp_Z%yst(3):decomp_Z%yen(3)))
+        allocate(q2_y_Z(decomp_Z%yst(1):decomp_Z%yen(1), decomp_Z%yst(2):decomp_Z%yen(2), decomp_Z%yst(3):decomp_Z%yen(3)))
+        allocate(q3_y_Z(decomp_Z%yst(1):decomp_Z%yen(1), decomp_Z%yst(2):decomp_Z%yen(2), decomp_Z%yst(3):decomp_Z%yen(3)))
+        allocate(press_3D_y_Z(decomp_Z%yst(1):decomp_Z%yen(1), decomp_Z%yst(2):decomp_Z%yen(2), decomp_Z%yst(3):decomp_Z%yen(3)))
+
+
+
+
+
+
+
+        do k=decomp_YZ%yst(3), min(n3m, decomp_YZ%yen(3))
+            do i=ystart(1), min(n1m, yend(1))
+
+                call D0s(q3_y_YZ(i,:,k), tmp_y_c(3, :), n2c, 0.d0, .true., NS_DEF_BC2)
+                call D0s(q1_y_YZ(i,:,k), tmp_y_c(1, :), n2c, 0.d0, .true., NS_DEF_BC2)
+                call D0s(press_3D_y_YZ(i,:,k), tmp_y_c(4, :), n2c, 0.d0, .true., NS_DEF_BC2)
+
+                tmp_y_c(:, 1)=0.d0
+                tmp_y_c(:, n2c)=0.d0
+                do j = 1, n2c-1
+                    tmp_y_f(3, 2*j)=q3_y_YZ(i, j, k)
+                    tmp_y_f(3, 2*j-1)=tmp_y_c(3, j)
+
+                    tmp_y_f(1, 2*j)=q1_y_YZ(i, j, k)
+                    tmp_y_f(1, 2*j-1)=tmp_y_c(1, j)
+
+                    tmp_y_f(4, 2*j)=press_3D_y_YZ(i, j, k)
+                    tmp_y_f(4, 2*j-1)=tmp_y_c(4, j)
+                end do
+
+                tmp_y_f(3, 2*n2c-1)=tmp_y_c(3, n2c)
+                tmp_y_f(1, 2*n2c-1)=tmp_y_c(1, n2c)
+                tmp_y_f(4, 2*n2c-1)=tmp_y_c(4, n2c)
+
+                call D0s(tmp_y_f(3, :), q3_y_Z(i,:,k), n2, 0.d0, .false., NS_DEF_BC2)
+                call D0s(tmp_y_f(1, :), q1_y_Z(i,:,k), n2, 0.d0, .false., NS_DEF_BC2)
+                call D0s(tmp_y_f(4, :), press_3D_y_Z(i,:,k), n2, 0.d0, .false., NS_DEF_BC2)
+
+            end do
+        end do
+
+
+        do k=decomp_YZ%yst(3), min(n3m, decomp_YZ%yen(3))
+            do i=ystart(1), min(n1m, yend(1))
+
+                call D0s(q2_y_YZ(i,:,k), tmp_y_c(2, :), n2c, 0.d0, .false., NS_DEF_BC2)
+
+                do j = 1, n2c-1
+                    q2_y_Z(i, 2*j-1, k)=q2_y_YZ(i, j, k)
+                    q2_y_Z(i, 2*j, k)=tmp_y_c(2, j)
+                end do
+
+                q2_y_Z(i, 2*n2c-1, k)=q2_y_YZ(i, n2c, k)
+
+            end do
+        end do
+
+        allocate(q1_z_Z(decomp_Z%zst(1):decomp_Z%zen(1), decomp_Z%zst(2):decomp_Z%zen(2), decomp_Z%zst(3):decomp_Z%zen(3)))
+        allocate(q2_z_Z(decomp_Z%zst(1):decomp_Z%zen(1), decomp_Z%zst(2):decomp_Z%zen(2), decomp_Z%zst(3):decomp_Z%zen(3)))
+        allocate(q3_z_Z(decomp_Z%zst(1):decomp_Z%zen(1), decomp_Z%zst(2):decomp_Z%zen(2), decomp_Z%zst(3):decomp_Z%zen(3)))
+        allocate(press_3D_z_Z(decomp_Z%zst(1):decomp_Z%zen(1), decomp_Z%zst(2):decomp_Z%zen(2), decomp_Z%zst(3):decomp_Z%zen(3)))
+
+        call transpose_y_to_z(q1_y_Z, q1_z_Z, decomp_Z)
+        call transpose_y_to_z(q2_y_Z, q2_z_Z, decomp_Z)
+        call transpose_y_to_z(q3_y_Z, q3_z_Z, decomp_Z)
+        call transpose_y_to_z(press_3D_y_Z, press_3D_z_Z, decomp_Z)
+
+        deallocate(q1_y_Z, q2_y_Z, q3_y_Z, press_3D_y_Z)
+        deallocate(q1_y_YZ, q2_y_YZ, q3_y_YZ, press_3D_y_YZ)
+
+        ! Z INTERPOLATION ______________________________________________________
+
+        do j = decomp_Z%zst(2), min(n2, decomp_Z%zen(2))
+            do i = decomp_Z%zst(1), min(n1-1, decomp_Z%zen(1))
+                call D0s(q1_z_Z(i,j,:), tmp_z_c(1, :), n3c, 0.d0, .true., NS_DEF_BC1)
+                call D0s(q2_z_Z(i,j,:), tmp_z_c(2, :), n3c, 0.d0, .true., NS_DEF_BC1)
+                call D0s(q3_z_Z(i,j,:), tmp_z_c(3, :), n3c, 0.d0, .false., NS_DEF_BC1)
+                call D0s(press_3D_z_Z(i,j,:), tmp_z_c(4, :), n3c, 0.d0, .true., NS_DEF_BC1)
+
+                do k = 1, n3c-1
+
+                    q1_z(i, j, 2*k)=q1_z_Z(i, j, k)
+                    q1_z(i, j, 2*k-1)=tmp_z_c(1, k)
+
+                    q2_z(i, j, 2*k)=q2_z_Z(i, j, k)
+                    q2_z(i, j, 2*k-1)=tmp_z_c(2, k)
+
+                    q3_z(i, j, 2*k)=tmp_z_c(3, k)
+                    q3_z(i, j, 2*k-1)=q3_z_Z(i, j, k)
+
+                    press_3D_z(i, j, 2*k)=press_3D_z_Z(i, j, k)
+                    press_3D_z(i, j, 2*k-1)=tmp_z_c(4, k)
+
+                end do
+            end do
+        end do
+
+        deallocate(q1_z_Z, q2_z_Z, q3_z_Z, press_3D_z_Z)
+
+
+    end subroutine build_fine_field
+
+
+    subroutine load_field(file, fill_from_coarse, field_it, field_time, fexist)
+
+        use physical_fields
+        use mesh
+        use DNS_settings
+
+        implicit none
+
+        character(*), intent(in)        :: file
+        logical, intent(in)             :: fill_from_coarse
+        real*8, intent(out)             :: field_time
+        integer, intent(out)            :: field_it
+        logical, optional               :: fexist(4)
+
+        type(DECOMP_INFO)   :: decomp_XYZ
+        integer             :: n1c, n2c, n3c        ! Coarse mesh resolution
+        real*8, dimension(:,:,:), allocatable   :: u_x_XYZ, v_x_XYZ, w_x_XYZ, pr_x_XYZ
+        real*8, dimension(:,:,:,:), allocatable   :: sca_x_XYZ
+
+
+        if (fill_from_coarse) then
+
+            n1c=(n1+1)/2
+            n2c=(n2+1)/2
+            n3c=(n3+1)/2
+
+            call decomp_info_init(n1c, n2c, n3c, decomp_XYZ)
+
+            allocate(w_x_XYZ(decomp_XYZ%xst(1):decomp_XYZ%xen(1), decomp_XYZ%xst(2):decomp_XYZ%xen(2), decomp_XYZ%xst(3):decomp_XYZ%xen(3)))
+            allocate(v_x_XYZ(decomp_XYZ%xst(1):decomp_XYZ%xen(1), decomp_XYZ%xst(2):decomp_XYZ%xen(2), decomp_XYZ%xst(3):decomp_XYZ%xen(3)))
+            allocate(u_x_XYZ(decomp_XYZ%xst(1):decomp_XYZ%xen(1), decomp_XYZ%xst(2):decomp_XYZ%xen(2), decomp_XYZ%xst(3):decomp_XYZ%xen(3)))
+            allocate(pr_x_XYZ(decomp_XYZ%xst(1):decomp_XYZ%xen(1), decomp_XYZ%xst(2):decomp_XYZ%xen(2), decomp_XYZ%xst(3):decomp_XYZ%xen(3)))
+            allocate(sca_x_XYZ(NBSCAL, decomp_XYZ%xst(1):decomp_XYZ%xen(1), decomp_XYZ%xst(2):decomp_XYZ%xen(2), decomp_XYZ%xst(3):decomp_XYZ%xen(3)))
+
+            u_x_XYZ=2.d0
+
+            call read_velocity_file(file, u_x_XYZ, v_x_XYZ, w_x_XYZ, pr_x_XYZ, sca_x_XYZ(1,:,:,:), decomp_XYZ, field_it, field_time)
+
+            call build_fine_field(w_x_XYZ, v_x_XYZ, u_x_XYZ, pr_x_XYZ, q1_z, q2_z, q3_z, pr_z, decomp_XYZ)
+
+
+            call transpose_z_to_y(q3_z, q3_y)
+            call transpose_y_to_x(q3_y, q3_x)
+
+            call transpose_z_to_y(q2_z, q2_y)
+            call transpose_y_to_x(q2_y, q2_x)
+
+            call transpose_z_to_y(q1_z, q1_y)
+            call transpose_y_to_x(q1_y, q1_x)
+
+            call transpose_z_to_y(pr_z, pr_y)
+            call transpose_y_to_x(pr_y, pr_x)
+
+        else
+
+            call decomp_info_init(n1, n2, n3, decomp_XYZ)
+
+            call read_velocity_file(file, q3_x, q2_x, q1_x, pr_x, sca_x(1,:,:,:), decomp_XYZ, field_it, field_time, fexist)
+
+            call transpose_x_to_y(q3_x, q3_y)
+            call transpose_y_to_z(q3_y, q3_z)
+
+            call transpose_x_to_y(q2_x, q2_y)
+            call transpose_y_to_z(q2_y, q2_z)
+
+            call transpose_x_to_y(q1_x, q1_y)
+            call transpose_y_to_z(q1_y, q1_z)
+
+            call transpose_x_to_y(sca_x(1,:,:,:), sca_y(1,:,:,:))
+            call transpose_y_to_z(sca_y(1,:,:,:), sca_z(1,:,:,:))
+
+            call transpose_x_to_y(pr_x, pr_y)
+            call transpose_y_to_z(pr_y, pr_z)
+
+        end if
+
+
+
+
+    end subroutine load_field
+
+end module IO_handler
+
+
+module anim2D_writer
+
+    use mpi
+    use decomp_2d
+
+    implicit none
+
+contains
+
+
+
+    subroutine anim2D_addframe1(anim_dir)
+        use anim2D
+        use HDF5_IO
+        use IBM_data
+        use physical_fields
+        use mesh
+        use mpi
+        use IBM_settings
+        use scalar_datas
+
+        implicit none
+        character(*)            :: anim_dir
+        integer, save           :: file_nb=1
+        integer, save           :: nbsteps=1
+        character(200), save    :: file_path
+        character(20), save     :: file_name
+        character(20)           :: frame_name, slice_name
+        character(10)           :: tmp_str
+
+        integer         :: i,s, xdmf_id, ierr
+
+        xdmf_id=513
+
+        write(*,*)'subroutine anim2D_addframe1'
+
+        if ((file_nb==1).and.(nbsteps==1)) then
+
+            file_name="anim1"
+            file_path=trim(anim_dir)//'X1/'//trim(file_name)
+            if(nrank==0)  call hdf_create_file_with_2Dmesh(trim(file_path), Y, X, "x2", "x3", n2, n3)
+
+
+
+            if (IBM_activated) then
+
+                if(nrank==0)  call hdf_addgroup(file_path, "MASKS")
+
+                do s = 1, param_anim2D_1%nb_slices
+
+                    i=param_anim2D_1%slices(s)
+                    write(tmp_str, "(i10)")i
+                    slice_name='MASKS/'//'slice_'//trim(adjustl(tmp_str))
+                    if (nrank==0) write(*,*)'ADD GROUPE 1', slice_name
+                    if(nrank==0)  call hdf_addgroup(file_path, slice_name)
+
+                    if (param_anim2D_1%export_q1) then
+                        call hdf_add_2Dfield(trim(file_path), IBM_mask1(i, :,:), trim(slice_name)//"/q1", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+                    end if
+
+                    if (param_anim2D_1%export_q2) then
+                        call hdf_add_2Dfield(trim(file_path), IBM_mask2(i, :,:), trim(slice_name)//"/q2", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+                    end if
+
+                    if (param_anim2D_1%export_q3) then
+                        call hdf_add_2Dfield(trim(file_path), IBM_mask2(i, :,:), trim(slice_name)//"/q3", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+                    end if
+
+                end do
+
+            endif
+
+        end if
+
+
+        ! ADDING THE CURRENT STEP
+        if (nrank==0) write(*,*) 'ADDING FRAME n°', nbsteps, 'in file', trim(file_path)
+
+        write(tmp_str, "(i10)")nbsteps
+        frame_name='Frame'//trim(adjustl(tmp_str))
+        if (nrank==0) write(*,*)'ADD_GROUPE', frame_name
+        if(nrank==0)  call hdf_addgroup(file_path, frame_name)
+
+
+        do s = 1, param_anim2D_1%nb_slices
+            i=param_anim2D_1%slices(s)
+            write(tmp_str, "(i10)")i
+            slice_name=trim(frame_name)//'/slice_'//trim(adjustl(tmp_str))
+            if (nrank==0) write(*,*)'ADD_GROUPE', slice_name
+            if(nrank==0)  call hdf_addgroup(file_path, slice_name)
+
+            if (param_anim2D_1%export_q1) then
+                call hdf_add_2Dfield(trim(file_path), q1_x(i, :,:), trim(slice_name)//"/q1", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+            end if
+
+            if (param_anim2D_1%export_q2) then
+                call hdf_add_2Dfield(trim(file_path), q2_x(i, :,:), trim(slice_name)//"/q2", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+            end if
+
+            if (param_anim2D_1%export_q3) then
+                call hdf_add_2Dfield(trim(file_path), q3_x(i, :,:), trim(slice_name)//"/q3", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+            end if
+
+            if (param_anim2D_1%export_pr) then
+                call hdf_add_2Dfield(trim(file_path), pr_x(i, :,:), trim(slice_name)//"/pr", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+            end if
+
+            if (.true.) then
+                call hdf_add_2Dfield(trim(file_path), sca_x(1,i, :,:), trim(slice_name)//"/sca", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+            end if
+
+        end do
+
+        call write_xdmf2
+
+        nbsteps=nbsteps+1
+
+        if (nbsteps>param_anim2D_1%nb_steps) then
+
+            nbsteps=1
+            file_nb=file_nb+1
+
+            write(tmp_str, "(i10)")file_nb
+            file_name="anim"//trim(adjustl(tmp_str))
+            file_path=trim(anim_dir)//'X1/'//trim(file_name)
+            if(nrank==0)  call hdf_create_file_with_2Dmesh(trim(file_path), Y, X, "x2", "x3", n2, n3)
+
+
+            if (IBM_activated) then
+
+                if(nrank==0)  call hdf_addgroup(file_path, "MASKS")
+
+                do s = 1, param_anim2D_1%nb_slices
+
+                    i=param_anim2D_1%slices(s)
+                    write(tmp_str, "(i10)")i
+                    slice_name='MASKS/'//'slice_'//trim(adjustl(tmp_str))
+                    if (nrank==0) write(*,*)'ADD GROUPE 1', slice_name
+                    if(nrank==0)  call hdf_addgroup(file_path, slice_name)
+
+                    if (param_anim2D_1%export_q1) then
+                        call hdf_add_2Dfield(trim(file_path), IBM_mask1(i, :,:), trim(slice_name)//"/q1", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+                    end if
+
+                    if (param_anim2D_1%export_q2) then
+                        call hdf_add_2Dfield(trim(file_path), IBM_mask2(i, :,:), trim(slice_name)//"/q2", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+                    end if
+
+                    if (param_anim2D_1%export_q3) then
+                        call hdf_add_2Dfield(trim(file_path), IBM_mask2(i, :,:), trim(slice_name)//"/q3", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+                    end if
+
+                end do
+
+            end if
+
+        end if
+
+    contains
+
+        subroutine write_xdmf2()
+            use file_copy
+            implicit none
+            integer     :: f
+            character(200)  :: xdmf_path, attribute_path
+            character(20)   :: frame_label, attribute_name
+            character(80)   :: tmp_str, tmp_str2, tmp_str3, tmp_str4
+
+
+
+
+            write(tmp_str, "(i10)")file_nb
+            xdmf_path=trim(anim_dir)//'X1/anim'//trim(adjustl(tmp_str))//".xdmf"
+
+            if(nrank==0)  call copy_ascii_file(file_dest=trim(xdmf_path), file_src=trim(anim_dir)//"X1/modele2.xdmf")
+
+            if(nrank==0)  open(xdmf_id, file=trim(xdmf_path), position="append")
+            if(nrank==0)  write(xdmf_id,'(F10.5,F10.5,I4)')0.d0, 0.04d0, param_anim2D_1%nb_steps
+            if(nrank==0)  write(xdmf_id,*)"</DataItem>"
+            if(nrank==0)  write(xdmf_id,*)"</Time>"
+            if(nrank==0)  write(xdmf_id,*)
+
+
+            do f = 1, nbsteps
+
+                write(tmp_str, "(i10)")f
+                frame_label='Frame'//trim(adjustl(tmp_str))
+                if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Grid Name="', trim(frame_label), '" GridType="Uniform">'
+                if(nrank==0)  write(xdmf_id,*)
+
+                if(nrank==0)  write(xdmf_id,'(a,I4,I4,a)')'<Topology TopologyType="2DRectMesh" NumberOfElements="', n3, n2,'"/>'
+                if(nrank==0)  write(xdmf_id,*)'<Geometry GeometryType="VXVY">'
+
+                if(nrank==0)  write(xdmf_id,'(a,I4,a)')'<DataItem Dimensions="',n3,'" NumberType="Float" Precision="8" Format="HDF">'
+                if(nrank==0)  write(xdmf_id,*) trim(file_name)//".h5:/x3"
+                if(nrank==0)  write(xdmf_id,*)"</DataItem>"
+
+                if(nrank==0)  write(xdmf_id,'(a,I4,a)')'<DataItem Dimensions="',n2,'" NumberType="Float" Precision="8" Format="HDF">'
+                if(nrank==0)  write(xdmf_id,*)trim(file_name)//".h5:/x2"
+                if(nrank==0)  write(xdmf_id,*)"</DataItem>"
+
+
+                if(nrank==0)  write(xdmf_id,*)"</Geometry>"
+
+                if(nrank==0)  write(xdmf_id,*)
+
+                do s = 1, param_anim2D_1%nb_slices
+
+                    i=param_anim2D_1%slices(s)
+                    write(tmp_str, "(i10)")i
+                    slice_name=trim(frame_label)//'/slice_'//trim(adjustl(tmp_str))
+
+                    if(nrank==0)  write(xdmf_id,*)
+
+                    if (param_anim2D_1%export_q1) then
+                        attribute_name='q1_'//trim(adjustl(tmp_str))
+                        attribute_path=trim(file_name)//".h5:"//trim(slice_name)//'/q1'
+
+                        tmp_str2='<DataItem Dimensions="'
+                        tmp_str3='  " NumberType="Float" Precision="8" Format="HDF">'
+                        tmp_str4='</DataItem>'
+                        if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
+                        if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2), n3,n2, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
+                        if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+                    end if
+
+                    if (param_anim2D_1%export_q2) then
+                        attribute_name='q2_'//trim(adjustl(tmp_str))
+                        attribute_path=trim(file_name)//".h5:"//trim(slice_name)//'/q2'
+
+                        tmp_str2='<DataItem Dimensions="'
+                        tmp_str3='  " NumberType="Float" Precision="8" Format="HDF">'
+                        tmp_str4='</DataItem>'
+                        if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
+                        if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2), n3,n2, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
+                        if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+
+                    end if
+
+                    if (param_anim2D_1%export_q3) then
+                        attribute_name='q3_'//trim(adjustl(tmp_str))
+                        attribute_path=trim(file_name)//".h5:"//trim(slice_name)//'/q3'
+
+                        tmp_str2='<DataItem Dimensions="'
+                        tmp_str3='  " NumberType="Float" Precision="8" Format="HDF">'
+                        tmp_str4='</DataItem>'
+                        if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
+                        if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2), n3,n2, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
+                        if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+                    end if
+
+                    if (param_anim2D_1%export_pr) then
+                        attribute_name='pr_'//trim(adjustl(tmp_str))
+                        attribute_path=trim(file_name)//".h5:"//trim(slice_name)//'/pr'
+
+                        tmp_str2='<DataItem Dimensions="'
+                        tmp_str3='  " NumberType="Float" Precision="8" Format="HDF">'
+                        tmp_str4='</DataItem>'
+                        if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
+                        if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2), n3,n2, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
+                        if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+                    end if
+
+                    if (.true.) then
+                        attribute_name='sca_'//trim(adjustl(tmp_str))
+                        attribute_path=trim(file_name)//".h5:"//trim(slice_name)//'/sca'
+
+                        tmp_str2='<DataItem Dimensions="'
+                        tmp_str3='  " NumberType="Float" Precision="8" Format="HDF">'
+                        tmp_str4='</DataItem>'
+                        if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
+                        if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2), n3,n2, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
+                        if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+                    end if
+
+                end do
+
+
+                if(nrank==0)  write(xdmf_id,*)
+                if(nrank==0)  write(xdmf_id,*)
+                if(nrank==0)  write(xdmf_id,*)"</Grid>"
+                if(nrank==0)  write(xdmf_id,*)
+            end do
+
+
+            if(nrank==0)  write(xdmf_id,*)"</Grid>"
+            if(nrank==0)  write(xdmf_id,*)
+
+
+
+
+
+
+
+
+            ! WRITTING MASKS SECTION
+
+
+            if (IBM_activated) then
+
+                frame_label='MASKS'
+                if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Grid Name="', trim(frame_label), '" GridType="Uniform">'
+                if(nrank==0)  write(xdmf_id,*)
+
+                if(nrank==0)  write(xdmf_id,'(a,I4,I4,a)')'<Topology TopologyType="2DRectMesh" NumberOfElements="', n3, n2,'"/>'
+                if(nrank==0)  write(xdmf_id,*)'<Geometry GeometryType="VXVY">'
+
+                if(nrank==0)  write(xdmf_id,'(a,I4,a)')'<DataItem Dimensions="',n3,'" NumberType="Float" Precision="8" Format="HDF">'
+                if(nrank==0)  write(xdmf_id,*) trim(file_name)//".h5:/x3"
+                if(nrank==0)  write(xdmf_id,*)"</DataItem>"
+
+                if(nrank==0)  write(xdmf_id,'(a,I4,a)')'<DataItem Dimensions="',n2,'" NumberType="Float" Precision="8" Format="HDF">'
+                if(nrank==0)  write(xdmf_id,*)trim(file_name)//".h5:/x2"
+                if(nrank==0)  write(xdmf_id,*)"</DataItem>"
+
+
+                if(nrank==0)  write(xdmf_id,*)"</Geometry>"
+
+                if(nrank==0)  write(xdmf_id,*)
+
+                do s = 1, param_anim2D_1%nb_slices
+
+                    i=param_anim2D_1%slices(s)
+                    write(tmp_str, "(i10)")i
+                    slice_name=trim(frame_label)//'/slice_'//trim(adjustl(tmp_str))
+
+                    if(nrank==0)  write(xdmf_id,*)
+
+                    if (param_anim2D_1%export_q1) then
+                        attribute_name='q1_'//trim(adjustl(tmp_str))
+                        attribute_path=trim(file_name)//".h5:"//trim(slice_name)//'/q1'
+
+                        tmp_str2='<DataItem Dimensions="'
+                        tmp_str3='  " NumberType="Float" Precision="8" Format="HDF">'
+                        tmp_str4='</DataItem>'
+                        if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
+                        if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2), n3,n2, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
+                        if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+                    end if
+
+                    if (param_anim2D_1%export_q2) then
+                        attribute_name='q2_'//trim(adjustl(tmp_str))
+                        attribute_path=trim(file_name)//".h5:"//trim(slice_name)//'/q2'
+
+                        tmp_str2='<DataItem Dimensions="'
+                        tmp_str3='  " NumberType="Float" Precision="8" Format="HDF">'
+                        tmp_str4='</DataItem>'
+                        if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
+                        if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2), n3,n2, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
+                        if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+
+                    end if
+
+                    if (param_anim2D_1%export_q3) then
+                        attribute_name='q3_'//trim(adjustl(tmp_str))
+                        attribute_path=trim(file_name)//".h5:"//trim(slice_name)//'/q3'
+
+                        tmp_str2='<DataItem Dimensions="'
+                        tmp_str3='  " NumberType="Float" Precision="8" Format="HDF">'
+                        tmp_str4='</DataItem>'
+                        if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
+                        if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2), n3,n2, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
+                        if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+                    end if
+
+                end do
+
+
+                if(nrank==0)  write(xdmf_id,*)
+                if(nrank==0)  write(xdmf_id,*)
+                if(nrank==0)  write(xdmf_id,*)"</Grid>"
+                if(nrank==0)  write(xdmf_id,*)
+
+            endif
+
+
+            if(nrank==0)  write(xdmf_id,*)"</Domain>"
+            if(nrank==0)  write(xdmf_id,*)"</Xdmf>"
+            if(nrank==0)  close(xdmf_id)
+
+        end subroutine write_xdmf2
+
+
+    end subroutine anim2D_addframe1
+
+
+    subroutine anim2D_addframe3(anim_dir)
+        use anim2D
+        use HDF5_IO
+        use IBM_data
+        use physical_fields
+        use mesh
+        use mpi
+        use IBM_settings
+        use scalar_datas
+
+        implicit none
+        character(*)            :: anim_dir
+        integer, save           :: file_nb=1
+        integer, save           :: nbsteps=1
+        character(200), save    :: file_path
+        character(20), save     :: file_name
+        character(20)           :: frame_name, slice_name
+        character(10)           :: tmp_str
+
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))  :: IBM_mask1_z, IBM_mask2_z, IBM_mask3_z
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))  :: IBM_mask1_y, IBM_mask2_y, IBM_mask3_y
+
+        integer         :: k,s, xdmf_id, ierr
+
+        xdmf_id=513
+
+        if ((file_nb==1).and.(nbsteps==1)) then
+
+            file_name="anim1"
+            file_path=trim(anim_dir)//'X3/'//trim(file_name)
+            if(nrank==0)  call hdf_create_file_with_2Dmesh(trim(file_path), Z, Y, "x1", "x2", n1, n2)
+
+
+
+
+            if(nrank==0)  call hdf_addgroup(file_path, "MASKS")
+
+            call transpose_x_to_y(IBM_mask1, IBM_mask1_y)
+            call transpose_y_to_z(IBM_mask1_y, IBM_mask1_z)
+
+            call transpose_x_to_y(IBM_mask2, IBM_mask2_y)
+            call transpose_y_to_z(IBM_mask2_y, IBM_mask2_z)
+
+            call transpose_x_to_y(IBM_mask3, IBM_mask3_y)
+            call transpose_y_to_z(IBM_mask3_y, IBM_mask3_z)
+
+            if (IBM_activated) then
+
+                do s = 1, param_anim2D_3%nb_slices
+
+                    k=param_anim2D_3%slices(s)
+                    write(tmp_str, "(i10)")k
+                    slice_name='MASKS/'//'slice_'//trim(adjustl(tmp_str))
+                    if (nrank==0) write(*,*)'ADD GROUPE 1', slice_name
+                    if(nrank==0)  call hdf_addgroup(file_path, slice_name)
+
+                    if (param_anim2D_3%export_q1) then
+                        call hdf_add_2Dfield(trim(file_path), IBM_mask1_z(:, :,k), trim(slice_name)//"/q1", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+                    end if
+
+                    if (param_anim2D_3%export_q2) then
+                        call hdf_add_2Dfield(trim(file_path), IBM_mask2_z(:, :,k), trim(slice_name)//"/q2", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+                    end if
+
+                    if (param_anim2D_3%export_q3) then
+                        call hdf_add_2Dfield(trim(file_path), IBM_mask3_z(:, :,k), trim(slice_name)//"/q3", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+                    end if
+
+                end do
+
+            endif
+
+        end if
+
+
+        ! ADDING THE CURRENT STEP
+        if (nrank==0) write(*,*) 'ADDING FRAME n°', nbsteps, 'in file', trim(file_path)
+
+        write(tmp_str, "(i10)")nbsteps
+        frame_name='Frame'//trim(adjustl(tmp_str))
+        if (nrank==0) write(*,*)'ADD_GROUPE', frame_name
+        if(nrank==0)  call hdf_addgroup(file_path, frame_name)
+
+
+        do s = 1, param_anim2D_3%nb_slices
+            k=param_anim2D_3%slices(s)
+            write(tmp_str, "(i10)")k
+            slice_name=trim(frame_name)//'/slice_'//trim(adjustl(tmp_str))
+            if (nrank==0) write(*,*)'ADD_GROUPE', slice_name
+            if(nrank==0)  call hdf_addgroup(file_path, slice_name)
+
+            if (param_anim2D_3%export_q1) then
+                call hdf_add_2Dfield(trim(file_path), q1_z(:, :,k), trim(slice_name)//"/q1", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+            end if
+
+            if (param_anim2D_3%export_q2) then
+                call hdf_add_2Dfield(trim(file_path), q2_z(:, :,k), trim(slice_name)//"/q2", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+            end if
+
+            if (param_anim2D_3%export_q3) then
+                call hdf_add_2Dfield(trim(file_path), q3_z(:, :,k), trim(slice_name)//"/q3", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+            end if
+
+            if (param_anim2D_3%export_pr) then
+                call hdf_add_2Dfield(trim(file_path), pr_z(:, :,k), trim(slice_name)//"/pr", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+            end if
+
+            if (.true.) then
+                call hdf_add_2Dfield(trim(file_path), sca_z(1, :, :,k), trim(slice_name)//"/sca1", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+            end if
+
+            if (.true.) then
+                call hdf_add_2Dfield(trim(file_path), divu2_z(:, :,k), trim(slice_name)//"/div2", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+                call hdf_add_2Dfield(trim(file_path), divu_z(:, :,k), trim(slice_name)//"/div", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+                call hdf_add_2Dfield(trim(file_path), dp_z(:, :,k), trim(slice_name)//"/pcorrec", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+            end if
+
+        end do
+
+        call write_xdmf2
+
+        nbsteps=nbsteps+1
+
+        if (nbsteps>param_anim2D_3%nb_steps) then
+
+
+            nbsteps=1
+            file_nb=file_nb+1
+
+
+            write(tmp_str, "(i10)")file_nb
+            file_name="anim"//trim(adjustl(tmp_str))
+            file_path=trim(anim_dir)//'X3/'//trim(file_name)
+            if(nrank==0)  call hdf_create_file_with_2Dmesh(trim(file_path), Z, Y, "x1", "x2", n1, n2)
+
+
+
+
+            if (IBM_activated) then
+
+                if(nrank==0)  call hdf_addgroup(file_path, "MASKS")
+
+                call transpose_x_to_y(IBM_mask1, IBM_mask1_y)
+                call transpose_y_to_z(IBM_mask1_y, IBM_mask1_z)
+
+                call transpose_x_to_y(IBM_mask2, IBM_mask2_y)
+                call transpose_y_to_z(IBM_mask2_y, IBM_mask2_z)
+
+                call transpose_x_to_y(IBM_mask3, IBM_mask3_y)
+                call transpose_y_to_z(IBM_mask3_y, IBM_mask3_z)
+
+                do s = 1, param_anim2D_3%nb_slices
+
+                    k=param_anim2D_3%slices(s)
+                    write(tmp_str, "(i10)")k
+                    slice_name='MASKS/'//'slice_'//trim(adjustl(tmp_str))
+                    if(nrank==0)  call hdf_addgroup(file_path, slice_name)
+
+                    if (param_anim2D_3%export_q1) then
+                        call hdf_add_2Dfield(trim(file_path), IBM_mask1_z(:, :,k), trim(slice_name)//"/q1", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+                    end if
+
+                    if (param_anim2D_3%export_q2) then
+                        call hdf_add_2Dfield(trim(file_path), IBM_mask2_z(:, :,k), trim(slice_name)//"/q2", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+                    end if
+
+                    if (param_anim2D_3%export_q3) then
+                        call hdf_add_2Dfield(trim(file_path), IBM_mask3_z(:, :,k), trim(slice_name)//"/q3", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+                    end if
+
+                end do
+
+            end if
+
+        end if
+
+    contains
+
+
+        subroutine write_xdmf2()
+            use file_copy
+            implicit none
+            integer     :: f
+            character(200)  :: xdmf_path, attribute_path
+            character(20)   :: frame_label, attribute_name
+            character(80)   :: tmp_str, tmp_str2, tmp_str3, tmp_str4
+
+
+
+
+            write(tmp_str, "(i10)")file_nb
+            xdmf_path=trim(anim_dir)//'X3/anim'//trim(adjustl(tmp_str))//".xdmf"
+
+            if(nrank==0)  call copy_ascii_file(file_dest=trim(xdmf_path), file_src=trim(anim_dir)//"X3/modele2.xdmf")
+
+            if(nrank==0)  open(xdmf_id, file=trim(xdmf_path), position="append")
+            if(nrank==0)  write(xdmf_id,'(F10.5,F10.5,I4)')0.d0, 0.04d0, param_anim2D_3%nb_steps
+            if(nrank==0)  write(xdmf_id,*)"</DataItem>"
+            if(nrank==0)  write(xdmf_id,*)"</Time>"
+            if(nrank==0)  write(xdmf_id,*)
+
+
+            do f = 1, nbsteps
+
+                write(tmp_str, "(i10)")f
+                frame_label='Frame'//trim(adjustl(tmp_str))
+                if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Grid Name="', trim(frame_label), '" GridType="Uniform">'
+                if(nrank==0)  write(xdmf_id,*)
+
+                if(nrank==0)  write(xdmf_id,'(a,I4,I4,a)')'<Topology TopologyType="2DRectMesh" NumberOfElements="', n2, n1,'"/>'
+                if(nrank==0)  write(xdmf_id,*)'<Geometry GeometryType="VXVY">'
+
+                if(nrank==0)  write(xdmf_id,'(a,I4,a)')'<DataItem Dimensions="',n2,'" NumberType="Float" Precision="8" Format="HDF">'
+                if(nrank==0)  write(xdmf_id,*) trim(file_name)//".h5:/x2"
+                if(nrank==0)  write(xdmf_id,*)"</DataItem>"
+
+                if(nrank==0)  write(xdmf_id,'(a,I4,a)')'<DataItem Dimensions="',n1,'" NumberType="Float" Precision="8" Format="HDF">'
+                if(nrank==0)  write(xdmf_id,*)trim(file_name)//".h5:/x1"
+                if(nrank==0)  write(xdmf_id,*)"</DataItem>"
+
+
+                if(nrank==0)  write(xdmf_id,*)"</Geometry>"
+
+                if(nrank==0)  write(xdmf_id,*)
+
+                do s = 1, param_anim2D_3%nb_slices
+
+                    k=param_anim2D_3%slices(s)
+                    write(tmp_str, "(i10)")k
+                    slice_name=trim(frame_label)//'/slice_'//trim(adjustl(tmp_str))
+
+                    if(nrank==0)  write(xdmf_id,*)
+
+                    if (param_anim2D_3%export_q1) then
+                        attribute_name='q1_'//trim(adjustl(tmp_str))
+                        attribute_path=trim(file_name)//".h5:"//trim(slice_name)//'/q1'
+
+                        tmp_str2='<DataItem Dimensions="'
+                        tmp_str3='  " NumberType="Float" Precision="8" Format="HDF">'
+                        tmp_str4='</DataItem>'
+                        if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
+                        if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2), n2,n1, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
+                        if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+                    end if
+
+                    if (param_anim2D_3%export_q2) then
+                        attribute_name='q2_'//trim(adjustl(tmp_str))
+                        attribute_path=trim(file_name)//".h5:"//trim(slice_name)//'/q2'
+
+                        tmp_str2='<DataItem Dimensions="'
+                        tmp_str3='  " NumberType="Float" Precision="8" Format="HDF">'
+                        tmp_str4='</DataItem>'
+                        if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
+                        if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2), n2,n1, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
+                        if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+
+                    end if
+
+                    if (param_anim2D_3%export_q3) then
+                        attribute_name='q3_'//trim(adjustl(tmp_str))
+                        attribute_path=trim(file_name)//".h5:"//trim(slice_name)//'/q3'
+
+                        tmp_str2='<DataItem Dimensions="'
+                        tmp_str3='  " NumberType="Float" Precision="8" Format="HDF">'
+                        tmp_str4='</DataItem>'
+                        if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
+                        if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2),n2,n1, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
+                        if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+                    end if
+
+                    if (param_anim2D_3%export_pr) then
+                        attribute_name='pr_'//trim(adjustl(tmp_str))
+                        attribute_path=trim(file_name)//".h5:"//trim(slice_name)//'/pr'
+
+                        tmp_str2='<DataItem Dimensions="'
+                        tmp_str3='  " NumberType="Float" Precision="8" Format="HDF">'
+                        tmp_str4='</DataItem>'
+                        if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
+                        if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2),n2,n1, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
+                        if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+                    end if
+
+                    if (.true.) then
+                        attribute_name='sca_'//trim(adjustl(tmp_str))
+                        attribute_path=trim(file_name)//".h5:"//trim(slice_name)//'/sca1'
+
+                        tmp_str2='<DataItem Dimensions="'
+                        tmp_str3='  " NumberType="Float" Precision="8" Format="HDF">'
+                        tmp_str4='</DataItem>'
+                        if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
+                        if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2),n2,n1, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
+                        if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+                    end if
+
+                    if (.true.) then
+                        attribute_name='div_'//trim(adjustl(tmp_str))
+                        attribute_path=trim(file_name)//".h5:"//trim(slice_name)//'/div'
+
+                        tmp_str2='<DataItem Dimensions="'
+                        tmp_str3='  " NumberType="Float" Precision="8" Format="HDF">'
+                        tmp_str4='</DataItem>'
+                        if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
+                        if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2),n2,n1, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
+                        if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+                    end if
+
+                    if (.true.) then
+                        attribute_name='div2_'//trim(adjustl(tmp_str))
+                        attribute_path=trim(file_name)//".h5:"//trim(slice_name)//'/div2'
+
+                        tmp_str2='<DataItem Dimensions="'
+                        tmp_str3='  " NumberType="Float" Precision="8" Format="HDF">'
+                        tmp_str4='</DataItem>'
+                        if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
+                        if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2),n2,n1, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
+                        if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+                    end if
+
+                    if (.true.) then
+                        attribute_name='pcorrec_'//trim(adjustl(tmp_str))
+                        attribute_path=trim(file_name)//".h5:"//trim(slice_name)//'/pcorrec'
+
+                        tmp_str2='<DataItem Dimensions="'
+                        tmp_str3='  " NumberType="Float" Precision="8" Format="HDF">'
+                        tmp_str4='</DataItem>'
+                        if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
+                        if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2),n2,n1, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
+                        if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+                    end if
+
+                end do
+
+
+                if(nrank==0)  write(xdmf_id,*)
+                if(nrank==0)  write(xdmf_id,*)
+                if(nrank==0)  write(xdmf_id,*)"</Grid>"
+                if(nrank==0)  write(xdmf_id,*)
+            end do
+
+
+            if(nrank==0)  write(xdmf_id,*)"</Grid>"
+
+            ! WRITTING MASK
+
+            if (IBM_activated) then
+
+                frame_label='MASKS'
+                if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Grid Name="', trim(frame_label), '" GridType="Uniform">'
+                if(nrank==0)  write(xdmf_id,*)
+
+                if(nrank==0)  write(xdmf_id,'(a,I4,I4,a)')'<Topology TopologyType="2DRectMesh" NumberOfElements="', n2, n1,'"/>'
+                if(nrank==0)  write(xdmf_id,*)'<Geometry GeometryType="VXVY">'
+
+                if(nrank==0)  write(xdmf_id,'(a,I4,a)')'<DataItem Dimensions="',n2,'" NumberType="Float" Precision="8" Format="HDF">'
+                if(nrank==0)  write(xdmf_id,*) trim(file_name)//".h5:/x2"
+                if(nrank==0)  write(xdmf_id,*)"</DataItem>"
+
+                if(nrank==0)  write(xdmf_id,'(a,I4,a)')'<DataItem Dimensions="',n1,'" NumberType="Float" Precision="8" Format="HDF">'
+                if(nrank==0)  write(xdmf_id,*)trim(file_name)//".h5:/x1"
+                if(nrank==0)  write(xdmf_id,*)"</DataItem>"
+
+
+                if(nrank==0)  write(xdmf_id,*)"</Geometry>"
+
+                if(nrank==0)  write(xdmf_id,*)
+
+                do s = 1, param_anim2D_3%nb_slices
+
+                    k=param_anim2D_3%slices(s)
+                    write(tmp_str, "(i10)")k
+                    slice_name=trim(frame_label)//'/slice_'//trim(adjustl(tmp_str))
+
+                    if(nrank==0)  write(xdmf_id,*)
+
+                    if (param_anim2D_3%export_q1) then
+                        attribute_name='q1_'//trim(adjustl(tmp_str))
+                        attribute_path=trim(file_name)//".h5:"//trim(slice_name)//'/q1'
+
+                        tmp_str2='<DataItem Dimensions="'
+                        tmp_str3='  " NumberType="Float" Precision="8" Format="HDF">'
+                        tmp_str4='</DataItem>'
+                        if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
+                        if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2), n2,n1, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
+                        if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+                    end if
+
+                    if (param_anim2D_3%export_q2) then
+                        attribute_name='q2_'//trim(adjustl(tmp_str))
+                        attribute_path=trim(file_name)//".h5:"//trim(slice_name)//'/q2'
+
+                        tmp_str2='<DataItem Dimensions="'
+                        tmp_str3='  " NumberType="Float" Precision="8" Format="HDF">'
+                        tmp_str4='</DataItem>'
+                        if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
+                        if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2), n2,n1, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
+                        if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+
+                    end if
+
+                    if (param_anim2D_3%export_q3) then
+                        attribute_name='q3_'//trim(adjustl(tmp_str))
+                        attribute_path=trim(file_name)//".h5:"//trim(slice_name)//'/q3'
+
+                        tmp_str2='<DataItem Dimensions="'
+                        tmp_str3='  " NumberType="Float" Precision="8" Format="HDF">'
+                        tmp_str4='</DataItem>'
+                        if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
+                        if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2),n2,n1, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
+                        if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+                    end if
+
+                end do
+
+
+                if(nrank==0)  write(xdmf_id,*)
+                if(nrank==0)  write(xdmf_id,*)
+                if(nrank==0)  write(xdmf_id,*)"</Grid>"
+                if(nrank==0)  write(xdmf_id,*)
+
+            endif
+
+
+            if(nrank==0)  write(xdmf_id,*)
+            if(nrank==0)  write(xdmf_id,*)"</Domain>"
+            if(nrank==0)  write(xdmf_id,*)"</Xdmf>"
+            if(nrank==0)  close(xdmf_id)
+
+        end subroutine write_xdmf2
+
+
+    end subroutine anim2D_addframe3
+
+end module anim2D_writer
+
+module settings_IO
+    implicit none
+
+contains
+end module settings_IO
+
+module snapshot_writer
+
+    use mpi
+    use decomp_2d
+
+    implicit none
+
+contains
+
+
+
+
+    subroutine create_snapshot(snaps_dir, snap_dir, field, field_name, pencil)
+
+        use physical_fields
+        use mesh
+        use DNS_settings
+        use HDF5_IO
+
+        implicit none
+        real*8, dimension(:,:,:)    :: field
+        character(*)                :: snaps_dir, snap_dir, field_name
+        integer                     :: pencil
+
+        integer                     :: mpi_err
+
+
+        character(200)    :: file_path, snap_path
+        logical             :: snap_dir_exist
+
+
+        snap_path=trim(snaps_dir)//"/"//trim(snap_dir)
+
+        file_path=trim(snap_path)//"/"//trim(field_name)
+
+        if(nrank==0)  call hdf_create_emptyfile(file_path)
+        !if (pencil==1) call hdf_add_3Dfield(file_path, field(:,:,:), trim(field_name), nx_global, ny_global, nz_global, 1,xsize(1),1,xsize(2),1,xsize(3))
+        if (pencil==1) call hdf_add_3Dfield(file_path, field(:,:,:), trim(field_name), nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+        !if (pencil==2) call hdf_add_3Dfield(file_path, field(:,:,:), trim(field_name), nx_global, ny_global, nz_global, 1,ysize(1),1,ysize(2),1,ysize(3))
+        if (pencil==2) call hdf_add_3Dfield(file_path, field(:,:,:), trim(field_name), nx_global, ny_global, nz_global, ystart(1),yend(1),ystart(2),yend(2),ystart(3),yend(3))
+        !if (pencil==3) call hdf_add_3Dfield(file_path, field(:,:,:), trim(field_name), nx_global, ny_global, nz_global, 1,zsize(1),1,zsize(2),1,zsize(3))
+        if (pencil==3) call hdf_add_3Dfield(file_path, field(:,:,:), trim(field_name), nx_global, ny_global, nz_global, zstart(1),zend(1),zstart(2),zend(2),zstart(3),zend(3))
+
+        call MPI_BARRIER(MPI_COMM_WORLD, mpi_err)
+
+    end subroutine create_snapshot
+
+
+
+    subroutine create_stretch_snapshot(snaps_dir, snap_dir, field, field_name, pencil, X1, X2, X3)
+
+        use physical_fields
+        use mesh
+        use DNS_settings
+        use HDF5_IO
+
+        implicit none
+        real*8, dimension(:,:,:)    :: field
+        character(*)                :: snaps_dir, snap_dir, field_name
+        integer                     :: pencil
+
+        integer                     :: mpi_err
+
+
+        character(200)    :: file_path, snap_path
+        logical             :: snap_dir_exist
+
+        real*8                              :: X1(n1), X2(n2), X3(n3)
+
+        snap_path=trim(snaps_dir)//"/"//trim(snap_dir)
+
+        file_path=trim(snap_path)//"/"//trim(field_name)
+
+        if(nrank==0)  call hdf_create_file_with_3Dmesh(file_path, X3, X2, X1, "Xaxis", "Yaxis", "Zaxis", n3,n2,n1)
+        if (pencil==1) call hdf_add_3Dfield(file_path, field(:,:,:), trim(field_name), nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+        if (pencil==2) call hdf_add_3Dfield(file_path, field(:,:,:), trim(field_name), nx_global, ny_global, nz_global, ystart(1),yend(1),ystart(2),yend(2),ystart(3),yend(3))
+        if (pencil==3) call hdf_add_3Dfield(file_path, field(:,:,:), trim(field_name), nx_global, ny_global, nz_global, zstart(1),zend(1),zstart(2),zend(2),zstart(3),zend(3))
+
+        call MPI_BARRIER(MPI_COMM_WORLD, mpi_err)
+
+    end subroutine create_stretch_snapshot
+
+
+
+    subroutine create_2D_snapshot(snaps_dir, snap_dir, field, field_name, pencil)
+
+        use physical_fields
+        use mesh
+        use DNS_settings
+        use HDF5_IO
+
+        implicit none
+        real*8, dimension(:,:)    :: field
+        character(*)                :: snaps_dir, snap_dir, field_name
+        integer                     :: pencil
+
+        integer                     :: mpi_err
+
+        character(200)    :: file_path, snap_path
+        logical             :: snap_dir_exist
+
+
+        snap_path=trim(snaps_dir)//"/"//trim(snap_dir)
+
+        file_path=trim(snap_path)//"/"//trim(field_name)
+
+        if(nrank==0)  call hdf_create_emptyfile(file_path)
+        !if (pencil==1) call hdf_add_3Dfield(file_path, field(:,:), trim(field_name), nx_global, ny_global, nz_global, 1,xsize(1),1,xsize(2),1,xsize(3))
+        if (pencil==1) call hdf_add_2Dfield(file_path, field(:,:), trim(field_name), ny_global, nz_global, xstart(2),xend(2),xstart(3),xend(3))
+        !if (pencil==2) call hdf_add_3Dfield(file_path, field(:,:), trim(field_name), nx_global, ny_global, nz_global, 1,ysize(1),1,ysize(2),1,ysize(3))
+        if (pencil==2) call hdf_add_2Dfield(file_path, field(:,:), trim(field_name), nx_global, nz_global, ystart(1),yend(1),ystart(3),yend(3))
+        !if (pencil==3) call hdf_add_3Dfield(file_path, field(:,:), trim(field_name), nx_global, ny_global, nz_global, 1,zsize(1),1,zsize(2),1,zsize(3))
+        if (pencil==3) call hdf_add_2Dfield(file_path, field(:,:), trim(field_name), nx_global, ny_global, zstart(1),zend(1),zstart(2),zend(2))
+
+        call MPI_BARRIER(MPI_COMM_WORLD, mpi_err)
+
+    end subroutine create_2D_snapshot
+
+end module snapshot_writer
+
+module log_file_writers
+    implicit none
+
+contains
+
+    subroutine export_divergence_file(file_path, cflmax, divmax, div_mean, divdiff, divg1, divg2, ntime)
+        implicit none
+        real*8  :: cflmax, divmax, divdiff, divg1, divg2, div_mean
+        integer :: ntime, divergence_file_id
+        character(*)    :: file_path
+
+        divergence_file_id=400
+7698    format(i7,',',x,8e18.9)
+
+        open(divergence_file_id, file=trim(file_path), position="append")
+
+        write(divergence_file_id,7698) ntime, cflmax, divmax, div_mean, divdiff, divg1, divg2
+        close(divergence_file_id)
+
+    end subroutine export_divergence_file
+
+    subroutine export_kinetic(file_path, flow_rate, kinetic_energy, enstrophy, ntime)
+        implicit none
+        real*8          :: kinetic_energy(3), enstrophy, flow_rate
+        integer         :: ntime, kinetic_file_id
+        character(*)    :: file_path
+
+
+
+        kinetic_file_id=400
+7699    format(i7,',',x,6e16.9)
+
+        open(kinetic_file_id, file=trim(file_path), position="append")
+
+        write(kinetic_file_id,7699) ntime, sum(kinetic_energy), flow_rate, kinetic_energy, enstrophy
+        close(kinetic_file_id)
+
+    end subroutine export_kinetic
+
+    subroutine export_kinetic_IBM(kinetic_dir, flow_rate, k1,k2,k3, n, ntime)
+        implicit none
+        integer                 :: n, ntime
+        real*8, dimension(n)    :: flow_rate, k1,k2,k3
+        character(*)            :: kinetic_dir
+
+        integer                 :: i, kinetic_file_id
+        character(20)           :: tmp_str
+        character(200)          :: kinetic_file
+
+        kinetic_file_id=1201
+
+        write(tmp_str, "(i10)")ntime
+        kinetic_file=trim(kinetic_dir)//'flow_rate'//trim(adjustl(tmp_str))//".csv"
+
+        open(kinetic_file_id, file=kinetic_file)
+
+        do i = 1, n
+            write(kinetic_file_id,*)i, flow_rate(i), k1(i), k2(i), k3(i)
+        end do
+
+        close(kinetic_file_id)
+
+    end subroutine export_kinetic_IBM
+
+    subroutine export_velmax_IBM(velmax_dir, q1_max, q2_max, q3_max, pr_max, q1_min, q2_min, q3_min, pr_min, n, ntime)
+        use IBM_data
+        implicit none
+        integer                 :: n, ntime
+        real*8, dimension(n)    :: q1_max, q2_max, q3_max, pr_max, mask1_max, mask2_max, mask3_max
+        real*8, dimension(n)    :: q1_min, q2_min, q3_min, pr_min
+        character(*)            :: velmax_dir
+
+        integer                 :: i, velmax_file_id
+        character(20)           :: tmp_str
+        character(200)          :: velmax_file
+
+        velmax_file_id=1201
+7700    format(i7,',',x,11e17.8)
+
+        write(tmp_str, "(i10)")ntime
+        velmax_file=trim(velmax_dir)//'velmax'//trim(adjustl(tmp_str))//".csv"
+
+        open(velmax_file_id, file=velmax_file)
+
+        do i = 1, n
+            mask1_max(i)=maxval(IBM_mask1(i,:,:))
+            mask2_max(i)=maxval(IBM_mask2(i,:,:))
+            mask3_max(i)=maxval(IBM_mask3(i,:,:))
+        end do
+
+        do i = 1, n
+            write(velmax_file_id,7700)i, q1_max(i), q2_max(i), q3_max(i), pr_max(i), q1_min(i), q2_min(i), q3_min(i), pr_min(i), &
+            mask1_max(i), mask2_max(i), mask3_max(i)
+        end do
+
+        close(velmax_file_id)
+
+    end subroutine export_velmax_IBM
+
+end module log_file_writers
+
+

@@ -1,0 +1,14 @@
+___________________________________________________________________________________________________________________________
+ANOMALIE 1 - MINEURE - Resultats legerements différents selon le nb de procs
+					   Une légère différence du meme ordre est observé selon le compilateur (ifort ou gfort)
+				 
+	Contexte :		
+	Exemple	:		Run sur 3 procs (142000 -> 142050) :
+					142050,0.0143332461380226,0.0001303265548219,-.0043930458101559
+					
+					run sur 6 proccs (142000 -> 142050) :
+					142050, 0.0143332461380228, 0.0001303265548218, -.0043930458101555
+					
+	Conclusion : 	La différence est minime mais toutefois ce comportement est singulier aux schémas compacts ce qui
+				    est étrange.
+_______________________________________________________________________________________________________________________________

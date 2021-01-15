@@ -1,0 +1,151 @@
+module inout_flow
+    use time_schemes
+    use physical_fields
+    use scalar_datas
+    use DNS_settings
+    use inflow_settings
+    use workspace_view
+    use mesh
+    use decomp_2d
+    implicit none
+
+contains
+
+    subroutine add_outflow(ntime, ns)
+        use HDF5_IO
+
+        implicit none
+        integer, optional   :: ntime, ns
+        integer, save       :: outflow_ptr=0
+        character(200)      :: current_outflow_path
+
+        character*10 tmp_str, tmp_str2
+
+        if (ns==1) outflow_ptr=outflow_ptr+1
+
+        q1_outflow(ns,outflow_ptr, :,:)=q1_x(n1-1, :,:)
+        q2_outflow(ns,outflow_ptr, :,:)=q2_x(n1-1, :,:)
+        q3_outflow(ns,outflow_ptr, :,:)=q3_x(n1-1, :,:)
+        sca_outflow(ns,outflow_ptr, :,:)=sca_x(1, n1-1, :,:)
+
+        if (nrank==0) write(*,*)
+        if (nrank==0) write(*,*) "Add outflow at slice n=", outflow_ptr, "(ntime=", ntime,", ns=", ns, ")"
+
+
+        if (mod(ntime+1, outflow_buff)==0) then
+
+            if (ns==nb_substep) outflow_ptr=0
+
+
+            write(tmp_str, "(i10)")ntime-outflow_buff+1
+            write(tmp_str2, "(i10)")ns
+            current_outflow_path=trim(outflow_path)//'outflow_'//trim(adjustl(tmp_str))//"_"//trim(adjustl(tmp_str2))
+
+            if (nrank==0) write(*,*)
+            if (nrank==0) write(*,*) "Writting outflow in file: ", trim(current_outflow_path)//".h5"
+
+            if(nrank==0)  call hdf_create_emptyfile(current_outflow_path)
+            call hdf_add_3Dfield(current_outflow_path, q1_outflow(ns,:,:,:), "q1_out", outflow_buff, ny_global, nz_global, 1,outflow_buff, xstart(2),xend(2), xstart(3),xend(3))
+            call hdf_add_3Dfield(current_outflow_path, q2_outflow(ns,:,:,:), "q2_out", outflow_buff, ny_global, nz_global, 1,outflow_buff, xstart(2),xend(2), xstart(3),xend(3))
+            call hdf_add_3Dfield(current_outflow_path, q3_outflow(ns,:,:,:), "q3_out", outflow_buff, ny_global, nz_global, 1,outflow_buff, xstart(2),xend(2), xstart(3),xend(3))
+            call hdf_add_3Dfield(current_outflow_path, sca_outflow(ns,:,:,:), "sca_out", outflow_buff, ny_global, nz_global, 1,outflow_buff, xstart(2),xend(2), xstart(3),xend(3))
+
+        endif
+
+    end subroutine add_outflow
+
+    subroutine get_inflow(ntime, ns)
+        use HDF5_IO
+        use inflow_settings
+
+        implicit none
+        integer         :: ntime, ns
+        integer, save   :: inflow_ptr=1
+        integer, save   :: inflow_nb=0
+        integer         :: inflow_nb2
+        character(200)       :: current_inflow_path
+
+        if (inflow_buff>0) call inflow_from_file
+        if (inflow_buff==0) call default_inflow
+
+
+        return
+
+        contains
+
+            subroutine default_inflow()
+                implicit none
+                integer j
+
+                if (nrank==0) write(*,*)'PERFORMING default inflow'
+
+                !if (nrank==0) open(15, file="Poiseuille.csv")
+                do j = xstart(2), min(xend(2), n2-1)
+                    q1_x(1,j,:)=1.d0-(Yc(j)-1.d0)**2
+                    !if (nrank==0) write(15,*) Yc(j), 1.d0-(Yc(j)-1.d0)**2
+                end do
+
+                !if (nrank==0) close(15)
+
+
+
+                q1_wall10(:,:)=q1_x(1, :,:)
+                q2_x(1, :,:)=0.d0
+                q3_x(1, :,:)=0.d0
+                !sca_x(1, :,:)=0.d0
+
+
+            end subroutine default_inflow
+
+            subroutine inflow_from_file()
+                implicit none
+
+                character*10 tmp_str, tmp_str2
+
+                if (inflow_ptr==1) then
+
+                    inflow_nb2=inflow_nb*inflow_buff+inflow_start
+                    write(tmp_str, "(i10)")inflow_nb2
+                    write(tmp_str2, "(i10)")ns
+                    write(*,*)'ns:', ns, tmp_str2
+                    current_inflow_path=trim(inflow_path)//'outflow_'//trim(adjustl(tmp_str))//"_"//trim(adjustl(tmp_str2))
+
+                    if (nrank==0) write(*,*)
+                    if (nrank==0) write(*,*) "Reading inflow from file:", trim(current_inflow_path)//".h5"
+
+                    call hdf_read_3Dfield(current_inflow_path, q1_inflow(ns,:,:,:), "q1_out", inflow_buff, ny_global, nz_global, 1,inflow_buff, xstart(2),xend(2), xstart(3),xend(3))
+                    call hdf_read_3Dfield(current_inflow_path, q2_inflow(ns,:,:,:), "q2_out", inflow_buff, ny_global, nz_global, 1,inflow_buff, xstart(2),xend(2), xstart(3),xend(3))
+                    call hdf_read_3Dfield(current_inflow_path, q3_inflow(ns,:,:,:), "q3_out", inflow_buff, ny_global, nz_global, 1,inflow_buff, xstart(2),xend(2), xstart(3),xend(3))
+                    call hdf_read_3Dfield(current_inflow_path, sca_inflow(ns,:,:,:), "sca_out", inflow_buff, ny_global, nz_global, 1,inflow_buff, xstart(2),xend(2), xstart(3),xend(3))
+
+                    if (ns==nb_substep) inflow_nb=inflow_nb+1
+
+                endif
+
+                if (inflow_ptr<=inflow_buff) then
+
+                    if (nrank==0) write(*,*)
+                    if (nrank==0) write(*,*) "Get inflow n=", inflow_ptr, "(ntime=", ntime,", ns=", ns, ")"
+
+
+                    q1_x(1, :,:)=q1_inflow(ns, inflow_ptr, :,:)
+                    q2_x(1, :,:)=q2_inflow(ns, inflow_ptr, :,:)
+                    q3_x(1, :,:)=q3_inflow(ns, inflow_ptr, :,:)
+                    sca_x(1,1, :,:)=sca_inflow(ns, inflow_ptr, :,:)
+
+                    q1_wall10(:,:)=q1_x(1, :,:)
+
+                    if (ns==nb_substep) inflow_ptr=inflow_ptr+1
+
+                endif
+
+                if (inflow_ptr>inflow_buff) inflow_ptr=1
+
+            end subroutine inflow_from_file
+
+
+    end subroutine get_inflow
+
+end module inout_flow
+
+

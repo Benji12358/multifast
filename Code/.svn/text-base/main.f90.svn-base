@@ -1,0 +1,1247 @@
+
+program main
+    use physical_fields
+    use mesh
+    use irregular_derivative_coefficients
+    use BC_controller
+    use IBM
+    use anim2D
+
+    use DNS_settings
+    use blow_settings
+    use start_settings
+    use inflow_settings
+    use numerical_methods_settings
+
+    use workspace_view
+
+    use IO_handler
+    use settings_IO
+    use anim2D_writer
+    use snapshot_writer
+    use log_file_writers
+
+    use schemes_loader
+    use NS_solver, NS_solver_saveRHS=>saveRHS, NS_solver_init=>init
+    use mesh_generator
+    use Turbulene_generator
+    use inout_flow
+
+    use boundaries_types
+    use boundaries
+
+    use mpi
+    use decomp_2d
+
+    use formatter
+
+    use scalar_initializer
+    use passive_solver
+
+    implicit none
+
+    character(50)   :: progamm_param
+    real*8          :: max_runtime
+
+    real*8  :: t=0.d0
+    real*8  :: cflm, vper
+    integer ::j,i,k,l
+    integer :: nb_iteration, nb_iteration_remaining
+
+    integer :: save_3D_frequency, save_recovery_frequency
+    character*200    :: previousRHS_file, velocity_field_given_by_user
+
+    integer             :: reading_format
+    integer :: sensor_file_id=21, recovery_run_ctxt_id=22
+    logical             :: fexist(4)
+
+    integer   :: ntime
+
+    integer, parameter  :: FINISHED=1, IN_PROGRESS=2
+    integer, parameter  :: NEW_SIMULATION=0, CONTINUE_FROM_PREVIOUS_RUN=FINISHED, RECOVERY_A_RUN=IN_PROGRESS
+
+    integer     :: run_ctxt, run_status=IN_PROGRESS
+
+    ! Variable associated to the velocity results
+    character*80 result_dir_path
+    character*10 tmp_str
+
+    ! MPI variable
+    integer :: mpi_err, master=0
+    integer :: prow, pcol
+    real*8  :: t0, t1, t2, t12, t02
+    real*8  :: t02_glob, t12_glob
+
+
+    call MPI_INIT(mpi_err)
+
+    call MPI_COMM_RANK(MPI_COMM_WORLD, nrank, mpi_err)
+
+    t0 = MPI_WTIME()
+
+
+    call getarg(2, progamm_param)
+    read(progamm_param,*)max_runtime
+
+    call getarg(3, progamm_param)
+    read(progamm_param,*)prow
+
+    call getarg(4, progamm_param)
+    read(progamm_param,*)pcol
+
+
+
+    call build_workspace
+    call read_settings
+
+    call decomp_2d_init(n1, n2, n3, prow, pcol)
+
+    call display_settings
+
+    call MPI_BARRIER(MPI_COMM_WORLD , mpi_err)
+
+    !   *******************************************************************************
+    !   ******************************Initialization **********************************
+    !   *******************************************************************************
+
+
+    call configure_temporal_schemes(time_advancement)
+    call allocate_datas
+
+    call set_numerical_boundaries
+    call generate_mesh(n1, n2, n3, L1, 1.d0, L3, stretch_Y)
+    call configure_schemes(schemes_configuration)
+    call NS_solver_init()
+    call init_scalar_solver
+
+    if (IBM_activated) then
+        call IBM_setup
+    else
+        IBM_mask1=0.d0
+    endif
+
+
+
+    ! Fill the initial fields ----------------------------------------
+    if ((run_ctxt==CONTINUE_FROM_PREVIOUS_RUN).or.(run_ctxt==RECOVERY_A_RUN)) then
+
+        if(nrank==0) write(*,*)
+        if(nrank==0) write(*,*) 'Continue a simulation from velocity dir located at: ', recovery_velocity_dir
+        fexist=.true.
+        call load_field(recovery_velocity_dir, .false., first_it, t, fexist)
+        write(*,*)'fexist', fexist
+        if (.not. fexist(4)) then
+            call initialize_scalar(sca_x(1,:,:,:), sca_y(1,:,:,:), sca_z(1,:,:,:), -0.5d0, 0.5d0)
+        endif
+
+    else
+
+        select case (begin_from)
+            case (BEGIN_FROM_SCRATCH)
+
+                call init_channel_flow9(vper)
+                call initialize_scalar(sca_x(1,:,:,:), sca_y(1,:,:,:), sca_z(1,:,:,:), -0.5d0, 0.5d0)
+
+                if(nrank==0) write(*,*) 'Running a new simulation from a generated turbulent field' , vper
+                if(nrank==0) write(*,*) 'The Euler scheme will be used for the first iteration'
+
+                call apply_BC1(0)
+                call apply_BC2
+
+            case (BEGIN_FROM_HDF5_FILE)
+
+                if(nrank==0) write(*,*)
+                if(nrank==0) write(*,*) 'Running a new simulation from the MPI_IO field: ', velocity_field_given_by_user
+                if(nrank==0) write(*,*) 'The Euler scheme will be used for the first iteration'
+
+                write(*,*) 'velocity_field_given_by_user ', velocity_field_given_by_user
+                write(*,*) 'begin_from_coarse_file ', begin_from_coarse_file
+                call load_field(velocity_field_given_by_user, begin_from_coarse_file, first_it, t, fexist)
+
+                if (.not. fexist(4)) then
+                    call initialize_scalar(sca_x(1,:,:,:), sca_y(1,:,:,:), sca_z(1,:,:,:), -0.5d0, 0.5d0)
+                endif
+
+        end select
+
+    end if
+
+
+    first_it=first_it+1
+    last_it=first_it+nb_iteration-1
+
+    nb_iteration_remaining=nb_iteration
+
+    call spread_to_all_pencil(q3_z, q2_y, q1_x, pr_x)
+
+    !   *******************************************************************************
+    !   ***************************** Performing the simulation ***********************
+    !   *******************************************************************************
+
+
+    t1 = MPI_WTIME()
+
+    if (inflow_buff>0) then                     !Synchronizes 3D field with the last substep: we have to load/shift
+                                                !the boundaries conditions associated to the 3D field
+        do i = 1, nb_substep
+            call get_inflow(first_it,i)
+        end do
+
+    endif
+
+    do ntime = first_it, last_it
+
+        call update_sensorfile(n1/2, n2/2, n3/2)
+
+        call solve_scalar(q1_x, q2_y, q3_z, sca_x(1,:,:,:), sca_y(1,:,:,:), sca_z(1,:,:,:))
+        call update_velocity(ntime)
+        t=t+dt
+
+        call check_divergence_conditions
+
+        ! Save velocity in Results directory
+        if(mod(ntime, save_3D_frequency).eq.0) then
+
+            write(tmp_str, "(i10)")ntime
+            result_dir_path=trim(results3D_path)//'field'//trim(adjustl(tmp_str))
+
+            call write_velocity_file(result_dir_path, ntime, t)
+
+        endif
+
+        if (anim2D_1) then
+            if(mod(ntime, param_anim2D_1%step_size).eq.0) call anim2D_addframe1(anim2D_path)
+        endif
+        if (anim2D_3) then
+            if(mod(ntime, param_anim2D_3%step_size).eq.0) call anim2D_addframe3(anim2D_path)
+        endif
+
+        nb_iteration_remaining=nb_iteration_remaining-1
+
+        if(mod(ntime, save_recovery_frequency).eq.0) then
+            call save_checkpoint
+        endif
+
+        if (IBM_activated) then
+            if(mod(ntime, nb_flow_rate).eq.0) call export_log_forIBM
+        end if
+
+        t2 = MPI_WTIME()
+
+        if ((t2-t0)>max_runtime) then
+
+            if(nrank==0) write(*,*) 'Run time exceeded... Save for recovery'
+            call save_checkpoint
+            call exit_properly
+
+        end if
+
+        if(ntime.eq.blow_end) then
+            if(nrank==0) write(*,*) 'Disable blowing'
+            call disable_blowing
+            call spread_to_all_pencil(q3_z, q2_y, q1_x, pr_x)
+        endif
+
+    enddo
+
+    ntime=last_it
+
+    !   *******************************************************************************
+    !   ***************************** End of simulation *******************************
+    !   *******************************************************************************
+
+
+    if ((zstart(2)==1).and.(zend(2)>=2).and.(zstart(1)<=60).and.(zend(1)>=60).and.(zstart(3)<=60).and.(zend(3)>=60)) then
+        close(sensor_file_id)
+    end if
+
+    run_status=FINISHED
+
+
+    call save_checkpoint
+    call exit_properly
+
+contains
+
+
+    subroutine build_workspace()
+
+        use file_copy
+
+        implicit none
+        integer :: mpi_rank
+        logical :: recovery_velocity_dir_exist
+
+        ! Create current simulation arborescence -------------------------
+        call getarg(1, progamm_param)
+        read(progamm_param,*)simulation_name
+
+        ! Setting workspace paths ----------------------------------------
+        simulation_path=trim(simulation_name)//"/"
+
+        log_path                =trim(simulation_path)//"Log/"
+        divergence_history_file =trim(log_path)//'Divergence.csv'
+        kinetic_history_file    =trim(log_path)//'Kinetic.csv'
+        sensor_file             =trim(log_path)//'AA_v.csv'
+
+        results_path            =trim(simulation_path)//"Results/"
+        results3D_path          =trim(results_path)//"3D/"
+        outflow_path            =trim(results_path)//"Outflow/"
+
+        recovery_path           =trim(simulation_path)//".recovery/"
+        recovery_RHS_dir       =trim(recovery_path)//"previousRHS"
+        recovery_velocity_dir  =trim(recovery_path)//"velocity_pressure"
+        recovery_run_ctxt_file  =trim(recovery_path)//"run_ctxt.d"
+        recovery_sensor_file    =trim(recovery_path)//'AA_v.csv'
+        recovery_divergence_history_file    =trim(recovery_path)//'Divergence.csv'
+        recovery_kinetic_history_file    =trim(recovery_path)//'Kinetic.csv'
+
+        settings_path           =trim(simulation_path)//"Input/Settings/"
+        lapY_file           =trim(simulation_path)//"Input/lapY_matrix.dat"
+
+        inquire( file=recovery_velocity_dir, exist=recovery_velocity_dir_exist)
+
+        snapshot_path=trim(results_path)//"Snapshots/"
+        anim2D_path          =trim(results_path)//"Anim2D/"
+
+
+        ! The variable nrank, provided by 2D decomp, is not initialized at this time.
+        ! This subroutine must be called before all others and so before the initialization of the
+        ! library 2D decom. So a call to MPI library is done.
+        call MPI_COMM_RANK(MPI_COMM_WORLD, mpi_rank, mpi_err)
+
+        if (mpi_rank==master) then
+
+            call copy_ascii_file(file_dest=kinetic_history_file, file_src=recovery_kinetic_history_file)
+            call copy_ascii_file(file_dest=divergence_history_file, file_src=recovery_divergence_history_file)
+            call copy_ascii_file(file_dest=sensor_file, file_src=recovery_sensor_file)
+
+        end if
+
+        ! Wait that the master processus finish to create the workspace
+        call MPI_BARRIER(MPI_COMM_WORLD, mpi_err)
+
+    end subroutine build_workspace
+
+    subroutine read_settings
+        use boundaries
+        use mathematical_constants
+        use DNS_settings
+        use IBM_settings
+        use numerical_methods_settings
+        use mesh
+        use irregular_derivative_coefficients
+        use anim2D
+
+        use start_settings
+        use blow_settings
+
+        implicit none
+
+        integer n,k
+        integer begin_from_coarse_file_int, IBM_activated_int, anim1_flag, anim2_flag, anim3_flag, anim4_flag, generic_poisson_flag
+        integer :: s
+        character(200)  :: current_line
+
+        character*200    :: previousRHS_file_path
+        character*20, parameter :: NO_FILE="NONE", DEFAULT_PATH="DEFAULT_PATH"
+
+
+        ! Start **********************************************************************************
+        open(15,file=trim(settings_path)//'start.d')
+
+        read(15,*) begin_from
+        read(15,*) begin_from_coarse_file_int
+        read(15,*)
+        read(15,'(a)')velocity_field_given_by_user  ! path of the read field  file (cha.rea)
+        read(15,*) vper
+        read(15,*) reading_format
+        close(15)
+
+
+        ! Discretization *************************************************************************
+        open(15,file=trim(settings_path)//'discretization.d')
+
+        read(15,*)schemes_configuration
+        read(15,*) time_advancement, dt
+        read(15,*) generic_poisson_flag
+
+        use_generic_poisson=(generic_poisson_flag==1)
+
+        close(15)
+
+
+        ! Computational domain *******************************************************************
+        open(15,file=trim(settings_path)//'computational_domain.d')
+
+        read(15,*) n1,n2,n3
+        read(15,*) L3, L2, L1
+        read(15,*) stretch_Y, mesh_type
+
+        if (use_generic_poisson.and.(mesh_type==ORLANDI_MESH)) then
+            if (nrank==0) write(*,*)'ERROR: GENERIC POISSON AND ORLANDI MESH ARE NOT COMPATIBLE!'
+            if (nrank==0) write(*,*)'Choose Lamballais mesh or choose the Poisson physical solver'
+            call exit
+
+        endif
+
+        close(15)
+
+
+        ! Global *********************************************************************************
+        open(15,file=trim(settings_path)//'global.d')
+
+        read(15,*) ren
+        read(15,*) nb_iteration, save_3D_frequency, save_recovery_frequency
+        read(15,*) BC1, BC2, BC3
+        read(15,*) streamwise
+        read(15,*) flow_type
+        read(15,*) outflow_buff
+        read(15,*) inflow_buff, inflow_start
+        read(15,*) inflow_mode
+        read(15,'(a)')inflow_path  ! path for inflow
+
+        if ((.not. use_generic_poisson).and.((BC1/=UNBOUNDED).or.(BC2/=NOSLIP).or.(BC3/=UNBOUNDED))) then
+            if (nrank==0) write(*,*)'ERROR: The physial solver is only suited for (BC1-BC2-BC3)=0-2-0'
+            if (nrank==0) write(*,*)'Choose the Lamballais purely spectral solver or change the set of boundary conditions'
+            call exit
+        endif
+
+        close(15)
+
+        ! Scalar *********************************************************************************
+        open(15,file=trim(settings_path)//'scalar.d')
+
+        read(15,*) SCA_BC1, SCA_BC2, SCA_BC3
+        read(15,*) renprandtl
+
+        ! Blowing ********************************************************************************
+        open(15,file=trim(settings_path)//'blowing.d')
+
+        read(15,*) nb_slows
+        read(15,*) blow_end
+
+        do s = 1, nb_slows
+            read(15,*) slows(s)%xst, slows(s)%xen, slows(s)%zst, slows(s)%zen, slows(s)%blowing
+        end do
+
+        close(15)
+
+
+        ! IBM **********************************************************************************
+        open(15,file=trim(settings_path)//'IBM.d')
+
+        read(15,*) IBM_activated_int
+        read(15,'(a)')obj_file_path  ! path of the read field  file (cha.rea)
+        read(15,*) body_x1, body_x2, body_x3
+        read(15,*) body_scale_x1, body_scale_x2, body_scale_x3
+        close(15)
+
+        IBM_activated=(IBM_activated_int==1)
+
+
+
+
+        ! Anim2D *******************************************************************************
+
+        open(15,file=trim(settings_path)//'anim2D.d')
+
+        read(15,*) anim1_flag, anim2_flag, anim3_flag
+        anim2D_1=(anim1_flag==1)
+        anim2D_2=(anim2_flag==1)
+        anim2D_3=(anim3_flag==1)
+
+
+        do while (.true.)
+
+            read(15, '(a)', end=10) current_line
+            if ((anim2D_1).and.(current_line(1:2)=="X1")) then
+                write(*,*)'lol', current_line
+
+                read(15,*) param_anim2D_1%nb_slices, (param_anim2D_1%slices(n),n=1,param_anim2D_1%nb_slices)
+                read(15,*) param_anim2D_1%nb_steps, param_anim2D_1%step_size
+                read(15,*) anim1_flag, anim2_flag, anim3_flag, anim4_flag
+
+                param_anim2D_1%export_q1=(anim1_flag==1)
+                param_anim2D_1%export_q2=(anim2_flag==1)
+                param_anim2D_1%export_q3=(anim3_flag==1)
+                param_anim2D_1%export_pr=(anim4_flag==1)
+            endif
+
+            if ((anim2D_2).and.(current_line(1:2)=="X2")) then
+                write(*,*)'lol', current_line
+
+                read(15,*) param_anim2D_2%nb_slices, (param_anim2D_2%slices(n),n=1,param_anim2D_2%nb_slices)
+                read(15,*) param_anim2D_2%nb_steps, param_anim2D_2%step_size
+                read(15,*) anim1_flag, anim2_flag, anim3_flag, anim4_flag
+
+                param_anim2D_2%export_q1=(anim1_flag==1)
+                param_anim2D_2%export_q2=(anim2_flag==1)
+                param_anim2D_2%export_q3=(anim3_flag==1)
+                param_anim2D_2%export_pr=(anim4_flag==1)
+            endif
+
+            if ((anim2D_3).and.(current_line(1:2)=="X3")) then
+                write(*,*)'lol', current_line
+
+                read(15,*) param_anim2D_3%nb_slices, (param_anim2D_3%slices(n),n=1,param_anim2D_3%nb_slices)
+                read(15,*) param_anim2D_3%nb_steps, param_anim2D_3%step_size
+                read(15,*) anim1_flag, anim2_flag, anim3_flag, anim4_flag
+
+                param_anim2D_3%export_q1=(anim1_flag==1)
+                param_anim2D_3%export_q2=(anim2_flag==1)
+                param_anim2D_3%export_q3=(anim3_flag==1)
+                param_anim2D_3%export_pr=(anim4_flag==1)
+            endif
+
+        end do
+
+10      close(15)
+
+
+        ! Getting run context
+        open(recovery_run_ctxt_id, file=trim(recovery_run_ctxt_file))
+        read(recovery_run_ctxt_id,*)run_ctxt
+
+        if (run_ctxt==RECOVERY_A_RUN) then
+            read(recovery_run_ctxt_id,*)nb_iteration
+        end if
+
+        if (begin_from_coarse_file_int==1) then
+
+            if (begin_from==BEGIN_FROM_HDF5_FILE) then
+                begin_from_coarse_file=.true.
+            else
+                write(*,*) "La reprise a partir d'un maillage grossier n'est possible qu'a partir d'un fichier 2Decomp"
+                call exit
+            end if
+
+        else
+            begin_from_coarse_file=.false.
+        end if
+
+        close(recovery_run_ctxt_id)
+
+        n1m=n1-1                !number of spanwise cells
+        n2m=n2-1                !number of normal cells
+        n3m=n3-1                !number of streamwise cells
+
+        L1=L1*pi       !spanwise size of the whole calcul box
+        L3=L3*pi       !streamwise size of the whole calcul box
+
+        close(15)
+
+
+
+    end subroutine
+
+
+    subroutine display_settings()
+        use DNS_settings
+        use IBM_settings
+        use boundaries
+        use numerical_methods_settings
+        use anim2D
+
+        implicit none
+        integer :: s
+
+        if (nrank==0) then
+
+            write(*,*)'*****************************************************************'
+            write(*,*)'*****************************************************************'
+            write(*,*)'*                                                               *'
+            write(*,*)'*                Fully 3D Turbulent Channel Flow                *'
+            write(*,*)'*                         (Double precision)                    *'
+            write(*,*)'*                      Parallal Version (v 5.0)                 *'
+            write(*,*)'*                                                               *'
+            write(*,*)'*****************************************************************'
+            write(*,*)'*****************************************************************'
+            write(*,*)'  '
+            write(*,*) '  '
+
+
+
+            write(*,*)'Simulation starting ---------------------------------------'
+
+            select case (begin_from)
+                case (BEGIN_FROM_SCRATCH)
+                    write(*,*)'Begin from generated turbulent fields'
+
+                case (BEGIN_FROM_HDF5_FILE)
+                    write(*,*)'Begin from HDF5 file'
+
+                    if (begin_from_coarse_file) then
+                        write(*,*) '====> The field contains a reduced set of datas'
+                    end if
+
+
+                case default
+
+            end select
+
+            write(*,*)'Computational domain ---------------------------------------'
+            write(*,*) '...... Resolution : n1=', n1, 'n2', n2, 'n3', n3
+            write(*,*) '...... Size       : L1=', L1, 'L2', L2, 'L3', L3
+            if (mesh_type==ORLANDI_MESH) write(*,*) '...... Mesh type  : ORLANDI (beta=', stretch_Y,')'
+            if (mesh_type==LAMBALLAIS_MESH) write(*,*) '...... Mesh type  : LAMBALLAIS (beta=', stretch_Y,')'
+
+            write(*,*)
+            write(*,*)'2D domain decomposition ------------------------------------'
+            write(*,*) '...... x(1)', xstart(1), 'to',xend(1)
+            write(*,*) '...... x(2)', xstart(2), 'to',xend(2)
+            write(*,*) '...... x(3)', xstart(3), 'to',xend(3)
+
+            write(*,*)'ANIM2D -----------------------------------------------------'
+            if (anim2D_1) then
+
+                write(*,*) 'Anim x1 ? -YES _________________________'
+                write(*,*)
+                write(*,*) 'Export:'
+                if (param_anim2D_1%export_q1) write(*,*) '......Q1 : YES'
+                if (param_anim2D_1%export_q2) write(*,*) '......Q2 : YES'
+                if (param_anim2D_1%export_q3) write(*,*) '......Q3 : YES'
+                if (param_anim2D_1%export_pr) write(*,*) '......Pr : YES'
+
+                write(*,*)
+                write(*,*)'At slices :',param_anim2D_1%slices(1:param_anim2D_1%nb_slices)
+
+                write(*,*)
+                write(*,*)'Save ', param_anim2D_1%nb_steps,'steps every :',param_anim2D_1%step_size,'iterations.'
+
+            else
+                write(*,*) 'Anim x1 ? -NO'
+            end if
+
+            if (anim2D_2) then
+
+                write(*,*) 'Anim x2 ? -YES _________________________'
+                write(*,*)
+                write(*,*) 'Export:'
+                if (param_anim2D_2%export_q1) write(*,*) '......Q1 : YES'
+                if (param_anim2D_2%export_q2) write(*,*) '......Q2 : YES'
+                if (param_anim2D_2%export_q3) write(*,*) '......Q3 : YES'
+                if (param_anim2D_2%export_pr) write(*,*) '......Pr : YES'
+
+                write(*,*)
+                write(*,*)'At slices :',param_anim2D_2%slices(1:param_anim2D_2%nb_slices)
+
+                write(*,*)
+                write(*,*)'Save ', param_anim2D_2%nb_steps,'steps every :',param_anim2D_2%step_size,'iterations.'
+            else
+                write(*,*) 'Anim x2 ? -NO'
+            end if
+
+            if (anim2D_3) then
+
+                write(*,*) 'Anim x3 ? -YES _________________________'
+                write(*,*)
+                write(*,*) 'Export:'
+                if (param_anim2D_3%export_q1) write(*,*) '......Q1 : YES'
+                if (param_anim2D_3%export_q2) write(*,*) '......Q2 : YES'
+                if (param_anim2D_3%export_q3) write(*,*) '......Q3 : YES'
+                if (param_anim2D_3%export_pr) write(*,*) '......Pr : YES'
+
+                write(*,*)
+                write(*,*)'At slices :',param_anim2D_3%slices(1:param_anim2D_3%nb_slices)
+
+                write(*,*)
+                write(*,*)'Save ', param_anim2D_3%nb_steps,'steps every :',param_anim2D_3%step_size,'iterations.'
+
+            else
+                write(*,*) 'Anim x3 ? -NO'
+            end if
+
+            write(*,*)'IBM --------------------------------------------------------'
+            if (IBM_activated) then
+                write(*,*) 'IBM activated ? -YES'
+                write(*,*) '...... OBJECT file   :', trim(obj_file_path)
+                write(*,*) '...... Body position :', 'X1=', body_x1, "X2=",body_x2, "X3=", body_x3
+                write(*,*) '...... Scale         :', 'X1=', body_scale_x1, "X2=",body_scale_x2, "X3=", body_scale_x3
+            else
+                write(*,*) 'IBM activated ? -NO'
+            end if
+
+
+            write(*,*)
+            write(*,*)'Flow configuration -------------------------------------------'
+
+            select case (BC1)
+
+                case (UNBOUNDED)
+                    write(*,*)'BC1: Periodic'
+                case (FREESLIP)
+                    write(*,*)'BC1: Freeslip'
+                case (NOSLIP)
+                    write(*,*)'BC1: Noslip'
+                case (OPEN2)
+                    write(*,*)'BC1: In/Outflow'
+                    if (flow_type==FLOW_FROM_INFLOW)write(*,*)'First field from outflow'
+                    if (inflow_buff>0)write(*,*)'Inflow files path :', trim(inflow_path)
+                    if (inflow_buff>0)write(*,*)'Inflow buffer size:', inflow_buff
+                    if (inflow_buff>0)write(*,*)'Inflow start      :', inflow_start
+                case default
+
+            end select
+
+            select case (BC2)
+
+                case (UNBOUNDED)
+                    write(*,*)'BC2: Periodic'
+                case (FREESLIP)
+                    write(*,*)'BC2: Freeslip'
+                case (NOSLIP)
+                    write(*,*)'BC2: Noslip'
+                case (OPEN2)
+                    write(*,*)'BC2: In/Outflow'
+
+                case default
+
+            end select
+
+            select case (BC3)
+
+                case (UNBOUNDED)
+                    write(*,*)'BC3: Periodic'
+                case (FREESLIP)
+                    write(*,*)'BC3: Freeslip'
+                case (NOSLIP)
+                    write(*,*)'BC3: Noslip'
+                case (OPEN2)
+                    write(*,*)'BC3: In/Outflow'
+
+                case default
+
+            end select
+
+            if (outflow_buff>0)write(*,*)'Outflow files path:', trim(outflow_path)
+
+
+
+            write(*,*)
+            write(*,*)'Slows configuration ----------------------------------------'
+            write(*,*)'Number of slows', nb_slows
+
+            do s = 1, nb_slows
+                write(*,*)'Configuration of slow ', s, ':'
+                write(*,*)'    -->begin at : ', slows(s)%xst, ', ', slows(s)%zst
+                write(*,*)'    -->end at   : ', slows(s)%xen, ', ', slows(s)%zen
+                write(*,*)'    -->blowing  : ', slows(s)%blowing
+            end do
+
+            write(*,*)
+            write(*,*)'Poisson equation resolution ----------------------------------'
+            if (use_generic_poisson) then
+                write(*,*)'Use of spectral Poisson solver of Lamballais'
+            else
+                write(*,*)'Use of XZ-spectral and Y-physical solver'
+            end if
+
+            write(*,*)
+            write(*,*)'Schemes configuration ----------------------------------------'
+            select case (schemes_configuration)
+
+                case (O2_SCHEMES)
+                    write(*,*)'O2'
+
+                case (OPTIMIZED_SCHEMES)
+                    write(*,*)'DRP'
+
+                case (OPTIMIZED_SCHEMES_WITH_CPT)
+                    write(*,*)'Hybrid'
+
+                case (COMPACT_SCHEMES)
+                    write(*,*)'Compact'
+
+                case default
+
+            end select
+
+
+        end if
+
+    end subroutine display_settings
+
+
+
+    subroutine allocate_datas()
+
+        use time_schemes
+
+        implicit none
+
+        ! Inner values (in x,y,z decomposition configuration)-----------------
+        allocate(q3_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(q2_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(q1_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(divu_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(divu2_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(dp_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(sca_x(NBSCAL, xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+
+        allocate(q3_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        allocate(q2_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        allocate(q1_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        allocate(divu_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        allocate(divu2_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        allocate(dp_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        allocate(sca_y(NBSCAL,ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+
+        allocate(q3_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        allocate(q2_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        allocate(q1_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+
+        allocate(pr_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(pr_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        allocate(pr_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        allocate(divu_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        allocate(divu2_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        allocate(dp_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        allocate(sca_z(NBSCAL, zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+
+        allocate(dphidx1_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(dphidx2_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        allocate(dphidx2_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(dphidx3_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        allocate(dphidx3_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+
+
+        allocate(IBM_mask1(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+        allocate(flow_rate(n1))
+        allocate(kin1_IBM(n1))
+        allocate(kin2_IBM(n1))
+        allocate(kin3_IBM(n1))
+        allocate(q1max_IBM(n1))
+        allocate(q2max_IBM(n1))
+        allocate(q3max_IBM(n1))
+        allocate(prmax_IBM(n1))
+        allocate(q1min_IBM(n1))
+        allocate(q2min_IBM(n1))
+        allocate(q3min_IBM(n1))
+        allocate(prmin_IBM(n1))
+
+        ! IBM_mask1 is used even when IBM is not activated and is always allocated
+        if (IBM_activated) then
+            allocate(IBM_mask2(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+            allocate(IBM_mask3(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+
+            allocate(vel_term1(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+            allocate(vel_term2(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+            allocate(vel_term3(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+        end if
+
+
+        ! Wall values allocation ---------------------------------------------
+        !ATTENTION
+        allocate(q3_wall10(xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(q2_wall10(xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(q1_wall10(xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(sca_wall10(xstart(2):xend(2), xstart(3):xend(3)))
+
+        allocate(q3_wall11(xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(q2_wall11(xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(q1_wall11(xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(sca_wall11(xstart(2):xend(2), xstart(3):xend(3)))
+
+        !ENDATTENTION
+
+        allocate(q3_wall20(ystart(1):yend(1), ystart(3):yend(3)))
+        allocate(q2_wall20(ystart(1):yend(1), ystart(3):yend(3)))
+        allocate(q1_wall20(ystart(1):yend(1), ystart(3):yend(3)))
+        allocate(sca_wall20(ystart(1):yend(1), ystart(3):yend(3)))
+
+        allocate(q3_wall21(ystart(1):yend(1), ystart(3):yend(3)))
+        allocate(q2_wall21(ystart(1):yend(1), ystart(3):yend(3)))
+        allocate(q1_wall21(ystart(1):yend(1), ystart(3):yend(3)))
+        allocate(sca_wall21(ystart(1):yend(1), ystart(3):yend(3)))
+
+        !ATTENTION
+        allocate(q3_wall30(zstart(1):zend(1), zstart(2):zend(2)))
+        allocate(q2_wall30(zstart(1):zend(1), zstart(2):zend(2)))
+        allocate(q1_wall30(zstart(1):zend(1), zstart(2):zend(2)))
+        allocate(sca_wall30(zstart(1):zend(1), zstart(2):zend(2)))
+
+        allocate(q3_wall31(zstart(1):zend(1), zstart(2):zend(2)))
+        allocate(q2_wall31(zstart(1):zend(1), zstart(2):zend(2)))
+        allocate(q1_wall31(zstart(1):zend(1), zstart(2):zend(2)))
+        allocate(sca_wall31(zstart(1):zend(1), zstart(2):zend(2)))
+        !ENDATTENTION
+
+        if (outflow_buff>0) then
+            allocate(q1_outflow(nb_substep, outflow_buff, xstart(2):xend(2), xstart(3):xend(3)))
+            allocate(q2_outflow(nb_substep, outflow_buff, xstart(2):xend(2), xstart(3):xend(3)))
+            allocate(q3_outflow(nb_substep, outflow_buff, xstart(2):xend(2), xstart(3):xend(3)))
+            allocate(sca_outflow(nb_substep, outflow_buff, xstart(2):xend(2), xstart(3):xend(3)))
+        end if
+
+        if (inflow_buff>0) then
+            allocate(q1_inflow(nb_substep, inflow_buff, xstart(2):xend(2), xstart(3):xend(3)))
+            allocate(q2_inflow(nb_substep, inflow_buff, xstart(2):xend(2), xstart(3):xend(3)))
+            allocate(q3_inflow(nb_substep, inflow_buff, xstart(2):xend(2), xstart(3):xend(3)))
+            allocate(sca_inflow(nb_substep, inflow_buff, xstart(2):xend(2), xstart(3):xend(3)))
+        end if
+
+
+        ! INITIALIZATION
+        q1_x=0.d0
+        q2_x=0.d0
+        q3_x=0.d0
+
+        q1_y=0.d0
+        q2_y=0.d0
+        q3_y=0.d0
+
+        q1_z=0.d0
+        q2_z=0.d0
+        q3_z=0.d0
+
+        pr_x=0.d0
+        pr_y=0.d0
+        pr_z=0.d0
+
+        q1_wall10=0.d0
+        q2_wall10=0.d0
+        q3_wall10=0.d0
+
+        q1_wall11=0.d0
+        q2_wall11=0.d0
+        q3_wall11=0.d0
+
+        q1_wall20=0.d0
+        q2_wall20=0.d0
+        q3_wall20=0.d0
+        sca_wall20=-0.5d0   ! PROVISOIRE !!! SUPPRIMER
+
+        q1_wall21=0.d0
+        q2_wall21=0.d0
+        q3_wall21=0.d0
+        sca_wall21=0.5d0   ! PROVISOIRE !!! SUPPRIMER
+
+        q1_wall30=0.d0
+        q2_wall30=0.d0
+        q3_wall30=0.d0
+
+        q1_wall31=0.d0
+        q2_wall31=0.d0
+        q3_wall31=0.d0
+
+    end subroutine allocate_datas
+
+
+    subroutine export_log_forIBM()
+        use IBM_settings
+        use IBM_data
+        use velocity_analyzer
+        implicit none
+        character(200)  :: flowrate_file
+        integer         :: flowrate_file_id, i
+
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))      :: q1c_x
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))      :: q2c_y
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))      :: q3c_z
+
+        call perform_velocity_at_center(q3_z, q2_y, q1_x, q3c_z, q2c_y, q1c_x)
+        call perform_kinetic_IBM(q3c_z, q2c_y, q1c_x, flow_rate, kin1_IBM, kin2_IBM, kin3_IBM)
+        call perform_maxvel_IBM(q3_x, q2_x, q1_x, dp_x, q1max_IBM, q2max_IBM, q3max_IBM, prmax_IBM, q1min_IBM, q2min_IBM, q3min_IBM, prmin_IBM)
+
+
+        if(nrank==master) call export_kinetic_IBM(trim(log_path)//'/IBM/Flow_rate/', flow_rate, kin1_IBM, kin2_IBM, kin3_IBM, n1-1, ntime)
+        if(nrank==master) call export_velmax_IBM(trim(log_path)//'/IBM/Vel_max/', q1max_IBM, q2max_IBM, q3max_IBM, prmax_IBM, q1min_IBM, q2min_IBM, q3min_IBM, prmin_IBM, n1-1, ntime)
+
+
+
+
+    end subroutine export_log_forIBM
+
+
+    subroutine update_sensorfile(i, j_v, k)
+
+        use velocity_analyzer
+        implicit none
+        integer :: i, j_v, k
+        real*8  :: u_s, v_s, w_s, cs1, cs2, cs3, cs4
+        real*8  :: q1_cs, q2_cs, q3_cs, pr_cs
+        real*8  :: q1w10_cs, q2w10_cs, q3w10_cs
+        real*8  :: q1w20_cs, q2w20_cs, q3w20_cs
+        real*8  :: q1w30_cs, q2w30_cs, q3w30_cs
+        real*8  :: q1w11_cs, q2w11_cs, q3w11_cs
+        real*8  :: q1w21_cs, q2w21_cs, q3w21_cs
+        real*8  :: q1w31_cs, q2w31_cs, q3w31_cs
+        real*8  :: q1_csg, q2_csg, q3_csg, pr_csg
+        real*8  :: q1w10_csg, q2w10_csg, q3w10_csg
+        real*8  :: q1w20_csg, q2w20_csg, q3w20_csg
+        real*8  :: q1w30_csg, q2w30_csg, q3w30_csg
+        real*8  :: q1w11_csg, q2w11_csg, q3w11_csg
+        real*8  :: q1w21_csg, q2w21_csg, q3w21_csg
+        real*8  :: q1w31_csg, q2w31_csg, q3w31_csg
+
+11      format(f18.6,',',x,f18.16,',',x,f18.16,',',x,f18.16,',',x,f18.16,',',5x,i6)
+
+        call check_sum(cs1, cs2, cs3, cs4)
+
+        if ((zstart(2)<=j_v).and.(zend(2)>=j_v).and.(zstart(1)<=i).and.(zend(1)>=i).and.(zstart(3)<=k).and.(zend(3)>=k)) then
+
+            open(sensor_file_id, file=sensor_file, position="append")
+
+            write(sensor_file_id,11)t,cs3, cs2, cs1, cs4, ntime
+
+            write(6,*)'_____________________________________________________________'
+            write(6,*)
+            write(6,*) 'Iteration n°', ntime
+            write(6,*) '...... U:', cs3
+            write(6,*) '...... V:', cs2
+            write(6,*) '...... W:', cs1
+
+            close(sensor_file_id)
+
+        end if
+
+        q1_cs=sum(abs(q1_x))
+        q2_cs=sum(abs(q2_y))
+        q3_cs=sum(abs(q3_y))
+        pr_cs=sum(abs(pr_x))
+
+        q1w10_cs=sum(abs(q1_wall10)); q2w10_cs=sum(abs(q2_wall10)); q3w10_cs=sum(abs(q3_wall10))
+        q1w11_cs=sum(abs(q1_wall11)); q2w11_cs=sum(abs(q2_wall11)); q3w11_cs=sum(abs(q3_wall11))
+
+        q1w20_cs=sum(abs(q1_wall20)); q2w20_cs=sum(abs(q2_wall20)); q3w20_cs=sum(abs(q3_wall20))
+        q1w21_cs=sum(abs(q1_wall21)); q2w21_cs=sum(abs(q2_wall21)); q3w21_cs=sum(abs(q3_wall21))
+
+        q1w30_cs=sum(abs(q1_wall30)); q2w30_cs=sum(abs(q2_wall30)); q3w30_cs=sum(abs(q3_wall30))
+        q1w31_cs=sum(abs(q1_wall31)); q2w31_cs=sum(abs(q2_wall31)); q3w31_cs=sum(abs(q3_wall31))
+
+
+        call MPI_ALLREDUCE (q1_cs, q1_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (q2_cs, q2_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (q3_cs, q3_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (pr_cs, pr_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+
+        call MPI_ALLREDUCE (q1w10_cs, q1w10_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (q2w10_cs, q2w10_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (q3w10_cs, q3w10_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+
+        call MPI_ALLREDUCE (q1w11_cs, q1w11_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (q2w11_cs, q2w11_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (q3w11_cs, q3w11_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+
+        call MPI_ALLREDUCE (q1w20_cs, q1w20_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (q2w20_cs, q2w20_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (q3w20_cs, q3w20_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+
+        call MPI_ALLREDUCE (q1w21_cs, q1w21_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (q2w21_cs, q2w21_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (q3w21_cs, q3w21_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+
+        call MPI_ALLREDUCE (q1w20_cs, q1w20_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (q2w20_cs, q2w20_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (q3w20_cs, q3w20_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+
+        call MPI_ALLREDUCE (q1w21_cs, q1w21_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (q2w21_cs, q2w21_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (q3w21_cs, q3w21_csg, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+
+        if (nrank==-1) then
+
+            write(*,*)
+            write(*,*)'q1', q1_csg
+            write(*,*)'q2', q2_csg
+            write(*,*)'q3', q3_csg
+            write(*,*)'pr', pr_csg
+
+
+            write(*,*)'qi_wall10', q1w10_csg, q2w10_csg, q3w10_csg
+            write(*,*)'qi_wall11', q1w11_csg, q2w11_csg, q3w11_csg
+
+            write(*,*)'qi_wall20', q1w20_csg, q2w20_csg, q3w20_csg
+            write(*,*)'qi_wall21', q1w21_csg, q2w21_csg, q3w21_csg
+
+            write(*,*)'qi_wall30', q1w30_csg, q2w30_csg, q3w30_csg
+            write(*,*)'qi_wall31', q1w31_csg, q2w31_csg, q3w31_csg
+
+        endif
+
+    end subroutine update_sensorfile
+
+    subroutine check_divergence_conditions()
+
+        use mesh
+        use velocity_analyzer
+        implicit none
+        real*8      :: divg1, divg2
+        real*8    ::div_max, div_diff, div_mean, cflm, vmax(3), kinetic_energy(3), enstrophy, flow_rate
+        integer   :: error_flag, l
+        integer, parameter    :: NO_ERROR=0, MAX_DIV_REACHED=1, MAX_VELOCITY_REACHED=2
+        real*8, parameter    :: MAX_VEL=10000.d0, MAX_DIV=2.d-3
+
+        ! Log
+        integer :: master=0
+        integer :: kinetic_file_id=201
+
+        ! MPI
+        real*8  :: glob_value
+
+        integer :: i,j,k
+
+            ! The calculation stop if the velocities are diverging for numer
+            ! stab conditions (courant number restrictions)
+
+        call perform_kinetic(q3_z, q2_y, q1_x, flow_rate, kinetic_energy, enstrophy, streamwise)
+        call perform_stability(q3_z, q2_y, q1_x, cflm, div_max, div_diff, div_mean)
+        call perform_gobal_divergence(divg1, divg2, q3_z, q2_y, q1_x)
+        if (nrank==master) call export_divergence_file(divergence_history_file, cflm, div_max, div_mean, div_diff, divg1, divg2, ntime)
+        if (nrank==master) call export_kinetic(kinetic_history_file, flow_rate, kinetic_energy, enstrophy, ntime)
+
+        error_flag=NO_ERROR
+
+
+        vmax(1)=MAXVAL(abs(q1_x))
+        vmax(2)=MAXVAL(abs(q2_y))
+        vmax(3)=MAXVAL(abs(q3_x))
+        !if(nrank==0) write(*,*)'  vmax(1,2,3 ',(vmax(l),l=1,3)
+
+        call MPI_ALLREDUCE (vmax(1), glob_value, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
+        vmax(1)=glob_value
+
+        call MPI_ALLREDUCE (vmax(2), glob_value, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
+        vmax(2)=glob_value
+
+        call MPI_ALLREDUCE (vmax(3), glob_value, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
+        vmax(3)=glob_value
+
+
+        !if(MAXVAL(vmax)>MAX_VEL)    error_flag=MAX_VELOCITY_REACHED
+        !if(div_max>MAX_DIV)         error_flag=MAX_DIV_REACHED
+
+        select case (error_flag)
+
+            case (MAX_DIV_REACHED)
+                if(nrank==0) write(*,*)'calculation diverged for  dmax=', div_max
+
+                call create_snapshot(snapshot_path, "DIVERGENCE", q1_y, "W", 2)
+                call create_snapshot(snapshot_path, "DIVERGENCE", q2_y, "V", 2)
+                call create_snapshot(snapshot_path, "DIVERGENCE", q3_y, "U", 2)
+
+                call exit_properly
+
+            case (MAX_VELOCITY_REACHED)
+                if(nrank==0) write(*,*)'*** calculation diverged in time for the vel field ***'
+                if(nrank==0) write(*,*)'  vmax(1,2,3 ',(vmax(l),l=1,3)
+
+                call create_snapshot(snapshot_path, "DIVERGENCE", q1_y, "W", 2)
+                call create_snapshot(snapshot_path, "DIVERGENCE", q2_y, "V", 2)
+                call create_snapshot(snapshot_path, "DIVERGENCE", q3_y, "U", 2)
+
+                call exit_properly
+
+            case default
+
+        end select
+
+    end subroutine check_divergence_conditions
+
+    subroutine save_checkpoint
+
+        use file_copy
+
+        implicit none
+        real*8, dimension(10)  :: chrono_t, chrono_dt
+        real*8, dimension(10)  :: dt_glob
+
+                ! Replace the simulation-recovery file (velocity + RHS)
+
+        chrono_t(1) = MPI_WTIME()
+        call write_velocity_file(recovery_velocity_dir, ntime, t)
+        chrono_t(2) = MPI_WTIME()
+        call NS_solver_saveRHS
+        chrono_t(3) = MPI_WTIME()
+
+        if (nrank==0) then
+
+            call copy_ascii_file(file_dest=recovery_divergence_history_file, file_src=divergence_history_file)
+            call copy_ascii_file(file_dest=recovery_sensor_file, file_src=sensor_file)
+
+            ! Setting recovery information  -----------------------------------
+
+            open(recovery_run_ctxt_id, file=trim(recovery_run_ctxt_file))
+            write(recovery_run_ctxt_id,*)run_status
+            write(recovery_run_ctxt_id,*)nb_iteration_remaining
+            close(recovery_run_ctxt_id)
+
+        end if
+        chrono_t(4) = MPI_WTIME()
+
+        chrono_dt(1)=chrono_t(2)-chrono_t(1)
+        chrono_dt(2)=chrono_t(3)-chrono_t(2)
+        chrono_dt(3)=chrono_t(4)-chrono_t(3)
+        chrono_dt(4)=chrono_t(4)-chrono_t(1)
+
+
+        call MPI_ALLREDUCE (chrono_dt(1), dt_glob(1), 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (chrono_dt(2), dt_glob(2), 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (chrono_dt(3), dt_glob(3), 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (chrono_dt(4), dt_glob(4), 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
+
+        if (nrank==0) write(*,*)'save_checkpoint details : ', dt_glob(1:3)
+        if (nrank==0) write(*,*)'save_checkpoint : ', dt_glob(4)
+
+    end subroutine save_checkpoint
+
+    subroutine exit_properly()
+
+        use file_copy
+
+        implicit none
+        real*8  :: time_per_it
+
+        t2 = MPI_WTIME()
+
+        t02=t2-t0
+        t12=t2-t1
+        call MPI_ALLREDUCE (t02, t02_glob, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (t12, t12_glob, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
+
+        time_per_it=t12_glob/((last_it-first_it+1)-nb_iteration_remaining)
+
+        if(nrank==0) write(*,*)
+        if(nrank==0) write(*,*)'Nb de procs:', nproc
+        if(nrank==0) write(*,*)'Temps execution:', t02_glob
+        if(nrank==0) write(*,*)'Temps boucle:', t12_glob
+        if(nrank==0) write(*,*)'Temps par it:', time_per_it
+
+        ! Freeing Memory --------------------------------------------------
+        ! Local arrays
+        deallocate(q3_x)
+        deallocate(q2_x)
+        deallocate(q1_x)
+
+        deallocate(q3_y)
+        deallocate(q2_y)
+        deallocate(q1_y)
+
+        deallocate(q3_z)
+        deallocate(q2_z)
+        deallocate(q1_z)
+
+        deallocate(pr_x)
+        deallocate(pr_y)
+        deallocate(pr_z)
+
+        deallocate(q1_wall20)
+        deallocate(q2_wall20)
+        deallocate(q3_wall20)
+
+        deallocate(q1_wall21)
+        deallocate(q2_wall21)
+        deallocate(q3_wall21)
+
+        call MPI_BARRIER(MPI_COMM_WORLD , mpi_err)
+        call MPI_FINALIZE(mpi_err)
+
+    end subroutine exit_properly
+
+
+end
+
+
+
+

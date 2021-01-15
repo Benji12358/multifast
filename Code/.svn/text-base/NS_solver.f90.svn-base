@@ -1,0 +1,1529 @@
+module NS_solver
+
+    use schemes3D_interface
+    use time_schemes
+    use physical_fields
+    use scalar_datas
+    use boundaries
+    use mesh
+
+    use irregular_derivative_coefficients
+    use DNS_settings
+    use poisson_020_solver, poisson_020_init=>init
+    use poisson_interface
+    use lamballais_transfo
+
+    use IO_handler
+    use workspace_view
+
+    use decomp_2d
+    use mpi
+
+    implicit none
+    logical     :: previousRHS_are_available=.false.
+
+    ! Navier-stokes equation coefficients
+    real*8      :: diff21_coef, diff22_coef
+    real*8      :: diff1_coef, diff2_coef , diff3_coef
+    real*8      :: conv1_coef, conv2_coef, conv3_coef
+    real*8      :: gradP1_coef, gradP2_coef, gradP3_coef
+
+    real*8, dimension(:,:,:), allocatable       :: p13_z, p13_y, p13_x
+    real*8, dimension(:,:,:), allocatable       :: p12_y, p12_x
+    real*8, dimension(:,:,:), allocatable       :: p23_z, p23_y
+
+
+    real*8, dimension(:,:,:), allocatable     :: RHS1_x, RHS1_y, RHS1_z
+    real*8, dimension(:,:,:), allocatable     :: RHS2_x, RHS2_y, RHS2_z
+    real*8, dimension(:,:,:), allocatable     :: RHS3_x, RHS3_y, RHS3_z
+
+    real*8, dimension(:,:,:), allocatable     :: gradP1_x
+    real*8, dimension(:,:,:), allocatable     :: gradP2_x, gradP2_y
+    real*8, dimension(:,:,:), allocatable     :: gradP3_x, gradP3_y, gradP3_z
+
+
+    real*8, dimension(:,:,:), allocatable     :: previousRHS1_x
+    real*8, dimension(:,:,:), allocatable     :: previousRHS2_x
+    real*8, dimension(:,:,:), allocatable     :: previousRHS3_x
+
+
+    real*8, dimension(:,:,:), allocatable     :: q1_save, q2_save, q3_save
+
+    ! Only update_velocity is callable from the outside
+    public :: update_velocity, init, saveRHS, spread_to_all_pencil
+    private
+
+    real*8  :: al,gam,rom
+    logical :: first_time_advancement=.true.
+
+contains
+
+    subroutine init()
+
+        use workspace_view, only: recovery_RHS_dir
+        use numerical_methods_settings
+        use poisson_generic_solver
+
+        implicit none
+
+        ! Poisson solver initialization
+        if (use_generic_poisson) then
+            call poisson_init(n1,n2,n3, BC1, BC2, BC3, L1, L2, L3, istret, alpha, beta, 1)
+            call generic_poisson_infos
+        else
+            call poisson_020_init
+        end if
+        !call generic_poisson_infos
+
+        ! RHS arrays allocations
+        allocate(RHS1_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(RHS2_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(RHS3_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(gradP1_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(gradP2_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(gradP3_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+
+        allocate(RHS1_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        allocate(RHS2_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        allocate(RHS3_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        allocate(gradP2_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        allocate(gradP3_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+
+        allocate(RHS1_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        allocate(RHS2_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        allocate(RHS3_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        allocate(gradP3_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+
+
+        allocate(previousRHS1_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(previousRHS2_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(previousRHS3_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+
+
+        allocate(q1_save(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(q2_save(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(q3_save(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+
+        RHS1_x=0.d0
+        RHS2_x=0.d0
+        RHS3_x=0.d0
+        gradP1_x=0.d0
+        gradP2_x=0.d0
+        gradP3_x=0.d0
+        previousRHS1_x=0.d0
+        previousRHS2_x=0.d0
+        previousRHS3_x=0.d0
+
+        RHS1_y=0.d0
+        RHS2_y=0.d0
+        RHS3_y=0.d0
+        gradP2_y=0.d0
+        gradP3_y=0.d0
+
+        RHS1_z=0.d0
+        RHS2_z=0.d0
+        RHS3_z=0.d0
+        gradP3_z=0.d0
+
+        inquire( file=trim(recovery_RHS_dir)//"/RHS1.h5", exist=previousRHS_are_available)
+        if (previousRHS_are_available) then
+            call read_previousRHS
+        end if
+
+
+        ! Cross quantities array allocation
+        allocate(p13_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        allocate(p23_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+
+        allocate(p23_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        allocate(p13_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        allocate(p12_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+
+        allocate(p13_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(p12_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+
+        p13_z=0.d0
+        p23_z=0.d0
+        p23_y=0.d0
+        p13_y=0.d0
+        p12_y=0.d0
+        p13_x=0.d0
+        p12_x=0.d0
+
+
+    contains
+
+        subroutine read_previousRHS()
+
+
+            use IO_handler
+            use HDF5_IO
+
+            implicit none
+            character(200)    :: file_path
+
+            file_path=trim(recovery_RHS_dir)//"/RHS1"
+            call hdf_read_3Dfield(file_path, previousRHS1_x, "RHS1", nx_global,ny_global,nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+
+            file_path=trim(recovery_RHS_dir)//"/RHS2"
+            call hdf_read_3Dfield(file_path, previousRHS2_x, "RHS2", nx_global,ny_global,nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+
+
+            file_path=trim(recovery_RHS_dir)//"/RHS3"
+            call hdf_read_3Dfield(file_path, previousRHS3_x, "RHS3", nx_global,ny_global,nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+
+
+        end subroutine read_previousRHS
+
+    end subroutine init
+
+
+    ! This subroutine transpose all physical quantities. Theses quantities must been known for all sub-domains
+    ! orientations.
+    ! At entry:
+    !   - U, Pr     must be in      Z-configuration
+    !   - V         must be in      Y-configuration
+    !   - W         must be in      X-configuration
+
+    subroutine spread_to_all_pencil(q3z, q2y, q1x, prx)
+
+        use physical_fields
+        implicit none
+
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)), intent(in)    :: q3z
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent(in)    :: q2y
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in)    :: q1x
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in)    :: prx
+
+        call transpose_z_to_y(q3z, q3_y)
+        call transpose_y_to_x(q3_y, q3_x)
+
+        call transpose_y_to_z(q2y, q2_z)
+        call transpose_y_to_x(q2_y, q2_x)
+
+        call transpose_x_to_y(q1x, q1_y)
+        call transpose_y_to_z(q1_y, q1_z)
+
+        call transpose_x_to_y(prx, pr_y)
+        call transpose_y_to_z(pr_y, pr_z)
+
+    end subroutine spread_to_all_pencil
+
+    subroutine update_velocity(ntime)
+        use velocity_analyzer
+        use numerical_methods_settings
+        use BC_controller
+        use IBM_settings
+        use inflow_settings
+        use inout_flow
+        use IBM_data
+        use IBM
+        use mpi
+        implicit none
+        integer :: ns
+        integer :: ntime
+        integer :: i,j,k,s, mpi_err
+        real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: dpdy_old, dpdz_old
+        real*8  :: errorsum, errorsum_glob, divy_mean
+
+        !***********************************************************
+        !******************  CORE OF THE DNS ***********************
+        !***********************************************************
+
+
+        !   Time integration implicit viscous
+        !   if nb_substep=1 Adams-Bashfort if nb_substep=3 Runge-Kutta
+        do ns=1,nb_substep
+
+            if (nrank==0) write(*,*)'SCHEMES3D'
+
+            call set_time_coeffs
+            call set_NS_coeffs
+
+            ! ****************  RHS COMPUTATION ************************
+            ! Obtention of û*, v*, w*
+            call perform_velocity_products
+            call perform_RHS
+
+            if(streamwise==3)  call channel3
+            if(streamwise==1)  call channel1
+
+            !!write(*,*)'C0: GRADP1', sum(gradP1_x)
+
+            ! Transpositions
+
+            call transpose_z_to_y(gradP3_z, gradP3_y)
+            call transpose_y_to_x(gradP3_y, gradP3_x)
+
+            call transpose_y_to_x(gradP2_y, gradP2_x)
+
+            if (BC1==OPEN2) then
+                call get_inflow(ntime, ns)
+                call outflowing()
+            endif
+
+            ! ******************  UPDATE VELOCITY **********************
+
+
+            ! RHS=(Non linear terms + Diffusive terms)
+            ! PreviousRHS = RHS(n-1) - grad(P)*al/rom
+            call perform_intermediate_velocity
+
+            q1_save=q1_x
+            q2_save=q2_x
+            q3_save=q3_x
+
+            ! Now the RHS array are used as working array-----------------------------------------------
+
+            !  VELOCITY CORRECTION
+
+            !  RHS3 becomes divergence(q)/(al*dt) (= laplacien (phi))
+            if (BC1==OPEN2) call pre_correc1(al*dt)
+
+
+            do s = 1, 1
+
+                dpdy_old=dphidx2_x(n1-1,:,:)
+
+                if (BC1==OPEN2) call pre_correc2(al*dt)
+
+                call transpose_x_to_y(q2_x, q2_y)
+
+                call transpose_x_to_y(q3_x, q3_y)
+                call transpose_y_to_z(q3_y, q3_z)
+
+                ! Applying the boundary condition
+                call apply_BC2
+                call apply_BC1(ntime)
+
+                call perform_divergence(RHS3_z, q3_z, q2_y, q1_x)
+                if (use_generic_poisson) then
+                    call poisson_execute(RHS3_z)
+
+                else
+                    call solve_Poisson(RHS3_z, RHS2_z)
+                    RHS3_z=RHS2_z
+                end if
+
+                ! Correct velocity and update pressure
+                call perform_gradp(RHS3_z, al*dt)
+
+                errorsum=sum(abs(dpdy_old-dphidx2_x(n1-1,:,:)))
+
+                call MPI_ALLREDUCE(errorsum,errorsum_glob,1,MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
+                if (nrank==0) write(*,*) 'ERROR GRADP:', s, errorsum_glob
+
+            end do
+
+            call correct_velocity(RHS3_z, al*dt)
+
+            dp_z=RHS3_z/(al*dt)
+            call transpose_z_to_y(dp_z, dp_y)
+            call transpose_y_to_x(dp_y, dp_x)
+            call perform_divergence(divu2_z, q3_z, q2_y, q1_x, divy_mean)
+            if (nrank==0) write(*,*) 'divy_mean', divy_mean
+            call transpose_z_to_y(divu2_z, divu2_y)
+            call transpose_y_to_x(divu2_y, divu2_x)
+
+
+            call spread_to_all_pencil(q3_z, q2_y, q1_x, pr_x)
+
+            if (outflow_buff>0) call add_outflow(ntime, ns)
+
+        enddo
+
+        return
+
+    contains
+
+        subroutine set_time_coeffs()
+
+            if (first_time_advancement) then
+
+                if (previousRHS_are_available) then
+
+                    gam=ga(ns)
+                    rom=ro(ns)
+
+                else
+                    gam=1.d0
+                    rom=0.d0
+
+                end if
+
+            else
+                gam=ga(ns)
+                rom=ro(ns)
+
+            end if
+
+            first_time_advancement=.false.
+
+            al=gam+rom
+
+        end subroutine set_time_coeffs
+
+        subroutine set_NS_coeffs()
+
+            diff21_coef=dx2*ren
+
+            diff1_coef=dx1*sqrt(ren)
+            diff22_coef=dx2*sqrt(ren)
+            diff2_coef=dx2*sqrt(ren)
+            diff3_coef=dx3*sqrt(ren)
+
+            conv1_coef=-dx1
+            conv2_coef=-dx2
+            conv3_coef=-dx3
+
+            gradP1_coef=-dx1/al
+            gradP2_coef=-dx2/al
+            gradP3_coef=-dx3/al
+
+        end subroutine set_NS_coeffs
+
+    end subroutine
+
+    subroutine outflowing()
+        use MPI
+        use DNS_settings
+        implicit none
+        integer, save   :: nb=1
+        integer, parameter  :: outflow_type=6
+        real*8          :: q1max, q1min, q1max_g, q1min_g, a1,a2
+        integer         :: n2s,n2e, n3s,n3e, j,k, mpi_err
+        real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: cx, cx1, cx2, cx3
+        real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: conv1, conv2, conv3
+        real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: diff1, diff2, diff3
+        real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: diff1c, diff2c, diff3c
+        real*8, dimension(:,:), allocatable, save :: diff1o, diff2o, diff3o
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)) :: diff13, diff23, diff33
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: diff12, diff22, diff32
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: diff13y, diff23y, diff33y
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: diff12x, diff22x, diff32x, diff13x, diff23x, diff33x
+
+        diff1=0.d0
+        diff2=0.d0
+        diff3=0.d0
+
+        nb=nb+1
+
+        if (outflow_type==1) then
+            cx1=dt/dx1
+            cx2=cx1
+            cx3=cx1
+        endif
+
+        if (outflow_type==2) then
+            q1min=1000.d0
+            q1max=-1000.d0
+
+            do k=xstart(3),min(xend(3), n3-1)
+                do j=xstart(2),min(xend(2), n2-1)
+                    if(q1min>q1_x(n1-1, j,k)) q1min=q1_x(n1-1, j,k)
+                    if(q1max<q1_x(n1-1, j,k)) q1max=q1_x(n1-1, j,k)
+                enddo
+            enddo
+
+            call MPI_ALLREDUCE(q1min,q1min_g,1,MPI_DOUBLE_PRECISION, MPI_MIN, MPI_COMM_WORLD, mpi_err)
+            call MPI_ALLREDUCE(q1max,q1max_g,1,MPI_DOUBLE_PRECISION, MPI_MAX, MPI_COMM_WORLD, mpi_err)
+
+            cx1=0.5d0*(q1max_g+q1min_g)*dt/dx1
+            cx2=cx1
+            cx3=cx1
+
+        endif
+
+        if (outflow_type==3) call perform_cx
+        if (outflow_type==4) call perform_cx2
+        if (outflow_type==5) then
+            call perform_cx2
+            if(nb>10) then
+                !call print_conv
+                call perform_diff !call check_diff
+            endif
+        endif
+        if (outflow_type==6) then
+            call perform_cx3
+            call perform_diff
+        endif
+
+        call perform_conv
+
+        n2s=xstart(2)
+        n3s=xstart(3)
+        n2e=xend(2)
+        n3e=xend(3)
+
+        do k=n3s,n3e
+            do j=n2s,n2e
+                q1_x(n1,j,k)=q1_x(n1,j,k)+conv1(j,k)+diff1(j,k)*dt
+                q1_wall11(j,k)=q1_x(n1,j,k)
+                q2_x(n1-1,j,k)=q2_x(n1-1,j,k)+conv2(j,k)+diff2(j,k)*dt
+                q3_x(n1-1,j,k)=q3_x(n1-1,j,k)+conv3(j,k)+diff3(j,k)*dt
+            enddo
+        enddo
+
+    contains
+
+        subroutine perform_diff()
+            use boundary_scheme
+            use snapshot_writer
+            implicit none
+            integer :: i,j,k
+
+            if (.not. allocated(diff1o)) then
+                allocate(diff1o(xstart(2):xend(2), xstart(3):xend(3)))
+                allocate(diff2o(xstart(2):xend(2), xstart(3):xend(3)))
+                allocate(diff3o(xstart(2):xend(2), xstart(3):xend(3)))
+
+                diff1o=0.d0
+                diff2o=0.d0
+                diff3o=0.d0
+            endif
+
+            call D2c_3Dz(q1_z, diff13, zsize(1),zsize(1),zsize(2),zsize(2),n3, diff3_coef, .true., NS_Q1_BC3)
+            call D2c_3Dz(q2_z, diff23, zsize(1),zsize(1),zsize(2),zsize(2),n3, diff3_coef, .true., NS_Q2_BC3)
+            call D2c_3Dz(q3_z, diff33, zsize(1),zsize(1),zsize(2),zsize(2),n3, diff3_coef, .true., NS_Q3_BC3)
+
+            do k = ystart(3), yend(3)
+                do i = ystart(1), yend(1)
+                    diff12(i,1,k)=( q1_y(i,2,k)*a3_d + q1_y(i,1,k)*a2_d + q1_wall20(i,k)*a1_d)            /diff2_coef**2
+                    diff12(i,n2m,k)=( q1_y(i,n2m-1,k)*a1_u + q1_y(i,n2m,k)*a2_u + q1_wall21(i,k)*a3_u ) /diff2_coef**2
+
+                    diff32(i,1,k)=( q3_y(i,2,k)*a3_d + q3_y(i,1,k)*a2_d + q3_wall20(i,k)*a1_d )           /diff2_coef**2
+                    diff32(i,n2m,k)=( q3_y(i,n2m-1,k)*a1_u + q3_y(i,n2m,k) *a2_u + q3_wall21(i,k)*a3_u) /diff2_coef**2
+                end do
+            end do
+
+            call D1c_MULT_3Dy(q1_y, diff12, ysize(1),ysize(1),n2,ysize(3),ysize(3), diff21_coef, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,1))
+            call D2c_MULTACC_3Dy(q1_y, diff12, ysize(1),ysize(1),n2,ysize(3),ysize(3), diff22_coef, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,2))
+
+            call D1c_MULT_3Dy(q2_y, diff22, ysize(1),ysize(1),n2,ysize(3),ysize(3), diff21_coef, .false., NS_Q2_BC2, Y_to_YTr_for_D2(:,1))
+            call D2c_MULTACC_3Dy(q2_y, diff22, ysize(1),ysize(1),n2,ysize(3),ysize(3), diff22_coef, .false., NS_Q2_BC2, Y_to_YTr_for_D2(:,2))
+
+            call D1c_MULT_3Dy(q3_y, diff32, ysize(1),ysize(1),n2,ysize(3),ysize(3), diff21_coef, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,1))
+            call D2c_MULTACC_3Dy(q3_y, diff32, ysize(1),ysize(1),n2,ysize(3),ysize(3), diff22_coef, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,2))
+
+            call transpose_z_to_y(diff13, diff13y)
+            call transpose_z_to_y(diff23, diff23y)
+            call transpose_z_to_y(diff33, diff33y)
+
+
+            call transpose_y_to_x(diff13y, diff13x)
+            call transpose_y_to_x(diff23y, diff23x)
+            call transpose_y_to_x(diff33y, diff33x)
+
+            call transpose_y_to_x(diff12, diff12x)
+            call transpose_y_to_x(diff22, diff22x)
+            call transpose_y_to_x(diff32, diff32x)
+
+
+            diff1c=diff13x(n1,:,:)+diff12x(n1,:,:)
+            diff2c=diff23x(n1-1,:,:)+diff22x(n1-1,:,:)
+            diff3c=diff33x(n1-1,:,:)+diff32x(n1-1,:,:)
+
+            diff1=gam*diff1c+rom*diff1o
+            diff2=gam*diff2c+rom*diff2o
+            diff3=gam*diff3c+rom*diff3o
+
+            diff1o=diff1c
+            diff2o=diff2c
+            diff3o=diff3c
+
+
+        end subroutine perform_diff
+
+        subroutine perform_conv()
+            use snapshot_writer
+            implicit none
+            real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: conv1c, conv2c, conv3c
+            real*8, dimension(:,:), allocatable, save :: conv1o, conv2o, conv3o
+
+            if (.not. allocated(conv1o)) then
+                allocate(conv1o(xstart(2):xend(2), xstart(3):xend(3)))
+                allocate(conv2o(xstart(2):xend(2), xstart(3):xend(3)))
+                allocate(conv3o(xstart(2):xend(2), xstart(3):xend(3)))
+
+                conv1o=0.d0
+                conv2o=0.d0
+                conv3o=0.d0
+            endif
+
+
+                do k=xstart(3),min(xend(3), n3-1)
+                    do j=xstart(2),min(xend(2), n2-1)
+                        conv1c(j,k)=-cx1(j,k)*(q1_x(n1,j,k)-q1_x(n1-1,j,k))
+                        conv2c(j,k)=-cx2(j,k)*(q2_x(n1-1,j,k)-q2_x(n1-2,j,k))
+                        conv3c(j,k)=-cx3(j,k)*(q3_x(n1-1,j,k)-q3_x(n1-2,j,k))
+                    enddo
+                enddo
+
+            conv1=gam*conv1c+rom*conv1o
+            conv2=gam*conv2c+rom*conv2o
+            conv3=gam*conv3c+rom*conv3o
+
+            conv1o=conv1c
+            conv2o=conv2c
+            conv3o=conv3c
+
+
+        end subroutine perform_conv
+
+        subroutine perform_cx()
+            implicit none
+            real*8  :: num, den
+
+            do k=xstart(3),min(xend(3), n3-1)
+                do j=xstart(2),min(xend(2), n2-1)
+
+                    cx1(j,k)=sum(q1_x(3:n1-4, j,k))
+                    cx1(j,k)=cx1(j,k)/(n1-6)
+                    cx1(j,k)=cx1(j,k)*dt/dx1
+
+                enddo
+            enddo
+
+            cx2=cx1
+            cx3=cx1
+
+        end subroutine
+
+        subroutine perform_cx2()
+            implicit none
+            real*8  :: num, den
+
+            do k=xstart(3),min(xend(3), n3-1)
+                do j=xstart(2),min(xend(2), n2-1)
+
+                    cx1(j,k)=q1_x(n1-1, j,k)
+                    cx1(j,k)=cx1(j,k)*dt/dx1
+
+                enddo
+            enddo
+
+            cx2=cx1
+            cx3=cx1
+
+        end subroutine
+
+        subroutine perform_cx3()
+            implicit none
+            integer :: i
+            real*8  :: num, den
+            real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)) :: q1_13
+            real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: q1_12, q1_13y
+            real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: q1_12_x, q1_13_x
+
+
+            q1_12(:,1,:)=0.d0
+            q1_12(:,n2,:)=0.d0
+            call D0ssh_3Dy(q1_y, q1_12, ysize(1),ysize(1),n2,ysize(3),ysize(3), NS_Q1_BC2)
+            call D0ssh_3Dz(q1_z, q1_13, zsize(1),zsize(1),zsize(2),zsize(2),n3, NS_Q1_BC3)
+
+            call transpose_z_to_y(q1_13, q1_13y)
+            call transpose_y_to_x(q1_13y, q1_13_x)
+
+            call transpose_y_to_x(q1_12, q1_12_x)
+
+            do k=xstart(3),min(xend(3), n3-1)
+                do j=xstart(2),min(xend(2), n2-1)
+
+                    cx1(j,k)=q1_x(n1-1, j,k)
+                    cx2(j,k)=q1_12_x(n1-1, j,k)
+                    cx3(j,k)=q1_13_x(n1-1, j,k)
+
+                    cx1(j,k)=cx1(j,k)*dt/dx1
+                    cx2(j,k)=cx2(j,k)*dt/dx1
+                    cx3(j,k)=cx3(j,k)*dt/dx1
+
+                enddo
+            enddo
+
+        end subroutine
+
+    end subroutine
+    ! ________________________________________________________________________________________
+    !  ****************************** subrout correct_velocity  **********************
+    !  This subroutine calculate the solenoidal velocity field
+    !       q(n+1)=qhat-grad(RHS2)*dt ,  pr=RHS2
+    !  A third order runge-kutta or Adam Bashforth schemes can be used.
+
+    !    The pressure is evaluated at the center of the box
+    !    at the near boundary cells Newman B.C for RHS2 are assumed
+    !    pre=pressure. RHS2=phi
+
+    !     n+1    n
+    !    p    = p  + RHS2 + alpha*dt/Reynolds * laplacien(RHS2)     {eq 8.9 p149 ORLANDI}
+    ! ________________________________________________________________________________________
+
+    subroutine correct_velocity(dph_z, aldt)
+        use numerical_methods_settings
+
+        implicit none
+
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))      :: dph_z
+        real*8                                                                          :: aldt
+
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))      :: dph_x
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))      :: dph_y
+        integer ::k,j,i
+
+
+        ! Z ------------------------------------------------------------------------
+
+        ! U correction
+        !do j = 1, n2m
+        do j = zstart(2), min(n2m, zend(2))
+            do i=zstart(1), min(n1m, zend(1))
+                q3_z(i,j,:)=q3_z(i,j,:)-dphidx3_z(i,j,:)*aldt
+            enddo
+        enddo
+
+
+        ! Y ------------------------------------------------------------------------
+        call transpose_z_to_y(dph_z, dph_y)
+
+        ! V correction
+
+        !do k=1,n3m
+        do k=ystart(3), min(n3m, yend(3))
+            !do i=1,n1m
+            do i=ystart(1), min(n1m, yend(1))
+                q2_y(i,:,k)=q2_y(i,:,k)-dphidx2_y(i,:,k)*aldt
+            enddo
+        enddo
+
+        ! X ------------------------------------------------------------------------
+        call transpose_y_to_x(dph_y, dph_x)
+        call transpose_y_to_x(dphidx2_y, dphidx2_x)
+
+        do k=xstart(3), min(n3m, xend(3))
+
+            !do j=1,n2m
+            do j=xstart(2), min(n2m, xend(2))
+                q1_x(:,j,k)=q1_x(:,j,k)-dphidx1_x(:,j,k)*aldt
+
+                pr_x(:,j,k)=0.d0!pr_x(:,j,k) + dph_x(:,j,k)/aldt
+
+            enddo
+        enddo
+
+        return
+    end subroutine
+
+    subroutine perform_gradp(dph_z, aldt)
+
+        use numerical_methods_settings
+        use schemes_interface
+        implicit none
+
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))      :: dph_z
+        real*8                                                                          :: aldt
+
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))      :: dph_x
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))      :: dph_y
+        integer ::k,j,i, n1e, n2e, n3e
+
+        n1e=(min(n1m, zend(1))-zstart(1))+1
+        n2e=(min(n2m, zend(2))-zstart(2))+1
+        call D1ssh_3Dz(dph_z, dphidx3_z, zsize(1),n1e,zsize(2),n2e,n3, dx3*aldt, .true., POISSON_PR_BC3)
+
+        ! Y ------------------------------------------------------------------------
+        call transpose_z_to_y(dphidx3_z, dph_y)
+        call transpose_y_to_x(dph_y, dphidx3_x)
+        call transpose_z_to_y(dph_z, dph_y)
+
+        n1e=(min(n1m, yend(1))-ystart(1))+1
+        n3e=(min(n3m, yend(3))-ystart(3))+1
+
+        ! V correction
+
+        !do k=1,n3m
+
+        if (use_generic_poisson) then
+
+            call D1ssh_MULT_3Dy(dph_y, dphidx2_y, ysize(1),n1e,n2,ysize(3),n3e, dx2*aldt, .true., POISSON_PR_BC2, Y_to_YTr_for_D1)
+
+        else    ! ONLY for channel3 flow. In this case, dirichlet boundary cond. are applied in Y direction
+
+            do k=ystart(3), min(n3m, yend(3))
+                do i=ystart(1), min(n1m, yend(1))   !do i=1,n1m
+                    call D1s_Tamm_MULT(dph_y(i,:,k), dphidx2_y(i,:,k), n2, dx2*aldt, .true., Dirichlet, Y_to_YTr_for_D1)
+                enddo
+            enddo
+
+        end if
+
+        call transpose_y_to_x(dphidx2_y, dphidx2_x)
+        call transpose_y_to_x(dph_y, dph_x)
+
+        n2e=(min(n2m, xend(2))-xstart(2))+1
+        n3e=(min(n3m, xend(3))-xstart(3))+1
+
+        ! W & Pr correction
+
+        !call D1ssh_3Dx(dph_x, dphidx1_x, n1,xsize(2),n2e,xsize(3),n3e, dx1*aldt, .true., POISSON_PR_BC1)
+
+        do k=xstart(3), min(n3m, xend(3))   !do k=1,n3m
+            do j=xstart(2), min(n2m, xend(2))   !do j=1,n2m
+                call D1s(dph_x(:,j,k), dphidx1_x(:,j,k), n1, dx1*aldt, .true., POISSON_PR_BC1)
+            enddo
+        enddo
+
+        return
+    end subroutine
+
+    !GENERIC
+    subroutine perform_RHS()
+
+        use boundary_scheme
+
+        implicit none
+
+        real*8,dimension(n3)           :: uu
+        real*8,dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))           :: q2q2_y
+        real*8,dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))           :: q3q3_z
+        real*8,dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))           :: q1q1_x
+
+        integer k,i,j, mpi_err, n1e, n2e, n3e
+
+        ! _______________________________________________________________________________________________________________________
+        ! ***********************************************************************************************************************
+        ! ****************************** Derivative along the Z direction *******************************************************
+        ! ***********************************************************************************************************************
+
+        n1e= zsize(1)!(min(n1m, zend(1))-zstart(1))+1
+        n2e=zsize(2)!(min(n2m, zend(2))-zstart(2))+1
+
+        if((BC3==NOSLIP).or.(BC3==OPEN)) call diff_at_wall_3   ! ATTENTION
+
+        call D2c_3Dz(q1_z, RHS1_z, zsize(1),n1e,zsize(2),n2e,n3, diff3_coef, .true., NS_Q1_BC3)
+        call D1s_ACC_3Dz(p13_z, RHS1_z, zsize(1),n1e,zsize(2),n2e,n3, conv3_coef, .false., NS_P13_BC3)
+        call D2c_3Dz(q2_z, RHS2_z, zsize(1),n1e,zsize(2),n2e,n3, diff3_coef, .false., NS_Q2_BC3)
+        call D2c_3Dz(q3_z, RHS3_z, zsize(1),n1e,zsize(2),n2e,n3, diff3_coef, .false., NS_Q3_BC3)
+        call D1s_ACC_3Dz(p23_z, RHS2_z, zsize(1),n1e,zsize(2),n2e,n3, conv3_coef, .false., NS_P23_BC3)
+        call D1ssh_3Dz(pr_z, gradP3_z, zsize(1),n1e,zsize(2),n2e,n3, gradP3_coef, .true., POISSON_PR_BC3)
+
+        call D0s_3Dz(q3_z, q3q3_z, zsize(1),n1e,zsize(2),n2e,n3, NS_Q3_BC3)
+        q3q3_z=q3q3_z**2
+        call D1ssh_ACC_3Dz(q3q3_z, RHS3_z, zsize(1),n1e,zsize(2),n2e,n3, conv3_coef, .true., NS_P33_BC3)
+
+        ! WARNING: A priori inutile, mais la suppression de ce code change légèrement le résultats
+        ! pour 220 (mais pas pour 020) : 2.3x10-11 apres 100 i => POURQUOI ???
+        do j = zstart(2), min(n2m, zend(2))     !do j=1,n2m
+            do i=zstart(1), min(n1m, zend(1))       !do i=1,n1m
+                uu(n3-1)=q3q3_z(i,j,n3-1)
+            enddo
+        enddo
+
+        ! _______________________________________________________________________________________________________________________
+        ! ***********************************************************************************************************************
+        ! ****************************** Derivative along the Y direction *******************************************************
+        ! ***********************************************************************************************************************
+
+        call transpose_z_to_y(p23_z, p23_y)
+
+        call transpose_z_to_y(RHS1_z, RHS1_y)
+        call transpose_z_to_y(RHS2_z, RHS2_y)
+        call transpose_z_to_y(RHS3_z, RHS3_y)
+
+        n1e=ysize(1)!(min(n1m, yend(1))-ystart(1))+1
+        n3e=ysize(3)!(min(n3m, yend(3))-ystart(3))+1
+
+
+        if((BC2==NOSLIP).or.(BC2==OPEN)) then
+            call diff_at_wall_2 ! implicit: NS_Q3_BC2=Dirichlet
+        endif
+
+
+        call D1c_MULTACC_3Dy(q1_y, RHS1_y, ysize(1),n1e,n2,ysize(3),n3e, diff21_coef, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,1))
+        call D2c_MULTACC_3Dy(q1_y, RHS1_y, ysize(1),n1e,n2,ysize(3),n3e, diff22_coef, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,2))
+
+        call D1c_MULTACC_3Dy(q2_y, RHS2_y, ysize(1),n1e,n2,ysize(3),n3e, diff21_coef, .false., NS_Q2_BC2, Y_to_YTr_for_D2(:,1))
+        call D2c_MULTACC_3Dy(q2_y, RHS2_y, ysize(1),n1e,n2,ysize(3),n3e, diff22_coef, .false., NS_Q2_BC2, Y_to_YTr_for_D2(:,2))
+
+        call D1c_MULTACC_3Dy(q3_y, RHS3_y, ysize(1),n1e,n2,ysize(3),n3e, diff21_coef, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,1))
+        call D2c_MULTACC_3Dy(q3_y, RHS3_y, ysize(1),n1e,n2,ysize(3),n3e, diff22_coef, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,2))
+
+        call D1s_MULTACC_3Dy(p12_y, RHS1_y, ysize(1),n1e,n2,ysize(3),n3e, conv2_coef, .false., NS_P12_BC2, Yc_to_YcTr_for_D1)
+        call D0s_3Dy(q2_y, q2q2_y, ysize(1),n1e,n2,ysize(3),n3e, NS_Q2_BC2)
+        q2q2_y=q2q2_y**2
+        call D1ssh_MULTACC_3Dy(q2q2_y, RHS2_y, ysize(1),n1e,n2,ysize(3),n3e, conv2_coef, .true., NS_P22_BC2, Y_to_YTr_for_D1)
+
+        call D1s_MULTACC_3Dy(p23_y, RHS3_y, ysize(1),n1e,n2,ysize(3),n3e, conv2_coef, .false., NS_P23_BC2, Yc_to_YcTr_for_D1)
+        call D1ssh_MULT_3Dy(pr_y, gradP2_y, ysize(1),n1e,n2,ysize(3),n3e, gradP2_coef, .true., POISSON_PR_BC2, Y_to_YTr_for_D1)
+
+        ! _______________________________________________________________________________________________________________________
+        ! ***********************************************************************************************************************
+        ! ****************************** Derivative along the X direction *******************************************************
+        ! ***********************************************************************************************************************
+
+        call transpose_z_to_y(p13_z, p13_y)
+        call transpose_y_to_x(p13_y, p13_x)
+
+        call transpose_y_to_x(p12_y, p12_x)
+
+        call transpose_y_to_x(RHS1_y, RHS1_x)
+        call transpose_y_to_x(RHS2_y, RHS2_x)
+        call transpose_y_to_x(RHS3_y, RHS3_x)
+
+        n2e=xsize(2)!(min(n2m, xend(2))-xstart(2))+1
+        n3e=xsize(3)!(min(n3m, xend(3))-xstart(3))+1
+
+        !write(*,*)'RHS A: PR:', sum(pr_x)
+        if((BC1==NOSLIP).or.(BC1==OPEN).or.(BC1==PSEUDO_PERIODIC).or.(BC1==OPEN2)) then
+            call diff_at_wall_1   ! ATTENTION
+        endif
+
+        call D0s_3Dx(q1_x, q1q1_x, n1,xsize(2),n2e,xsize(3),n3e, NS_Q1_BC1)
+        q1q1_x=q1q1_x**2
+        call D1ssh_ACC_3Dx(q1q1_x, RHS1_x, n1,xsize(2),n2e,xsize(3),n3e, conv1_coef, .true., NS_P11_BC1)
+        call D1s_ACC_3Dx(p12_x, RHS2_x, n1,xsize(2),n2e,xsize(3),n3e, conv1_coef, .false., NS_P12_BC1)
+        call D1s_ACC_3Dx(p13_x, RHS3_x, n1,xsize(2),n2e,xsize(3),n3e, conv1_coef, .false., NS_P13_BC1)
+
+        call D2c_ACC_3Dx(q1_x, RHS1_x, n1,xsize(2),n2e,xsize(3),n3e, diff1_coef, .false., NS_Q1_BC1)
+        call D2c_ACC_3Dx(q2_x, RHS2_x, n1,xsize(2),n2e,xsize(3),n3e, diff1_coef, .true., NS_Q2_BC1)
+        call D2c_ACC_3Dx(q3_x, RHS3_x, n1,xsize(2),n2e,xsize(3),n3e, diff1_coef, .true., NS_Q3_BC1)
+
+        call D1ssh_3Dx(pr_x, gradP1_x, n1,xsize(2),n2e,xsize(3),n3e, gradP1_coef, .true., POISSON_PR_BC1)
+
+        return
+
+    contains
+
+        subroutine diff_at_wall_1()
+
+            ! d2f=a1*f0 + a2*f1 + a3*f2
+            ! Regular case: down    a1=2/3, a2=-1 a3=1/3
+            ! Regular case: up      a1=1/3, a2=-1 a3=2/3
+            ! ATTENTION
+            do k=xstart(3), min(n3m, xend(3))       !do k=1,n3m
+                do j=xstart(2), min(n2m, xend(2))       !do j=1,n2m
+                    RHS2_x(1,j,k)   =RHS2_x(1,j,k)  +( q2_x(2,j,k)       /3.d0 - q2_x(1,j,k)      + q2_wall10(j,k)*2.d0/3.d0)  /diff1_coef**2
+                    RHS2_x(n1m,j,k) =RHS2_x(n1m,j,k)+( q2_x(n1m-1,j,k)   /3.d0 - q2_x(n1m,j,k)    + q2_wall11(j,k)*2.d0/3.d0 ) /diff1_coef**2
+
+                    RHS3_x(1,j,k)   =RHS3_x(1,j,k)  +( q3_x(2,j,k)       /3.d0 - q3_x(1,j,k)      + q3_wall10(j,k)*2.d0/3.d0 ) /diff1_coef**2
+                    RHS3_x(n1m,j,k) =RHS3_x(n1m,j,k)+( q3_x(n1m-1,j,k)   /3.d0 - q3_x(n1m,j,k)    + q3_wall11(j,k)*2.d0/3.d0)  /diff1_coef**2
+                enddo
+            enddo
+
+        end subroutine diff_at_wall_1
+
+        subroutine diff_at_wall_1_v2()
+
+            ! d2f=a1*f0 + a2*f1 + a3*f2
+            ! Regular case: down    a1=2/3, a2=-1 a3=1/3
+            ! Regular case: up      a1=1/3, a2=-1 a3=2/3
+            ! ATTENTION
+            RHS2_x(1,j,k)   =RHS2_x(1,j,k)  +( q2_x(2,j,k) - 2.d0*q2_x(1,j,k)   + q2_x(n1m,j,k)  )     /diff1_coef**2
+            RHS2_x(n1m,j,k) =RHS2_x(n1m,j,k)+( q2_x(1,j,k) - 2.d0*q2_x(n1m,j,k) + q2_x(n1m-1,j,k))     /diff1_coef**2
+
+            RHS3_x(1,j,k)   =RHS3_x(1,j,k)  +( q3_x(2,j,k) - 2.d0*q3_x(1,j,k)   + q3_x(n1m,j,k)  )     /diff1_coef**2
+            RHS3_x(n1m,j,k) =RHS3_x(n1m,j,k)+( q3_x(1,j,k) - 2.d0*q3_x(n1m,j,k) + q3_x(n1m-1,j,k))     /diff1_coef**2
+
+        end subroutine diff_at_wall_1_v2
+
+        subroutine diff_at_wall_2()
+
+            do k=ystart(3), min(n3m, yend(3))       !do k=1,n3m
+                do i=ystart(1), min(n1m, yend(1))       !do i=1,n1m
+
+                    RHS1_y(i,1,k)=RHS1_y(i,1,k)+( q1_y(i,2,k)*a3_d + q1_y(i,1,k)*a2_d + q1_wall20(i,k)*a1_d)            /diff2_coef**2
+                    RHS1_y(i,n2m,k)=RHS1_y(i,n2m,k)+( q1_y(i,n2m-1,k)*a1_u + q1_y(i,n2m,k)*a2_u + q1_wall21(i,k)*a3_u ) /diff2_coef**2
+
+                    RHS3_y(i,1,k)=RHS3_y(i,1,k)+( q3_y(i,2,k)*a3_d + q3_y(i,1,k)*a2_d + q3_wall20(i,k)*a1_d )           /diff2_coef**2
+                    RHS3_y(i,n2m,k)=RHS3_y(i,n2m,k)+( q3_y(i,n2m-1,k)*a1_u + q3_y(i,n2m,k) *a2_u + q3_wall21(i,k)*a3_u) /diff2_coef**2
+                enddo
+            enddo
+
+        end subroutine diff_at_wall_2
+
+        subroutine diff_at_wall_3()
+
+            ! d2f=a1*f0 + a2*f1 + a3*f2
+            ! Regular case: down    a1=2/3, a2=-1 a3=1/3
+            ! Regular case: up      a1=1/3, a2=-1 a3=2/3
+            ! ATTENTION
+
+            do j = zstart(2), min(n2m, zend(2))     !do j=1,n2m
+                do i=zstart(1), min(n1m, zend(1))       !do i=1,n1m
+                    RHS1_z(i,j,1)   =RHS1_z(i,j,1)  +( q1_z(i,j,2)       /3.d0 - q1_z(i,j,1)      + q1_wall30(i,j)*2.d0/3.d0 ) /diff3_coef**2
+                    RHS1_z(i,j,n2m) =RHS1_z(i,j,n2m)+( q1_z(i,j,n2m-1)   /3.d0 - q1_z(i,j,n2m)    + q1_wall31(i,j)*2.d0/3.d0)  /diff3_coef**2
+
+                    RHS2_z(i,j,1)   =RHS2_z(i,j,1)  +( q2_z(i,j,2)       /3.d0 - q2_z(i,j,1)      + q2_wall30(i,j)*2.d0/3.d0)  /diff3_coef**2
+                    RHS2_z(i,j,n2m) =RHS2_z(i,j,n2m)+( q2_z(i,j,n2m-1)   /3.d0 - q2_z(i,j,n2m)    + q2_wall31(i,j)*2.d0/3.d0 ) /diff3_coef**2
+                enddo
+            enddo
+
+        end subroutine diff_at_wall_3
+
+    end subroutine
+
+
+    subroutine perform_intermediate_velocity()
+        use IBM_settings
+        use IBM_data
+        use IBM
+        implicit none
+        real*8  :: RHS1i, RHS2i, RHS3i
+        integer :: i,j,k
+        integer :: n1s, n1e, n2s,n2e, n3s,n3e
+
+        !write(*,*)'A: RHS1', sum(RHS1_x)
+        !write(*,*)'A: RHS2', sum(RHS2_x)
+        !write(*,*)'A: RHS3', sum(RHS3_x)
+        !write(*,*)'A: GRADP1', sum(gradP1_x)
+        !write(*,*)'A: GRADP2', sum(gradP2_x)
+        !write(*,*)'A: GRADP3', sum(gradP3_x)
+
+        n1e=min(n1-1, xend(1))
+        n2e=min(n2-1, xend(2))
+        n3e=min(n3-1, xend(3))
+
+        if (IBM_activated) then
+
+            call apply_forcing
+
+            if (BC1==UNBOUNDED) n1s=xstart(1)
+            if (BC1/=UNBOUNDED) n1s=max(2,xstart(1))
+            n2s=xstart(2)
+            n3s=xstart(3)
+
+            do k = n3s, n3e
+                do j = n2s, n2e
+                    do i = n1s, n1e
+                        RHS1i = RHS1_x(i,j,k)*gam + previousRHS1_x(i,j,k)*rom + gradP1_x(i,j,k)
+                        q1_x(i,j,k) = q1_x(i,j,k) + RHS1i*dt + IBM_mask1(i,j,k)*(-RHS1i*dt + vel_term1(i,j,k))
+                    end do
+                end do
+            end do
+
+
+            if (BC2==UNBOUNDED) n2s=xstart(2)
+            if (BC2/=UNBOUNDED) n2s=max(2,xstart(2))
+            ! On ne touche que q2[2..n1-2]
+            if (BC1==OPEN2) then
+                n1s=2
+                n1e=n1-2
+            else
+                n1s=1
+                n1e=n1-1
+            endif
+
+            n3s=xstart(3)
+
+            do k = n3s, n3e
+                do j = n2s, n2e
+                    do i = n1s, n1e
+                        RHS2i = RHS2_x(i,j,k)*gam + previousRHS2_x(i,j,k)*rom + gradP2_x(i,j,k)
+                        q2_x(i,j,k) = q2_x(i,j,k) + RHS2i*dt + IBM_mask2(i,j,k)*(-RHS2i*dt + vel_term2(i,j,k))
+                    end do
+                end do
+            end do
+
+            if (BC3==UNBOUNDED) n3s=xstart(3)
+            if (BC3/=UNBOUNDED) n3s=max(2,xstart(3))
+
+            ! On ne touche que q3[2..n1-2]
+            if (BC1==OPEN2) then
+                n1s=2
+                n1e=n1-2
+            endif
+
+            n2s=xstart(2)
+
+            do k = n3s, n3e
+                do j = n2s, n2e
+                    do i = n1s, n1e
+                        RHS3i = RHS3_x(i,j,k)*gam + previousRHS3_x(i,j,k)*rom + gradP3_x(i,j,k)
+                        q3_x(i,j,k) = q3_x(i,j,k) + RHS3i*dt + IBM_mask3(i,j,k)*(-RHS3i*dt + vel_term3(i,j,k))
+                    end do
+                end do
+            end do
+
+        else
+
+            if (BC1==UNBOUNDED) n1s=xstart(1)
+            if (BC1/=UNBOUNDED) n1s=max(2,xstart(1))
+            n2s=xstart(2)
+            n3s=xstart(3)
+            do k = n3s, n3e
+                do j = n2s, n2e
+                    do i = n1s, n1e
+                        q1_x(i,j,k) = q1_x(i,j,k) + (RHS1_x(i,j,k)*gam + previousRHS1_x(i,j,k)*rom + gradP1_x(i,j,k))*dt
+                    end do
+                end do
+            end do
+
+
+            if (BC2==UNBOUNDED) n2s=xstart(2)
+            if (BC2/=UNBOUNDED) n2s=max(2,xstart(2))
+            ! On ne touche que q2[2..n1-2]
+            if (BC1==OPEN2) then
+                n1s=2
+                n1e=n1-2
+            else
+                n1s=1
+                n1e=n1-1
+            endif
+
+            n3s=xstart(3)
+
+            do k = n3s, n3e
+                do j = n2s, n2e
+                    do i = n1s, n1e
+                        q2_x(i,j,k) = q2_x(i,j,k) + (RHS2_x(i,j,k)*gam + previousRHS2_x(i,j,k)*rom + gradP2_x(i,j,k))*dt
+                    end do
+                end do
+            end do
+
+            if (BC3==UNBOUNDED) n3s=xstart(3)
+            if (BC3/=UNBOUNDED) n3s=max(2,xstart(3))
+
+            ! On ne touche que q3[2..n1-2]
+            if (BC1==OPEN2) then
+                n1s=2
+                n1e=n1-2
+            endif
+
+            n2s=xstart(2)
+
+            do k = n3s, n3e
+                do j = n2s, n2e
+                    do i = n1s, n1e
+                        q3_x(i,j,k) = q3_x(i,j,k) + (RHS3_x(i,j,k)*gam + previousRHS3_x(i,j,k)*rom + gradP3_x(i,j,k))*dt
+                    end do
+                end do
+            end do
+
+        end if
+        ! q3_x, q2_x and w_c contains u*,v* and w*
+
+        ! Save the current RHS for the next iteration ...
+        previousRHS1_x=RHS1_x
+        previousRHS2_x=RHS2_x
+        previousRHS3_x=RHS3_x
+
+
+
+    !write(*,*)'B: Q1', sum(q1_x)
+    !write(*,*)'B: Q2', sum(q2_x)
+    !write(*,*)'B: Q3', sum(q3_x)
+
+    end subroutine perform_intermediate_velocity
+
+
+    subroutine channel3()
+        use boundary_scheme
+
+        implicit none
+
+        real*8,dimension (n1)           :: don1
+        real*8,dimension (n2)           :: don2
+        real*8,dimension (n3)           :: don3
+        real*8,dimension (xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))          :: tmp1
+        real*8,dimension (ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))          :: tmp2
+        real*8,dimension (zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))          :: tmp3
+
+        real*8 s3tot, s3tot_glob, dp3ns
+        integer k,i,j, mpi_err, n1e, n2e, n3e
+
+        s3tot=0.d0
+
+        ! _______________________________________________________________________________________________________________________
+        ! ***********************************************************************************************************************
+        ! ****************************** Derivative along the Z direction *******************************************************
+        ! ***********************************************************************************************************************
+
+        n1e=(min(n1m, zend(1))-zstart(1))+1
+        n2e=(min(n2m, zend(2))-zstart(2))+1
+
+        ! d²q3_z/d²x
+        call D2c_3Dz(q3_z, tmp3, zsize(1),n1e,zsize(2),n2e,n3, dx3, .false., NS_Q3_BC3)
+
+        do j = zstart(2), min(n2m, zend(2))!do j=1,n2m
+            do i=zstart(1), min(n1m, zend(1))!do i=1,n1m
+                do k=1,n3m
+                    s3tot=s3tot+tmp3(i,j,k)*dx1*dx3*cell_size_Y(j)
+                enddo
+            enddo
+        enddo
+
+        n1e=(min(n1m, yend(1))-ystart(1))+1
+        n3e=(min(n3m, yend(3))-ystart(3))+1
+
+        call D1c_MULT_3Dy(q3_y, tmp2, ysize(1),n1e,n2,ysize(3),n3e, dx2, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,1))
+        call D2c_MULTACC_3Dy(q3_y, tmp2, ysize(1),n1e,n2,ysize(3),n3e, dx2, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,2))
+
+        do k=ystart(3), min(n3m, yend(3))   !do k=1,n3m
+            do i=ystart(1), min(n1m, yend(1))   !do i=1,n1m
+
+                tmp2(i,1,k)= ( q3_y(i,2,k)*a3_d + q3_y(i,1,k)*a2_d + q3_wall20(i,k)*a1_d )/dx2**2
+                tmp2(i,n2m,k)= ( q3_y(i,n2m-1,k)*a1_u + q3_y(i,n2m,k) *a2_u + q3_wall21(i,k)*a3_u)/dx2**2
+                do j = 1, n2m
+                    s3tot=s3tot+tmp2(i,j,k)*dx1*dx3*cell_size_Y(j)
+                end do
+
+            enddo
+        enddo
+
+        ! X ------------------------------------------------------------------------
+
+        n2e=(min(n2m, xend(2))-xstart(2))+1
+        n3e=(min(n3m, xend(3))-xstart(3))+1
+
+        ! d²u/d²z
+        call D2c_3Dx(q3_x, tmp1, n1,xsize(2),n2e,xsize(3),n3e, dx1, .true., NS_Q3_BC1)
+
+        do k=xstart(3), min(n3m, xend(3))   !do k=1,n3m
+            do j=xstart(2), min(n2m, xend(2))   !do j=1,n2m
+
+                if(BC1/=UNBOUNDED) then
+                    tmp1(1,j,k)  =( q3_x(2,j,k)       /3.d0 - q3_x(1,j,k)      + q3_wall10(j,k)*2.d0/3.d0 ) /dx1**2
+                    tmp1(n1m,j,k)=( q3_x(n1m-1,j,k)   /3.d0 - q3_x(n1m,j,k)    + q3_wall11(j,k)*2.d0/3.d0)  /dx1**2
+                endif
+
+                do i=1,n1m
+                    s3tot=s3tot+tmp1(i,j,k)*dx1*dx3*cell_size_Y(j)
+                enddo
+
+            enddo
+        enddo
+
+        call MPI_ALLREDUCE (s3tot, s3tot_glob, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+
+
+        dp3ns=s3tot_glob/(2.d0*L1*L3*ren)
+        gradP3_z=gradP3_z-dp3ns*al
+
+
+        return
+    end subroutine
+
+
+    subroutine channel1()
+
+        use boundary_scheme
+
+        implicit none
+
+        real*8,dimension (n1)           :: don1
+        real*8,dimension (n2)           :: don2
+        real*8,dimension (n3)           :: don3
+        real*8,dimension (xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))          :: tmp1
+        real*8,dimension (ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))          :: tmp2
+        real*8,dimension (zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))          :: tmp3
+
+        real*8 s1tot, s1tot_glob, dp1ns
+        integer k,i,j, mpi_err, n1e, n2e, n3e
+
+        s1tot=0.d0
+        tmp1=0.d0
+        tmp2=0.d0
+        tmp3=0.d0
+
+        ! _______________________________________________________________________________________________________________________
+        ! ***********************************************************************************************************************
+        ! ****************************** Derivative along the Z direction *******************************************************
+        ! ***********************************************************************************************************************
+
+        !do j=1,n2m
+        if (NS_Q1_BC3/=periodic) then
+
+            n1e=(min(n1m, zend(1))-zstart(1))+1
+            n2e=(min(n2m, zend(2))-zstart(2))+1
+
+            call D2c_3Dz(q1_z, tmp3, zsize(1),n1e,zsize(2),n2e,n3, dx3, .false., NS_Q1_BC3)
+
+            do j = zstart(2), min(n2m, zend(2))
+                do i=zstart(1), min(n1m, zend(1))   !do i=1,n1m
+
+                    do k=1,n3m
+                        s1tot=s1tot+don3(k)*dx1*dx3*cell_size_Y(j)
+                    enddo
+
+                enddo
+            enddo
+
+        endif
+
+
+
+        n1e=(min(n1m, yend(1))-ystart(1))+1
+        n3e=(min(n3m, yend(3))-ystart(3))+1
+
+        call D1c_MULT_3Dy(q1_y, tmp2, ysize(1),n1e,n2,ysize(3),n3e, dx2, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,1))
+        call D2c_MULTACC_3Dy(q1_y, tmp2, ysize(1),n1e,n2,ysize(3),n3e, dx2, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,2))
+
+        do k=ystart(3), min(n3m, yend(3))   !do k=1,n3m
+            do i=ystart(1), min(n1m, yend(1))   !do i=1,n1m
+
+                tmp2(i,1,k)= ( q1_y(i,2,k)*a3_d + q1_y(i,1,k)*a2_d + q1_wall20(i,k)*a1_d )/dx2**2
+                tmp2(i,n2m,k)= ( q1_y(i,n2m-1,k)*a1_u + q1_y(i,n2m,k) *a2_u + q1_wall21(i,k)*a3_u)/dx2**2
+                do j = 1, n2m
+                    s1tot=s1tot+tmp2(i,j,k)*dx1*dx3*cell_size_Y(j)
+                end do
+
+            enddo
+        enddo
+
+        ! X ------------------------------------------------------------------------
+
+        n2e=(min(n2m, xend(2))-xstart(2))+1
+        n3e=(min(n3m, xend(3))-xstart(3))+1
+
+        call D2c_3Dx(q1_x, tmp1, n1,xsize(2),n2e,xsize(3),n3e, dx1, .false., NS_Q1_BC1)
+
+        do k=xstart(3), min(n3m, xend(3))   !do k=1,n3m
+            do j=xstart(2), min(n2m, xend(2))   !do j=1,n2m
+
+                do i=1,n1m
+                    s1tot=s1tot+tmp1(i,j,k)*dx1*dx3*cell_size_Y(j)
+                enddo
+
+            enddo
+        enddo
+
+        if(isnan(s1tot)) then
+            write(*,*)'proc C', nrank
+            write(*,*)'channel D: s1tot', s1tot
+            write(*,*)'channel D: Q1', sum(q1_x), dx1, NS_Q1_BC1
+            write(*,*)'channel D: x3', xstart(3), xend(3)
+            write(*,*)'channel D: x2', xstart(2), xend(2)
+
+            call exit
+
+        endif
+
+        call MPI_ALLREDUCE (s1tot, s1tot_glob, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+
+        dp1ns=s1tot_glob/(2.d0*L1*L3*ren)
+        gradP1_x=gradP1_x-dp1ns*al
+
+
+        return
+    end subroutine
+
+    subroutine pre_correc1(aldt)
+        implicit none
+        real*8      :: ut1, ut11
+        real*8      :: ut, utt, aldt
+        integer     :: j, k
+        integer     :: mpi_err
+
+        ut1=0.d0
+        do k=xstart(3),min(xend(3),n3-1)
+            do j=xstart(2),min(xend(2),n2-1)
+                ut1=ut1+q1_x(1,j,k)*(Y(j+1)-Y(j))*dx3
+            enddo
+        enddo
+
+        call MPI_ALLREDUCE(ut1, ut11, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
+        ut11=ut11/(L3*L2)
+
+        ut=0.d0
+        do k=xstart(3),min(xend(3),n3-1)
+            do j=xstart(2),min(xend(2),n2-1)
+                ut=ut+q1_x(n1,j,k)*(Y(j+1)-Y(j))*dx3
+            enddo
+        enddo
+
+        call MPI_ALLREDUCE(ut, utt, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
+        utt=utt/(L3*L2)
+
+        if (nrank==0) print *,'A: FLOW RATE I/O',ut11,utt
+
+        do k=xstart(3),min(xend(3),n3-1)
+            do j=xstart(2),min(xend(2),n2-1)
+                q1_x(n1,j,k)=q1_x(n1,j,k)*ut11/utt
+            enddo
+        enddo
+
+
+
+
+
+
+        ut=0.d0
+        do k=xstart(3),min(xend(3),n3-1)
+            do j=xstart(2),min(xend(2),n2-1)
+                ut=ut+q1_x(n1,j,k)*(Y(j+1)-Y(j))*dx3
+            enddo
+        enddo
+        call MPI_ALLREDUCE(ut, utt, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
+        utt=utt/(L3*L2)
+        if (nrank==0) print *,'B: FLOW RATE I/O',ut11,utt
+
+    end subroutine pre_correc1
+
+    subroutine pre_correc2(aldt)
+        use IBM_settings
+        use IBM_data
+        implicit none
+        real*8      :: ut1, ut11
+        real*8      :: ut, utt, aldt
+        integer     :: i, j, k
+        integer     :: mpi_err
+
+
+
+        ! k: 1->n3-1 (periodique
+        ! j: 1->n2-1
+        do k=xstart(3),min(xend(3),n3-1)
+            do j=xstart(2),min(xend(2),n2-1)
+
+                if (IBM_activated) then
+
+                    do i = 2, n1-1
+                        q1_x(i,j,k)=q1_save(i,j,k)+IBM_mask1(i,j,k)*dphidx1_x(i,j,k)*aldt
+                    end do
+
+                endif
+            enddo
+        enddo
+
+        ! k: 1->n3-1
+        ! j: 2->n2-1 (Dirichlet)
+        do k=xstart(3),min(xend(3),n3-1)
+            do j=max(2,xstart(2)),min(xend(2),n2-1)
+                q2_x(n1-1,j,k)=q2_save(n1-1,j,k)+dphidx2_x(n1-1,j,k)*aldt
+                q2_x(1,j,k)=q2_save(1,j,k)+dphidx2_x(1,j,k)*aldt
+
+                if (IBM_activated) then
+
+                    do i = 2, n1-2
+                        q2_x(i,j,k)=q2_save(i,j,k)+IBM_mask2(i,j,k)*dphidx2_x(i,j,k)*aldt
+                    end do
+
+                endif
+
+            enddo
+        enddo
+
+        ! k: 1->n3-1 (periodique
+        ! j: 1->n2-1
+        do k=xstart(3),min(xend(3),n3-1)
+            do j=xstart(2),min(xend(2),n2-1)
+                q3_x(n1-1,j,k)=q3_save(n1-1,j,k)+dphidx3_x(n1-1,j,k)*aldt
+                q3_x(1,j,k)=q3_save(1,j,k)+dphidx3_x(1,j,k)*aldt
+
+                if (IBM_activated) then
+
+                    do i = 2, n1-2
+                        q3_x(i,j,k)=q3_save(i,j,k)+IBM_mask3(i,j,k)*dphidx3_x(i,j,k)*aldt
+                    end do
+
+                endif
+            enddo
+        enddo
+
+    end subroutine pre_correc2
+
+    subroutine perform_velocity_products()
+
+        implicit none
+
+        integer k,j,i
+
+        ! X ------------------------------------------------------------------------
+
+        if ((BC1==NOSLIP).or.(BC1==freeslip).or.(BC1==PSEUDO_PERIODIC).or.(BC1==OPEN2).or.(BC1==OPEN)) then
+
+            do k=xstart(3), xend(3)       !do k=1,n3
+                do j=xstart(2), xend(2)       !do j=1,n2
+                        p13_x(1, j,  k)   =q3_wall10(j, k)
+                        p13_x(n1, j, k)   =q3_wall11(j, k)
+
+                        p12_x(1, j,  k)   =q2_wall10(j, k)
+                        p12_x(n1, j, k)   =q2_wall11(j, k)
+                enddo
+            enddo
+
+        end if
+
+        call D0ssh_3Dx(q3_x, p13_x, n1,xsize(2),xsize(2),xsize(3),xsize(3), NS_Q3_BC1)
+        call D0ssh_3Dx(q2_x, p12_x, n1,xsize(2),xsize(2),xsize(3),xsize(3), NS_Q2_BC1)
+
+        ! Y ------------------------------------------------------------------------
+        call transpose_x_to_y(p12_x, p12_y)
+
+        if ((BC2==NOSLIP).or.(BC2==freeslip)) then
+
+            do k=ystart(3), yend(3)      !do k=1,n3
+                do i=ystart(1),yend(1)       !do i=1,n1
+                    p23_y(i, 1,  k)   =q3_wall20(i, k)
+                    p23_y(i, n2, k)   =q3_wall21(i, k)
+
+                    p12_y(i, 1,  k)   =p12_y(i, 1,  k) * q1_wall20(i, k)
+                    p12_y(i, n2, k)   =p12_y(i, n2, k) * q1_wall21(i, k)
+                enddo
+            enddo
+
+        end if
+
+        call D0ssh_3Dy(q3_y, p23_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), NS_Q3_BC2)
+        call D0ssh_MULT_3Dy(q1_y, p12_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), NS_Q1_BC2)
+
+
+        ! Z ------------------------------------------------------------------------
+        call transpose_y_to_z(p23_y, p23_z)
+
+        call transpose_x_to_y(p13_x, p13_y)
+        call transpose_y_to_z(p13_y, p13_z)
+
+
+        ! ATTENTION
+        if ((BC3==NOSLIP).or.(BC3==FREESLIP)) then
+
+            do i=zstart(1), zend(1)
+                do j=zstart(2), zend(2)
+                        p23_z(i, j,  1)   =p23_z(i, j, 1)   * q2_wall30(i, j)
+                        p23_z(i, j, n3)   =p23_z(i, j, n3)  * q2_wall31(i, j)
+
+                        p13_z(i, j,  1)   =p13_z(i, j, 1)   * q1_wall30(i, j)
+                        p13_z(i, j, n3)   =p13_z(i, j, n3)  * q1_wall31(i, j)
+                end do
+            enddo
+
+        end if
+        ! ENDATTENTION
+
+        call D0ssh_MULT_3Dz(q2_z, p23_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, NS_Q2_BC3)
+        call D0ssh_MULT_3Dz(q1_z, p13_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, NS_Q2_BC3)
+
+        return
+
+    end subroutine
+
+    subroutine saveRHS()
+
+        use workspace_view, only: recovery_RHS_dir
+
+        use IO_handler
+        use HDF5_IO
+
+        implicit none
+
+        character(200)    :: file_path
+
+        file_path=trim(recovery_RHS_dir)//"/RHS1"
+        if(nrank==0)  call hdf_create_emptyfile(file_path)
+        call hdf_add_3Dfield(file_path, previousRHS1_x(:,:,:), "RHS1", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+
+        file_path=trim(recovery_RHS_dir)//"/RHS2"
+        if(nrank==0)  call hdf_create_emptyfile(file_path)
+        call hdf_add_3Dfield(file_path, previousRHS2_x(:,:,:), "RHS2", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+
+
+        file_path=trim(recovery_RHS_dir)//"/RHS3"
+        if(nrank==0)  call hdf_create_emptyfile(file_path)
+        call hdf_add_3Dfield(file_path, previousRHS3_x(:,:,:), "RHS3", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+
+
+    end subroutine saveRHS
+
+end module NS_solver
+
+
+

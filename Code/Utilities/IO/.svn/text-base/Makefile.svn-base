@@ -1,0 +1,20 @@
+include $(PATHS_FILE)
+include $(SYSTEM_INFO_FILE)
+include $(EXTERN_LIBS)
+include $(COMPILER_OPTIONS_FILE)
+
+FFLAGS= -c $(COMPILER_OPTIONS)
+SOURCES=sources
+
+build: ./lib/libIO.a
+
+./lib/libIO.a: $(SOURCES)/HDF5_IO.f90
+	$(FF) $(FFLAGS)  $(HDF5_INC) $(SOURCES)/HDF5_IO.f90; 	\
+	$(FF) $(FFLAGS)  $(SOURCES)/OBJ_reader.f90; 	\
+	$(AR_CMD) -q ./lib/libIO.a HDF5_IO.o; 		\
+	$(AR_CMD) -q ./lib/libIO.a OBJ_reader.o; 		\
+	mv ./*.mod ./include;				\
+	rm ./*.o;
+
+clean:
+	rm ./lib/*; rm ./include/*

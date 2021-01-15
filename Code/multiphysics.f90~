@@ -1,0 +1,86 @@
+module multiphysics
+!
+! MASTER MODULE
+!
+contains
+
+    subroutine perform_multiphysics(ntime)
+        use Bubble_generator
+
+        integer, intent(in) :: ntime
+
+        call move_bubble(ntime,sub_step)
+
+    end subroutine perform_multiphysics
+
+
+
+    subroutine perform_multiphysics_without_bubbles(ntime)
+
+        use VELOCITY_solver
+        use SCALAR_solver
+        use time_schemes
+
+        implicit  none
+
+        integer, intent(in) :: ntime
+        integer             :: ns, sub_cpt
+
+
+        !call generate_bubbles(1,1)
+
+        ! Fluid Velocity
+        do ns=1,nb_substep
+            ! First estimation of velocity with NO scalar effect
+
+
+            call update_velocity(ntime, ns)
+            call solve_scalar(q1_x, q2_y, q3_z, ns)
+        end do
+
+    end subroutine perform_multiphysics_without_bubbles
+
+
+   subroutine perform_multiphysics_MHD(ntime)
+
+        use VELOCITY_solver
+        use MHD_solver
+        use time_schemes
+
+        implicit  none
+
+        integer, intent(in) :: ntime
+        integer             :: ns, sub_cpt, n_iter, iter,test
+
+        n_iter = 5
+
+!****************Deactivate MHD*****************
+        call solve_MHD(q1_x, q2_y, q3_z) !=> Get F(n)
+!        fb1_MHD_x = -1.d0
+         fb2_MHD_x = 0.d0
+         fb3_MHD_x = 0.d0
+        call add_action(fb1_MHD_x, fb2_MHD_x, fb3_MHD_x)
+!**************************************************
+
+          do ns=1,nb_substep
+
+           call update_velocity(ntime, ns)
+
+         enddo
+
+!********************Procédure d'iteration **********************
+!******************* nbre d'iter n_iter gt 1 ********************
+
+       do iter = 2,n_iter
+          call solve_MHD(q1_x, q2_y, q3_z)  !=> F_(n+1)
+          call add_action(fb1_MHD_x, fb2_MHD_x, fb3_MHD_x)
+ !         call correct_mean_gradP1,3 ????? here
+          do ns=1,nb_substep
+            call update_multiphysics_velocity(ntime, ns) !=> Take into account Fn and Fn+1
+          enddo
+!         call correct_mean_gradP1,3   ??????? or here
+       enddo
+
+    end subroutine perform_multiphysics_MHD
+
+end module multiphysics

@@ -1,0 +1,8 @@
+
+
+FF=mpif90
+
+# Compiler options ________________________________________________________________
+#COMPILER_OPTIONS=-O3 -ffree-line-length-0 -cpp -fconvert=big-endian 
+#COMPILER_OPTIONS=-finit-local-zero -O3 -ffree-line-length-0 -cpp -fconvert=big-endian 
+COMPILER_OPTIONS=-finit-local-zero -O3 -g -pg -cpp -fconvert=big-endian  -fbounds-check -ffree-line-length-0 

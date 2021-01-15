@@ -1,0 +1,269 @@
+module schemes_loader
+
+    use schemes_interface
+    use schemes3D_interface
+    use boundary_scheme
+    use mesh
+
+    implicit none
+    integer, parameter  :: O2_SCHEMES=0, OPTIMIZED_SCHEMES=1, OPTIMIZED_SCHEMES_WITH_CPT=2, COMPACT_SCHEMES=3
+
+contains
+
+    subroutine configure_temporal_schemes(time_scheme)
+        use time_schemes
+        implicit none
+        integer     :: time_scheme
+
+        select case (time_scheme)
+
+            case (EULER)
+
+                nb_substep=1
+
+                ga(1)=1.d0
+                ga(2)=0.d0
+                ga(3)=0.d0
+                ro(1)=0.d0
+                ro(2)=0.d0
+                ro(3)=0.d0
+
+            case (ADAM_BASHFORTH)
+
+                nb_substep=1
+
+                ga(1)=1.5d0
+                ga(2)=0.d0
+                ga(3)=0.d0
+                ro(1)=-.5d0
+                ro(2)=0.d0
+                ro(3)=0.d0
+
+            case (RK3)
+
+                nb_substep=3
+
+                ga(1)=8.d0/15.d0
+                ga(2)=5.d0/12.d0
+                ga(3)=3.d0/4.d0
+                ro(1)=0.d0
+                ro(2)=-17.d0/60.d0
+                ro(3)=-5.d0/12.d0
+
+            case default
+
+        end select
+
+    end subroutine configure_temporal_schemes
+
+    subroutine configure_schemes(schemes)
+
+        implicit none
+        integer     :: schemes
+        real*8      :: hp_over_hm_down, hp_over_hm_up, hm2_dx2q_d, hm2_dx2q_u
+
+        select case (schemes)
+
+            case (O2_SCHEMES)
+                call load_O2_schemes
+                call load_O2_schemes3D
+
+            case (OPTIMIZED_SCHEMES)
+                call load_optimised_schemes(.false.)
+                call load_optimised_schemes3D
+
+            case (OPTIMIZED_SCHEMES_WITH_CPT)
+                call load_optimised_schemes(.true.)
+
+            case (COMPACT_SCHEMES)
+                call load_compact_schemes
+
+        end select
+
+        ! Calculation of 2nd order - irregular derivative scheme coefficients
+        ! This schemes is used for Y direction at the wall
+
+        hp_over_hm_down=(Yc(2)-Yc(1))/(Yc(1)-y(1))
+        hp_over_hm_up=(y(n2)-Yc(n2m))/(Yc(n2m)-Yc(n2m-1))
+
+        hm2_dx2q_d=((Yc(1)-y(1))**2)/dx2**2
+        hm2_dx2q_u=((Yc(n2m)-Yc(n2m-1))**2)/dx2**2
+
+        a1_d    =   2.d0/((hp_over_hm_down+1)*hm2_dx2q_d)
+        a2_d    =   -2.d0/(hp_over_hm_down*hm2_dx2q_d)
+        a3_d    =   2/((hp_over_hm_down**2+hp_over_hm_down)*hm2_dx2q_d)
+
+        a1_u    =   2.d0/((hp_over_hm_up+1)*hm2_dx2q_u)
+        a2_u    =   -2.d0/(hp_over_hm_up*hm2_dx2q_u)
+        a3_u    =   2/((hp_over_hm_up**2+hp_over_hm_up)*hm2_dx2q_u)
+
+    end subroutine configure_schemes
+
+
+    subroutine load_O2_schemes()
+
+        D1c                 =>  D1c_ExpCtr_O2Fp0
+        D1c_ACC             =>  D1c_ExpCtr_O2Fp0_ACC
+        D1c_MULT            =>  D1c_ExpCtr_O2Fp0_MULT
+        D1c_MULT_ACC        =>  D1c_ExpCtr_O2Fp0_MULT_ACC
+        D2c                 =>  D2c_ExpCtr_O2Fp0
+        D2c_ACC             =>  D2c_ExpCtr_O2Fp0_ACC
+        D2c_MULT            =>  D2c_ExpCtr_O2Fp0_MULT
+        D2c_MULT_ACC        =>  D2c_ExpCtr_O2Fp0_MULT_ACC
+
+
+        D0s                 =>  D0s_ExpCtr_O2Fp0
+        D0s_MULTbyHimself   =>  D0s_ExpCtr_O2Fp0_MULT
+        D1s                 =>  D1s_ExpCtr_O2Fp0
+        D1s_ACC             =>  D1s_ExpCtr_O2Fp0_ACC
+        D1s_MULT            =>  D1s_ExpCtr_O2Fp0_MULT
+        D1s_MULT_ACC        =>  D1s_ExpCtr_O2Fp0_MULT_ACC
+
+        call configure_explicit_schemes(.false.)
+
+    end subroutine load_O2_schemes
+
+
+    subroutine load_O2_schemes3D()
+
+        implicit none
+
+        D0s_3Dx=>D0s_O2_3Dx
+        D0ssh_3Dx=>D0ssh_O2_3Dx
+        D0s_3Dy=>D0s_O2_3Dy
+        D0ssh_3Dy=>D0ssh_O2_3Dy
+        D0ssh_MULT_3Dy=>D0ssh_O2_MULT_3Dy
+        D0s_3Dz=>D0s_O2_3Dz
+        D0ssh_3Dz=>D0ssh_O2_3Dz
+        D0ssh_MULT_3Dz=>D0ssh_O2_MULT_3Dz
+
+        D1s_3Dx=>D1s_O2_3Dx
+        D1s_ACC_3Dx=>D1s_O2_ACC_3Dx
+        D1ssh_3Dx=>D1ssh_O2_3Dx
+        D1ssh_ACC_3Dx=>D1ssh_O2_ACC_3Dx
+        D1s_3Dy=>D1s_O2_3Dy
+        D1ssh_3Dy=>D1ssh_O2_3Dy
+        D1s_MULT_3Dy=>D1s_O2_MULT_3Dy
+        D1s_MULTACC_3Dy=>D1s_O2_MULTACC_3Dy
+        D1ssh_MULT_3Dy=>D1ssh_O2_MULT_3Dy
+        D1ssh_MULTACC_3Dy=>D1ssh_O2_MULTACC_3Dy
+        D1s_3Dz=>D1s_O2_3Dz
+        D1ssh_3Dz=>D1ssh_O2_3Dz
+        D1s_ACC_3Dz=>D1s_O2_ACC_3Dz
+        D1ssh_ACC_3Dz=>D1ssh_O2_ACC_3Dz
+
+        D1c_3Dx=>D1c_O2_3Dx
+        D1c_3Dy=>D1c_O2_3Dy
+        D1c_MULT_3Dy=>D1c_O2_MULT_3Dy
+        D1c_MULTACC_3Dy=>D1c_O2_MULTACC_3Dy
+        D1c_3Dz=>D1c_O2_3Dz
+
+        D2c_3Dx=>D2c_O2_3Dx
+        D2c_ACC_3Dx=>D2c_O2_ACC_3Dx
+        D2c_3Dy=>D2c_O2_3Dy
+        D2c_MULT_3Dy=>D2c_O2_MULT_3Dy
+        D2c_MULTACC_3Dy=>D2c_O2_MULTACC_3Dy
+        D2c_3Dz=>D2c_O2_3Dz
+
+
+    end subroutine load_O2_schemes3D
+
+
+    subroutine load_optimised_schemes(use_cpt_at_boundaries)
+
+        implicit none
+        logical :: use_cpt_at_boundaries
+
+        D1c                 =>  D1_ExpCtr_O0Fp6
+        D1c_ACC             =>  D1_ExpCtr_O0Fp6_ACC
+        D1c_MULT            =>  D1_ExpCtr_O0Fp6_MULT
+        D1c_MULT_ACC        =>  D1_ExpCtr_O0Fp6_MULT_ACC
+        D2c                 =>  D2_ExpCtr_O0Fp6
+        D2c_ACC             =>  D2_ExpCtr_O0Fp6_ACC
+        D2c_MULT            =>  D2_ExpCtr_O0Fp6_MULT
+        D2c_MULT_ACC        =>  D2_ExpCtr_O0Fp6_MULT_ACC
+
+
+        D0s                 =>  D0s_ExpCtr_O0Fp5
+        D0s_MULTbyHimself   =>  D0s_ExpCtr_O0Fp5_MULT
+        D1s                 =>  D1s_ExpCtr_O0Fp5
+        D1s_ACC             =>  D1s_ExpCtr_O0Fp5_ACC
+        D1s_MULT            =>  D1s_ExpCtr_O0Fp5_MULT
+        D1s_MULT_ACC        =>  D1s_ExpCtr_O0Fp5_MULT_ACC
+
+
+        call configure_explicit_schemes(use_cpt_at_boundaries)
+
+    end subroutine load_optimised_schemes
+
+
+    subroutine load_optimised_schemes3D()
+
+        implicit none
+
+        D0s_3Dx=>D0s_DRP5_3Dx
+        D0ssh_3Dx=>D0ssh_DRP5_3Dx
+        D0s_3Dy=>D0s_DRP5_3Dy
+        D0ssh_3Dy=>D0ssh_DRP5_3Dy
+        D0ssh_MULT_3Dy=>D0ssh_DRP5_MULT_3Dy
+        D0s_3Dz=>D0s_DRP5_3Dz
+        D0ssh_3Dz=>D0ssh_DRP5_3Dz
+        D0ssh_MULT_3Dz=>D0ssh_DRP5_MULT_3Dz
+
+        D1s_3Dx=>D1s_DRP5_3Dx
+        D1s_ACC_3Dx=>D1s_DRP5_ACC_3Dx
+        D1ssh_3Dx=>D1ssh_DRP5_3Dx
+        D1ssh_ACC_3Dx=>D1ssh_DRP5_ACC_3Dx
+        D1s_3Dy=>D1s_DRP5_3Dy
+        D1ssh_3Dy=>D1ssh_DRP5_3Dy
+        D1s_MULT_3Dy=>D1s_DRP5_MULT_3Dy
+        D1s_MULTACC_3Dy=>D1s_DRP5_MULTACC_3Dy
+        D1ssh_MULT_3Dy=>D1ssh_DRP5_MULT_3Dy
+        D1ssh_MULTACC_3Dy=>D1ssh_DRP5_MULTACC_3Dy
+        D1s_3Dz=>D1s_DRP5_3Dz
+        D1ssh_3Dz=>D1ssh_DRP5_3Dz
+        D1s_ACC_3Dz=>D1s_DRP5_ACC_3Dz
+        D1ssh_ACC_3Dz=>D1ssh_DRP5_ACC_3Dz
+
+        D1c_3Dx=>D1c_DRP6_3Dx
+        D1c_3Dy=>D1c_DRP6_3Dy
+        D1c_MULT_3Dy=>D1c_DRP6_MULT_3Dy
+        D1c_MULTACC_3Dy=>D1c_DRP6_MULTACC_3Dy
+        D1c_3Dz=>D1c_DRP6_3Dz
+
+        D2c_3Dx=>D2c_DRP6_3Dx
+        D2c_ACC_3Dx=>D2c_DRP6_ACC_3Dx
+        D2c_3Dy=>D2c_DRP6_3Dy
+        D2c_MULT_3Dy=>D2c_DRP6_MULT_3Dy
+        D2c_MULTACC_3Dy=>D2c_DRP6_MULTACC_3Dy
+        D2c_3Dz=>D2c_DRP6_3Dz
+
+
+    end subroutine load_optimised_schemes3D
+
+
+    subroutine load_compact_schemes()
+
+        D1c                 =>  D1_OUCS3
+        D1c_ACC             =>  D1_OUCS3_ACC
+        D1c_MULT            =>  D1_OUCS3_MULT
+        D1c_MULT_ACC        =>  D1_OUCS3_MULT_ACC
+        D2c                 =>  D2_CptCtr_O6Fp0
+        D2c_ACC             =>  D2_CptCtr_O6Fp0_ACC
+        D2c_MULT            =>  D2_CptCtr_O6Fp0_MULT
+        D2c_MULT_ACC        =>  D2_CptCtr_O6Fp0_MULT_ACC
+
+
+        D0s                 =>  D0s_CptCtr_O6Fp0
+        D0s_MULTbyHimself   =>  D0s_CptCtr_O6Fp0_MULT
+        D1s                 =>  D1s_CptCtr_O6Fp0
+        D1s_ACC             =>  D1s_CptCtr_O6Fp0_ACC
+        D1s_MULT            =>  D1s_CptCtr_O6Fp0_MULT
+        D1s_MULT_ACC        =>  D1s_CptCtr_O6Fp0_MULT_ACC
+
+        call configure_explicit_schemes(.false.)
+
+    end subroutine load_compact_schemes
+
+
+end module schemes_loader

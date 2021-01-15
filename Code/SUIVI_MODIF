@@ -1,0 +1,12 @@
+
+PASSAGE SCHEMAS 1D => SCHEMAS 3D
+- Correction d'un bug: en 220, q2(1,:,:) n'était pas modifié car, dans la modification de q2, n1s valait 2 au lieu de 1
+(voir perform_intermediate_velocity). C'est corrigé.
+
+- Changement de schéma pour D1c => DRP a 6pts pour les schémas 1D et 3D.
+
+- Correction d'une erreur sur les bornes dans channel3: dans le cas non périodique dans la direction x1, les points 1 et n1m n'était pas calculés
+
+
+
+TACHE RESTANTE: Developper cas symétrique et antisymétrique de D1ssh_DRP5_3Dx

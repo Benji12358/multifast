@@ -1,0 +1,17 @@
+include $(PATHS_FILE)
+include $(SYSTEM_INFO_FILE)
+include $(COMPILER_OPTIONS_FILE)
+
+FFLAGS= -c $(COMPILER_OPTIONS)
+SOURCES= sources
+
+build: ./lib/libsolvers.a
+
+./lib/libsolvers.a: $(SOURCES)/solvers.f90
+	$(FF) $(FFLAGS)  $(SOURCES)/solvers.f90; 	\
+	$(AR_CMD) -q ./lib/libsolvers.a solvers.o; 		\
+	mv ./*.mod ./include;				\
+	rm ./*.o;
+
+clean:
+	rm ./lib/*; rm ./include/*

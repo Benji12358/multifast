@@ -1,0 +1,654 @@
+module passive_solver
+    use decomp_2d
+    use mesh
+    use boundaries
+    use schemes3D_interface
+    use irregular_derivative_coefficients
+    use DNS_settings
+    use scalar_datas
+    use physical_fields
+
+    implicit none
+
+    real*8, dimension(:,:,:), allocatable       :: previousRHS, previousRHS1, previousRHS2
+
+    real*8  :: gam,rom
+
+contains
+
+    subroutine init_scalar_solver()
+        implicit none
+
+        allocate(previousRHS(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        allocate(previousRHS1(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        allocate(previousRHS2(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+
+    end subroutine init_scalar_solver
+
+    subroutine solve_scalar(q1_x, q2_y, q3_z, sca_x, sca_y, sca_z)
+        use time_schemes
+        implicit none
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: q1_x, sca_x
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: q2_y, sca_y, sca_y0
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)) :: q3_z, sca_z
+
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: q1S   ! scalar * Q1
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: q2S   ! scalar * Q2
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)) :: q3S   ! scalar * Q3
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: RHS
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: RHS1
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: RHS2, RHS2_1
+        integer, save   :: nbcall=1
+
+        integer :: it,k
+
+        integer :: ns
+
+        do k = 1, nb_substep
+
+            call set_time_coeffs()
+            call perform_velocityscalar_products(q1_x, q2_y, q3_z, sca_x, sca_y, sca_z, q1S, q2S, q3S)
+            call perform_RHS1(q1S, q2S, q3S, RHS1)
+            call perform_RHS2(sca_x, sca_y, sca_z, RHS2)
+
+            RHS=RHS1+RHS2
+
+            call outflowing(sca_x, sca_y, sca_z)
+            call next_scalar
+
+            previousRHS1=RHS1
+            previousRHS2=RHS2
+
+            call transpose_y_to_x(sca_y, sca_x)
+            call transpose_y_to_z(sca_y, sca_z)
+
+        end do
+
+        !call check_passive_solver
+
+    contains
+
+        subroutine set_time_coeffs()
+
+            logical, save :: first_time_advancement=.true.
+            logical :: previousRHS_are_available=.false.
+
+            if (first_time_advancement) then
+
+                if (previousRHS_are_available) then
+
+                    gam=ga(k)
+                    rom=ro(k)
+
+                else
+                    gam=1.d0
+                    rom=0.d0
+
+                end if
+
+            else
+                gam=ga(k)
+                rom=ro(k)
+
+            end if
+
+            first_time_advancement=.false.
+
+        end subroutine set_time_coeffs
+
+        subroutine next_scalar
+            implicit none
+            integer :: i,j,k
+            integer :: n1s, n1e, n2s,n2e, n3s,n3e
+
+            if (BC1==OPEN2) then
+                n1s=max(2, ystart(1))
+                n1e=min(n1-2, yend(1))
+            else
+                n1s=ystart(1)
+                n1e=min(n1-1, yend(1))
+            endif
+            n2s=1
+            n2e=n2-1
+
+            n3s=ystart(3)
+            n3e=min(n3-1, yend(3))
+
+            do k = n3s, n3e
+                do j = n2s, n2e
+                    do i = n1s, n1e
+                        sca_y(i,j,k)=sca_y(i,j,k)+dt*(gam*RHS1(i,j,k)+rom*previousRHS1(i,j,k))+dt*(gam*RHS2(i,j,k)+rom*previousRHS2(i,j,k))
+                    end do
+                end do
+            end do
+
+            !sca_y=sca_y+dt*(gam*RHS1+rom*previousRHS1)+dt*(gam*RHS2+rom*previousRHS2)
+
+        end subroutine next_scalar
+
+    end subroutine solve_scalar
+
+    subroutine outflowing(sca_x, sca_y, sca_z)
+
+        use MPI
+        use DNS_settings
+        implicit none
+        integer, save                                           :: nb=1
+        integer, parameter                                      :: outflow_type=2
+        integer                                                 :: n2s,n2e, n3s, n3e, j, k
+        real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: cx4
+        real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: conv4
+
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: sca_x
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: sca_y
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)) :: sca_z
+
+        real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: diff
+
+        nb=nb+1
+
+        diff=0.d0
+
+        if (outflow_type==1) then
+            cx4=dt/dx1
+        endif
+
+        if (outflow_type==2) then
+            call perform_cx
+        endif
+
+        if (outflow_type==3) then
+            call perform_cx3
+        endif
+
+        if (outflow_type==4) then
+            call perform_cx3
+            call perform_diff
+        endif
+
+
+        call perform_conv
+
+        n2s=xstart(2)
+        n3s=xstart(3)
+        n2e=xend(2)
+        n3e=xend(3)
+
+        do k=n3s,n3e
+            do j=n2s,n2e
+                sca_x(n1-1,j,k)=sca_x(n1-1,j,k)+conv4(j,k)+diff(j,k)*dt
+            enddo
+        enddo
+
+        call transpose_x_to_y(sca_x(:,:,:), sca_y(:,:,:))
+
+    contains
+
+        subroutine perform_cx()
+            implicit none
+            real*8  :: num, den
+
+            do k=xstart(3),min(xend(3), n3-1)
+                do j=xstart(2),min(xend(2), n2-1)
+
+                    cx4(j,k)=sum(q1_x(3:n1-4, j,k))
+                    cx4(j,k)=cx4(j,k)/(n1-6)
+                    cx4(j,k)=cx4(j,k)*dt/dx1
+
+                enddo
+            enddo
+
+        end subroutine
+
+        subroutine perform_cx2()
+            implicit none
+            real*8  :: num, den
+
+            do k=xstart(3),min(xend(3), n3-1)
+                do j=xstart(2),min(xend(2), n2-1)
+
+                    cx4(j,k)=q1_x(n1-1, j,k)
+                    cx4(j,k)=cx4(j,k)*dt/dx1
+
+                enddo
+            enddo
+
+
+        end subroutine perform_cx2
+
+        subroutine perform_cx3()
+            implicit none
+            real*8  :: num, den
+            real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: q1_cc
+
+            call D0ssh_3Dx(q1_x, q1_cc, n1,xsize(2),xsize(2),xsize(3),xsize(3), NS_Q3_BC1)
+
+            do k=xstart(3),min(xend(3), n3-1)
+                do j=xstart(2),min(xend(2), n2-1)
+
+                    cx4(j,k)=q1_cc(n1-1, j,k)
+                    cx4(j,k)=cx4(j,k)*dt/dx1
+
+                enddo
+            enddo
+
+
+        end subroutine perform_cx3
+
+        subroutine perform_diff()
+            use boundary_scheme
+            use snapshot_writer
+            implicit none
+            integer :: i,j,k
+
+
+            real*8, dimension(:,:), allocatable, save :: diffo
+            real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: diffc
+            real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)) :: diff3
+            real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: diff2
+            real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: diff3y
+            real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: diff3x, diff2x
+
+            if (.not. allocated(diffo)) then
+                allocate(diffo(xstart(2):xend(2), xstart(3):xend(3)))
+
+                diffo=0.d0
+            endif
+
+            call D2c_3Dz(sca_z, diff3, zsize(1),zsize(1),zsize(2),zsize(2),n3, dx3*dsqrt(renprandtl), .true., NS_Q1_BC3)
+
+            call transpose_z_to_y(diff3, diff3y)
+            call transpose_y_to_x(diff3y, diff3x)
+
+            call D1c_MULT_3Dy(sca_y, diff2, ysize(1),ysize(1),n2,ysize(3),ysize(3), dx2*renprandtl, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,1))
+            call D2c_MULTACC_3Dy(sca_y, diff2, ysize(1),ysize(1),n2,ysize(3),ysize(3), dx2*dsqrt(renprandtl), .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,2))
+
+
+            do k=ystart(3), min(n3m, yend(3))       !do k=1,n3m
+                do i=ystart(1), min(n1m, yend(1))       !do i=1,n1m
+                    diff2(i,1,k)=( sca_y(i,2,k)*a3_d + sca_y(i,1,k)*a2_d + sca_wall20(i,k)*a1_d)            /(dx2*dsqrt(renprandtl))**2
+                    diff2(i,n2m,k)=( sca_y(i,n2m-1,k)*a1_u + sca_y(i,n2m,k)*a2_u + sca_wall21(i,k)*a3_u ) /(dx2*dsqrt(renprandtl))**2
+                enddo
+            enddo
+
+
+            call transpose_y_to_x(diff2, diff2x)
+
+            diffc=diff2x(n1-1,:,:)+diff3x(n1-1,:,:)
+
+            diff=gam*diffc+rom*diffo
+
+            diffo=diffc
+
+        end subroutine perform_diff
+
+        subroutine perform_conv()
+            use snapshot_writer
+            implicit none
+            real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: conv4c
+            real*8, dimension(:,:), allocatable, save :: conv4o
+
+            if (.not. allocated(conv4o)) then
+                allocate(conv4o(xstart(2):xend(2), xstart(3):xend(3)))
+
+                conv4o=0.d0
+
+            endif
+
+            do k=xstart(3),min(xend(3), n3-1)
+                do j=xstart(2),min(xend(2), n2-1)
+                    conv4c(j,k)=-cx4(j,k)*(sca_x(n1-1,j,k)-sca_x(n1-2,j,k))
+                enddo
+            enddo
+
+            conv4=gam*conv4c+rom*conv4o
+
+            conv4o=conv4c
+
+
+        end subroutine perform_conv
+    end subroutine outflowing
+
+    subroutine perform_RHS1(q1S, q2S, q3S, RHS1)
+        implicit none
+
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent (in) :: q1S   ! scalar * Q1
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent (in) :: q2S   ! scalar * Q2
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)), intent (in) :: q3S   ! scalar * Q3
+
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent (out)    :: RHS1
+
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))  :: RHS1x   ! scalar * Q1
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))  :: RHS1y   ! scalar * Q2
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))  :: RHS1z   ! scalar * Q3
+
+        integer :: n1e, n2e, n3e
+
+        RHS1x=0.d0
+        RHS1y=0.d0
+        RHS1z=0.d0
+
+        ! Q3*scalar ************************************************
+        ! velocity interpolation: j (1:n2-1), k(1,n3-1))
+        n1e=(min(n1-1, zend(1))-zstart(1))+1
+        n2e=(min(n2-1, zend(2))-zstart(2))+1
+        call D1c_3Dz(q3S, RHS1z, zsize(1),n1e,zsize(2),n2e,n3, -dx3, .true., TRANSPORT_Q3S_BC3)
+
+
+        ! Q2*scalar ************************************************
+        ! velocity interpolation: i (1:n1-1), k(1,n3-1)
+        n1e=(min(n1-1, yend(1))-ystart(1))+1
+        n3e=(min(n3-1, yend(3))-ystart(3))+1
+
+
+        call D1c_MULTACC_3Dy(q2S, RHS1y, ysize(1),n1e,n2,ysize(3),n3e, -dx2,.true., TRANSPORT_Q2S_BC2, Yc_to_YcTr_for_D1)
+
+        if (SCA_BC2==FIXED_VALUE) call d1c_wall2
+
+        ! Q1*scalar ************************************************
+        ! velocity interpolation: i (1:n1-1), j(1,n2-1)
+        n2e=(min(n2m, xend(2))-xstart(2))+1
+        n3e=(min(n3m, xend(3))-xstart(3))+1
+        call D1c_3Dx(q1S, RHS1x, n1,xsize(2),n2e,xsize(3),n3e, -dx1, .true., TRANSPORT_Q1S_BC1)
+
+        ! RHS1 et RHS2 Table compilation
+        RHS1=RHS1y
+        call transpose_x_to_y(RHS1x, RHS1y)
+        RHS1=RHS1+RHS1y
+        call transpose_z_to_y(RHS1z, RHS1y)
+        RHS1=RHS1+RHS1y
+
+    contains
+
+        subroutine d1c_wall2()
+            use boundary_scheme
+            implicit none
+            integer ::i,j,k
+
+            do k=ystart(3), min(n3m, yend(3))       !do k=1,n3m
+                do i=ystart(1), min(n1m, yend(1))       !do i=1,n1m
+                    RHS1y(i,1,k)=-(q2S(i,1,k)-q2_wall20(i,k)*sca_wall20(i,k))/(Yc(1)-Y(1))
+                    RHS1y(i,n2m,k)=-(q2_wall21(i,k)*sca_wall21(i,k)-q2S(i,n2m,k))/(Y(n2)-Yc(n2-1))
+                enddo
+            enddo
+
+        end subroutine d1c_wall2
+
+    end subroutine perform_RHS1
+
+    subroutine perform_RHS2(sca_x, sca_y, sca_z, RHS2)
+        implicit none
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent (in) :: sca_x
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent (in) :: sca_y
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)), intent (in) :: sca_z
+
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent (out)    :: RHS2
+
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))  :: RHS2x   ! scalar * Q1
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))  :: RHS2y   ! scalar * Q2
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))  :: RHS2z   ! scalar * Q3
+
+        integer :: n1e, n2e, n3e
+
+        RHS2x=0.d0
+        RHS2y=0.d0
+        RHS2z=0.d0
+
+        ! Diffusive scalar - Z direction ************************************************
+        n1e=(min(n1-1, zend(1))-zstart(1))+1
+        n2e=(min(n2-1, zend(2))-zstart(2))+1
+        call D2c_3Dz(sca_z, RHS2z, zsize(1),n1e,zsize(2),n2e,n3, dx3*dsqrt(renprandtl), .true., TRANSPORT_SCA_BC3)
+
+
+        ! Diffusive scalar - Y direction ************************************************
+        n1e=(min(n1-1, yend(1))-ystart(1))+1
+        n3e=(min(n3-1, yend(3))-ystart(3))+1
+
+
+        call D1c_MULTACC_3Dy(sca_y, RHS2y, ysize(1),n1e,n2,ysize(3),n3e, dx2*renprandtl,.true., TRANSPORT_SCA_BC2, Yc_to_YcTr_for_D2(:,1))
+        call D2c_MULTACC_3Dy(sca_y, RHS2y, ysize(1),n1e,n2,ysize(3),n3e, dx2*dsqrt(renprandtl),.true., TRANSPORT_SCA_BC2, Yc_to_YcTr_for_D2(:,2))
+
+        if (SCA_BC2==FIXED_VALUE) call d2c_wall2
+
+        ! Diffusive scalar - X direction ************************************************
+        n2e=(min(n2m, xend(2))-xstart(2))+1
+        n3e=(min(n3m, xend(3))-xstart(3))+1
+        call D2c_3Dx(sca_x, RHS2x, n1,xsize(2),n2e,xsize(3),n3e, dx1*dsqrt(renprandtl), .true., TRANSPORT_SCA_BC1)
+
+        ! RHS2 Table compilation
+
+        RHS2=RHS2y
+        call transpose_x_to_y(RHS2x, RHS2y)
+        RHS2=RHS2+RHS2y
+        call transpose_z_to_y(RHS2z, RHS2y)
+        RHS2=RHS2+RHS2y
+
+    contains
+
+        subroutine d2c_wall2()
+            use boundary_scheme
+            implicit none
+            integer ::i,j,k
+
+            do k=ystart(3), min(n3m, yend(3))       !do k=1,n3m
+                do i=ystart(1), min(n1m, yend(1))       !do i=1,n1m
+                    RHS2y(i,1,k)=RHS2y(i,1,k)+( sca_y(i,2,k)*a3_d + sca_y(i,1,k)*a2_d + sca_wall20(i,k)*a1_d)            /(dx2*dsqrt(renprandtl))**2
+                    RHS2y(i,n2m,k)=RHS2y(i,n2m,k)+( sca_y(i,n2m-1,k)*a1_u + sca_y(i,n2m,k)*a2_u + sca_wall21(i,k)*a3_u ) /(dx2*dsqrt(renprandtl))**2
+                enddo
+            enddo
+
+        end subroutine d2c_wall2
+
+    end subroutine perform_RHS2
+
+    subroutine perform_velocityscalar_products(q1_x, q2_y, q3_z, sca_x, sca_y, sca_z, q1S, q2S, q3S)
+        implicit none
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent (in) :: q1_x, sca_x
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent (in) :: q2_y, sca_y
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)), intent (in) :: q3_z, sca_z
+
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent (out)    :: q1S   ! scalar * Q1
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent (out)    :: q2S   ! scalar * Q2
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)), intent (out)    :: q3S   ! scalar * Q3
+
+        integer :: n1e, n2e, n3e
+
+        ! Q1*scalar ************************************************
+        ! velocity interpolation: j (1:n2-1), k(1,n3-1)
+        n2e=(min(n2-1, xend(2))-xstart(2))+1
+        n3e=(min(n3-1, xend(3))-xstart(3))+1
+        q1S=0.d0
+        call D0s_3Dx(q1_x, q1S, n1,xsize(2),n2e,xsize(3),n3e, NS_Q1_BC1)
+        q1S=q1S*sca_x
+
+
+        ! Q2*scalar ************************************************
+        ! velocity interpolation: i (1:n1-1), k(1,n3-1)
+        n1e=(min(n1-1, yend(1))-ystart(1))+1
+        n3e=(min(n3-1, yend(3))-ystart(3))+1
+        q2S=0.d0
+        call D0s_3Dy(q2_y, q2S, ysize(1),n1e,n2,ysize(3),n3e, NS_Q2_BC2)
+        q2S=q2S*sca_y
+
+
+        ! Q3*scalar ************************************************
+        ! velocity interpolation: i (1:n1-1), j(1,n2-1)
+        n1e=(min(n1-1, zend(1))-zstart(1))+1
+        n2e=(min(n2-1, zend(2))-zstart(2))+1
+        q3S=0.d0
+        call D0s_3Dz(q3_z, q3S, zsize(1),n1e,zsize(2),n2e,n3, NS_Q2_BC3)
+        q3S=q3S*sca_z
+
+    end subroutine perform_velocityscalar_products
+
+    subroutine check_passive_solver()
+        use mesh
+        use snapshot_writer
+        use workspace_view
+        use mathematical_constants
+        implicit none
+        real*8, parameter   :: T1=0.5d0, T0=-0.5d0
+        real*8, dimension(1:n3) :: x3
+        real*8, dimension(1:n2) :: x2
+        real*8, dimension(1:n1) :: x1
+
+        real*8, dimension(1:n3-1) :: x3c
+        real*8, dimension(1:n2-1) :: x2c
+        real*8, dimension(1:n1-1) :: x1c
+
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: q1, q1S, q1S_expected, delta_q1S
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: q2, q2S, q2S_expected, delta_q2S
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)) :: q3, q3S, q3S_expected, delta_q3S
+
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: Tx
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: Ty
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)) :: Tz
+
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: RHS1, RHS2, RHS1_expected, delta_RHS1, RHS2_expected, delta_RHS2
+        real*8  :: dT
+        integer :: i, j, k, n1e, n3e
+
+        ! x & xc **************************
+        do i = 1, n3-1
+            x3(i)=L3*(i-1.d0)/(n3-1.d0)
+            x3c(i)=L3*(i-0.5d0)/(n3-1.d0)
+        enddo
+        x3(n3)=L3*(i-1.d0)/(n3-1.d0)
+
+        do i = 1, n2-1
+            x2(i)=L2*(i-1.d0)/(n2-1.d0)
+            x2c(i)=L2*(i-0.5d0)/(n2-1.d0)
+        enddo
+        x2(n2)=L2*(i-1.d0)/(n2-1.d0)
+
+        do i = 1, n1-1
+            x1(i)=L1*(i-1.d0)/(n1-1.d0)
+            x1c(i)=L1*(i-0.5d0)/(n1-1.d0)
+        enddo
+        x1(n1)=L1*(i-1.d0)/(n1-1.d0)
+
+        ! q ******************************
+        do k = xstart(3), min(xend(3), n3-1)
+            do j = xstart(2), min(xend(2), n2-1)
+                do i = xstart(1), xend(1)
+                    q1(i,j,k)=dsin(x1(i))
+                end do
+            end do
+        end do
+
+        do k = ystart(3), min(yend(3), n3-1)
+            do j = ystart(2), yend(2)
+                do i = ystart(1), min(yend(1), n1-1)
+                    q2(i,j,k)=dsin(pi*Y(j))
+                end do
+            end do
+        end do
+
+        do k = zstart(3), zend(3)
+            do j = zstart(2), min(zend(2), n2-1)
+                do i = zstart(1), min(zend(1), n1-1)
+                    q3(i,j,k)=dsin(x3(k))
+                end do
+            end do
+        end do
+
+        ! T ********************************
+        do k = ystart(3), min(yend(3), n3-1)
+            do j = ystart(2), min(yend(2), n2-1)
+                do i = ystart(1), min(yend(1), n1-1)
+                    Ty(i,j,k)=dcos(x1c(i))*dsin(pi*Yc(j))*dcos(x3c(k))+(T0+(T1-T0)*Yc(j)/L2)
+                end do
+            end do
+        end do
+
+        call transpose_y_to_x(Ty, Tx)
+        call transpose_y_to_z(Ty, Tz)
+
+        ! qS_expected***********************
+        do k = xstart(3), min(xend(3), n3-1)
+            do j = xstart(2), min(xend(2), n2-1)
+                do i = xstart(1), xend(1)
+                    q1S_expected(i,j,k)=dsin(x1c(i))*Tx(i,j,k)
+                end do
+            end do
+        end do
+
+        do k = ystart(3), min(yend(3), n3-1)
+            do j = ystart(2), yend(2)
+                do i = ystart(1), min(yend(1), n1-1)
+                    q2S_expected(i,j,k)=dsin(pi*Yc(j))*Ty(i,j,k)
+                end do
+            end do
+        end do
+
+        do k = zstart(3), zend(3)
+            do j = zstart(2), min(zend(2), n2-1)
+                do i = zstart(1), min(zend(1), n1-1)
+                    q3S_expected(i,j,k)=dsin(x3c(k))*Tz(i,j,k)
+                end do
+            end do
+        end do
+
+        ! Snapshots of q, Ty and deltas
+        call create_snapshot(snapshot_path, "DEBUG", q1, "q1", 1)
+        call create_snapshot(snapshot_path, "DEBUG", q2, "q2", 2)
+        call create_snapshot(snapshot_path, "DEBUG", q3, "q3", 3)
+        call create_snapshot(snapshot_path, "DEBUG", Ty, "Ty", 2)
+
+
+        call perform_velocityscalar_products(q1, q2, q3, Tx, Ty, Tz, q1S, q2S, q3S)
+
+        ! Checking of qS
+        delta_q1S=q1S_expected-q1S
+        delta_q2S=q2S
+        delta_q3S=q3S_expected-q3S
+        call create_snapshot(snapshot_path, "DEBUG", delta_q1S, "delta_q1S", 1)
+        call create_snapshot(snapshot_path, "DEBUG", delta_q2S, "delta_q2S", 2)
+        call create_snapshot(snapshot_path, "DEBUG", delta_q3S, "delta_q3S", 3)
+
+        call perform_RHS1(q1S, q2S, q3S, RHS1)
+        call perform_RHS2(Tx, Ty, Tz, RHS2)
+
+        RHS1_expected=0.d0
+        RHS2_expected=0.d0
+        ! Expected RHS1 X-Direction
+        do k = ystart(3), min(yend(3), n3-1)
+            do j = ystart(2), min(yend(2), n2-1)
+                do i = ystart(1), min(yend(1), n1-1)
+                    RHS1_expected(i,j,k)=-(dcos(x1c(i))*Ty(i,j,k)-dsin(x1c(i))*dsin(x1c(i))*dsin(pi*Yc(j))*dcos(x3c(k)))
+                    RHS2_expected(i,j,k)=-dcos(x1c(i))*dsin(pi*Yc(j))*dcos(x3c(k))/renprandtl
+                end do
+            end do
+        end do
+
+        ! Expected RHS1 Y-Direction
+        do k = ystart(3), min(yend(3), n3-1)
+            do j = ystart(2), min(yend(2), n2-1)
+                do i = ystart(1), min(yend(1), n1-1)
+                    dT=pi*dcos(pi*Yc(j))*dcos(x1c(i))*dcos(x3c(k))+1.d0/L2
+                    RHS1_expected(i,j,k)=RHS1_expected(i,j,k)-(pi*dcos(pi*Yc(j))*Ty(i,j,k)+dT*dsin(pi*Yc(j)))
+                    RHS2_expected(i,j,k)=RHS2_expected(i,j,k)-((1.d0/renprandtl)*(pi**2)*dsin(pi*Yc(j))*dcos(x1c(i))*dcos(x3c(k)))
+                end do
+            end do
+        end do
+
+        ! Expected RHS1 Z-Direction
+        do k = ystart(3), min(yend(3), n3-1)
+            do j = ystart(2), min(yend(2), n2-1)
+                do i = ystart(1), min(yend(1), n1-1)
+                    RHS1_expected(i,j,k)=RHS1_expected(i,j,k)-(dcos(x3c(k))*Ty(i,j,k)-dsin(x3c(k))*dsin(x3c(k))*dcos(x1c(i))*dsin(pi*Yc(j)))
+                    RHS2_expected(i,j,k)=RHS2_expected(i,j,k)-((1.d0/renprandtl)*dcos(x3c(k))*dcos(x1c(i))*dsin(pi*Yc(j)))
+                end do
+            end do
+        end do
+
+        ! Checking of RHS1
+        delta_RHS1=RHS1-RHS1_expected
+        delta_RHS2=RHS2-RHS2_expected
+        call create_snapshot(snapshot_path, "DEBUG", delta_RHS1, "delta_RHS1", 2)
+        call create_snapshot(snapshot_path, "DEBUG", delta_RHS2, "delta_RHS2", 2)
+        call create_snapshot(snapshot_path, "DEBUG", RHS2_expected, "RHS2_exp", 2)
+        call create_snapshot(snapshot_path, "DEBUG", RHS2, "RHS2", 2)
+
+    end subroutine check_passive_solver
+end module passive_solver

@@ -1,0 +1,363 @@
+#!/bin/bash
+
+#########################################################################################
+#########################################################################################
+###############################                  ########################################
+############################      GET ARGUMENTS     #####################################
+###############################                  ########################################
+#########################################################################################
+#########################################################################################
+
+cflag='false'
+iflag='false'
+rflag='false'
+aflag='false'
+
+while getopts 'cira' flag; do
+  case "${flag}" in
+    c) cflag='true' ;;
+    i) iflag='true' ;;
+    r) rflag='true' ;;
+    a) aflag='true' ;;
+    *) error "Unexpected option ${flag}" ;;
+  esac
+done
+
+shift $((OPTIND-1))
+
+
+
+
+#########################################################################################
+#########################################################################################
+###############################                  ########################################
+############################      GET ARGUMENTS     #####################################
+###############################                  ########################################
+#########################################################################################
+#########################################################################################
+
+
+
+# Initialize a test session. The session informations are stored in the CTXT file.
+# If no CTXT file (previous session closed properly), create a file contained the session ID
+# If CTXT file already exist (previous session NOT closed properly), keep the same CTXT file
+
+init(){
+	
+	# Test if a session is active.
+	if [ -f $CTXT ]; then
+
+		# Read the session context file in order to remember if the test has already been performed or not
+		source $CTXT
+
+		# If the active session has expired, we erase its data and stard a new session
+		if [ $TICKET -ot $EXEC_FILE ]; then
+			warning "\nThe test session has expired because the execution file has been updated since then."
+			warning "The tests will been restarted...\n"
+
+			erase
+			init $EXEC_FILE $ROOT_DIR
+
+		# If the working directory of the session cannot be found, start a new session
+		elif [ ! -d $WORKING_DIR ]; then
+			erase
+			init $EXEC_FILE $ROOT_DIR
+
+		# The session is valid (not expired and with existing working directory), the user can choose to continue with the active session,
+		# or to start a new session. If the user choose to continue, the session data are keep to be reused in the next. 
+		else
+
+			warning "\nThe previous tests is not yet finished. What do you want to do ?\n"
+			echo "1-Finish the previous test"
+			echo "2-Start a new test session"
+			echo
+			printf "\nType your choice (1 or 2)> "
+
+			read choice
+
+			if [ $choice == 2 ]; then
+				erase
+				init
+			fi	
+
+		fi
+
+			
+	# If no active session is found, create a new session with its working directory and context file
+	else
+		touch $CTXT
+		touch $TICKET
+		SESSIONID=Test_`date +"%c" | tr ' :' '__'`
+		WORKING_DIR=$ROOT_DIR/$SESSIONID
+		echo "#!/bin/bash" >> $CTXT
+		echo "SESSIONID=$SESSIONID" >> $CTXT
+		echo "WORKING_DIR=$WORKING_DIR" >> $CTXT
+		echo "NB_SUCCESSFULL_TESTS=0" >> $CTXT
+		echo "NB_PERFORMED_TESTS=0" >> $CTXT
+		echo "declare -A already_done" >> $CTXT
+		echo "declare -A success" >> $CTXT
+		echo "declare -A results" >> $CTXT
+	fi
+}
+
+erase(){
+			
+	source $CTXT
+	WORKING_DIR=$ROOT_DIR/$SESSIONID
+	rm -rf $WORKING_DIR
+
+	rm $CTXT
+}
+
+close(){
+	
+	source $CTXT
+
+	msg="$NB_SUCCESSFULL_TESTS tests reussi sur $NB_PERFORMED_TESTS"
+	if [[ $NB_SUCCESSFULL_TESTS -eq $NB_PERFORMED_TESTS ]]; then 
+		success "`title "$msg"`"
+		resume_term="$(resume TERM)"
+		echo -e "$resume_term"
+		success "`more $SUCCESS_ASCII_ART`";
+
+		
+		resume_sms="$(resume SMS)"
+		echo "Le test s'est terminé avec succès : " > .sms
+		echo -e "$msg" >> .sms
+		echo -e "$resume_sms" >> .sms
+		[[ $PHONE ]] && more .sms | boobmsg post "$PHONE"@sfr
+		
+
+		echo "To:$MAILADDR" > .mail
+		echo "From:contact.frederic.bauer@gmail.com" >> .mail
+		echo "Subject:Reussite du test" >> .mail
+		echo >> .mail
+		echo "Le test s'est terminé avec succès : $msg" >> .mail
+
+		resume_mail="$(resume MAIL)"
+		echo -e "$resume_mail" >> .mail
+
+		[[ $MAILADDR ]] && msmtp -t < .mail
+
+		# if success, save the associated code in the test directory
+		ARCHNAME=Code_"$$".tar
+		tar -cf $ARCHNAME $CODE_DIR
+		mv $ARCHNAME $WORKING_DIR
+		aplay $SCRIPT_DIR/noproblemo.wav
+
+	else
+	
+		error "`title "$msg"`"
+		resume_term="$(resume TERM)"
+		echo -e "$resume_term"
+		error "`more $ERROR_ASCII_ART`";
+
+
+		resume_sms="$(resume SMS)"
+		echo "Le test a echoué : " > .sms
+		echo -e "$msg" >> .sms
+		echo -e "$resume_sms" >> .sms
+		[[ $PHONE ]] && more .sms | boobmsg post "$PHONE"@sfr  >/dev/null 2>/dev/null
+		
+
+		echo "To:$MAILADDR" > .mail
+		echo "From:contact.frederic.bauer@gmail.com" >> .mail
+		echo "Subject:Echec du test" >> .mail
+		echo >> .mail
+		echo "Le test a echoué : $msg" >> .mail
+
+		resume_mail="$(resume MAIL)"
+		echo -e "$resume_mail" >> .mail
+
+		[[ $MAILADDR ]] && msmtp -t < .mail
+		
+		aplay $SCRIPT_DIR/doh2.wav
+
+	fi
+
+	mv $CTXT $WORKING_DIR
+}
+
+
+# Perform a test. Run the simulation to test and compares its results with the REF simulation.
+# The results of the tests are stored in the session context file : if a test has been already done by a previous call to run function,
+# its results can be loaded from the context file and the associated simulation has not to be performed.
+run(){
+
+	# If the simulation is interrupted, exit the script so as to no corrupt the session data
+	trap "exit 0" INT;
+
+	# Read the session context file in order to remember if the test has already been performed or not
+	source $CTXT
+
+
+	# If the test has NOT already been performed, run the correspond simulation and store the results in the
+	# context file
+	if [ ! ${already_done[$TESTID]} ]; then 
+
+		title "$DSCR";
+		$RUNSCRIPT 1 $SIMULATION_DIR $NAME $WORKING_DIR 1 $DNS_PROCS $PROW $PCOL $ITNB >/dev/null 2>/dev/null;
+		result=`$VALIDATE_SCRIPT  $WORKING_DIR/$NAME $NAME $REF $ITREF`
+
+		if [ $? == 0 ]; then
+			NB_SUCCESSFULL_TESTS=$((NB_SUCCESSFULL_TESTS+1))
+			
+			echo success[$TESTID]="success" >> $CTXT
+
+		else
+			echo success[$TESTID]="fail" >> $CTXT
+		fi
+
+		NB_PERFORMED_TESTS=$((NB_PERFORMED_TESTS+1))
+
+		echo -e "$result"
+		echo
+
+		echo already_done[$TESTID]=1 >> $CTXT
+		echo results[$TESTID]="'$result'" >> $CTXT
+
+		[[ $PASSED_TEST ]] &&	echo PASSED_TEST="\"$PASSED_TEST $TESTID\"" >> $CTXT
+		[[ ! $PASSED_TEST ]]   &&	echo PASSED_TEST="\"$TESTID\"" >> $CTXT
+
+		echo "NB_SUCCESSFULL_TESTS=$NB_SUCCESSFULL_TESTS" >> $CTXT
+		echo "NB_PERFORMED_TESTS=$NB_PERFORMED_TESTS" >> $CTXT
+
+	# If the test has already been performed, load the results from the context file and display it.
+	else
+
+		title "$DSCR";
+		result="${results[$TESTID]}"
+
+		echo
+		echo -e "$result"
+
+	fi
+
+
+	
+}
+
+associate(){
+
+	echo "CODE_DIR=$CODE_DIR" >> $CTXT
+	echo "PHONE=$PHONE" >> $CTXT
+	echo "MAILADDR=$MAILADDR" >> $CTXT
+}
+
+resume(){
+	
+	source $CTXT
+
+	pad=$(printf '%0.1s' "_"{1..60})
+
+	RESUMETO=$1
+
+	if [[ "$RESUMETO" == "SMS" ]]; then
+		padlength=20
+	fi
+
+	if [ "$RESUMETO" == "MAIL" ] || [ "$RESUMETO" == "TERM" ]; then
+		padlength=40
+	fi
+	
+	echo
+	echo
+
+	for test in $(echo $PASSED_TEST)
+	do
+		printf '%s' "$test"
+		printf '%*.*s' 0 $((padlength - ${#test} )) "$pad"
+
+		if [[ "$RESUMETO" == "TERM" ]]; then
+			[ "${success[$test]}" == "success" ] && printf '%s\n' "$(success " ${success[$test]}")"
+	     		[ "${success[$test]}" == "fail" ] && printf '%s\n' "$(error " ${success[$test]}")"
+		fi
+
+		if [ "$RESUMETO" == "MAIL" ] || [ "$RESUMETO" == "SMS" ]; then
+			[ "${success[$test]}" == "success" ] && printf '%s\n' "${success[$test]}"
+	     		[ "${success[$test]}" == "fail" ] && printf '%s\n' "${success[$test]}"
+		fi
+	     
+	     
+	done
+
+	echo
+	echo
+}
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+RUNSCRIPT=$SCRIPT_DIR/run.sh
+VALIDATE_SCRIPT=$SCRIPT_DIR/validate.sh
+TEXTHANDLER_SCRIPT=$SCRIPT_DIR/texthandler.sh
+
+CTXT=./.test_ctxt
+TICKET=./.ticket
+ERROR_ASCII_ART=$SCRIPT_DIR/.sad_homer
+SUCCESS_ASCII_ART=$SCRIPT_DIR/.happy_homer
+
+source $TEXTHANDLER_SCRIPT
+
+# TEST option
+if [ $rflag = 'true' ]; then
+
+	# All these parameters can depend of the current test context and must be specified in run context "-r" 
+
+	# Mandatory arguments #####################################################################################
+	# A short description a the current test, used for the title
+	DSCR=$1
+	# The parent directory of the simulation to test
+	SIMULATION_DIR=$2
+	#The name of the simulation directory
+	NAME=$3
+	#The path the simulation used as reference for this test
+	REF=$4
+	# The identifier of the test (necessary to remember if a test has been already performed)
+	TESTID=$5
+
+
+	DNS_PROCS=$6
+	PROW=$7
+	PCOL=$8
+
+	# Ideally, optional arguments (but only the last of then can really be optional for this time)
+	# #########################################################################################################
+
+	# The number of iteration to perform for this tests. SHOULD NOT exceed the iteration number of REF simulation
+	ITNB=$9
+
+
+
+	# The iteration of the ref simulation to compare with the last iteration of the test. ITNB=ITREF in most case but can differ
+	# in particular case.
+	# Example: let the test be performed from a previous simulation of 20 iterations. If we want to perform 5 iterations (ITNB=5),
+	# the test iteration will finish at 25th iteration and ITREF must be 25.
+	ITREF=${10:-$ITNB}
+
+	run
+fi
+
+# INITIALISATION option
+if [ $iflag = 'true' ]; then
+	# The exec file is used in order to check is a previous session test is yet valid and has not expired.
+	EXEC_FILE=$1
+	# The root directory of the new session test must be performed.
+	ROOT_DIR=$2
+	init
+fi
+
+# ASSOCIATION option
+# A session can be associated with source code. At the end of the session, the source code is stored in the session directory if all tests passed
+if [ $aflag = 'true' ]; then
+	CODE_DIR=$1
+	# The phone number to send a sms.
+	PHONE=$2
+	# The email to send a mail alert.
+	MAILADDR=$3
+	associate
+fi
+
+# FINALIZATION option
+if [ $cflag = 'true' ]; then
+	close
+fi
+

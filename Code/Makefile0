@@ -1,0 +1,103 @@
+include $(PATHS_FILE)
+include $(EXTERN_LIBS)
+include $(COMPILER_OPTIONS_FILE)
+
+
+CORE:=$(shell pwd)
+COMMON				= $(CORE)/common
+COMMON_LIB			=-L $(COMMON)/.lib -lcommon
+SCALAR				= $(CORE)/passive_scalar
+SCALAR_LIB			=-L $(SCALAR)/.lib -lscalar
+MHD					= $(CORE)/MHD
+MHD_LIB				=-L $(MHD)/.lib -lmhd
+VELOCITY			= $(CORE)/velocity
+VELOCITY_LIB		=-L $(VELOCITY)/.lib -lvelocity
+
+# Flags _________________________________________________________________
+ifeq ($(COMPILER), mpixlf95_r)
+	LIBS =  $(IO_LIB) $(HDF5_LIB) $(SCHEMES_LIB) $(SOLVERS_LIB) $(MISCELLANEOUS_LIB) $(LIBS_FFT) $(DECOMP2D_LIB) $(LAPACK_LIB) 
+endif
+
+ifeq ($(COMPILER),ifort)
+	LIBS =  $(SOLVERS_LIB) $(MISCELLANEOUS_LIB) $(LIBS_FFT) $(SCHEMES_LIB) $(LIBS_MKL) $(DECOMP2D_LIB)
+endif
+
+ifeq ($(COMPILER),gfortran)
+	LIBS 		= $(IO_LIB) $(HDF5_LIB) $(SCHEMES_LIB) $(SOLVERS_LIB) $(MISCELLANEOUS_LIB) $(LIBS_FFT) $(DECOMP2D_LIB) $(LAPACK_LIB)
+endif
+
+
+
+
+FFLAGS		= -c $(COMPILER_OPTIONS) $(DECOMP2D_INC)
+LDFLAG		= $(COMPILER_OPTIONS) -o
+DATA		= $(CORE)//common/data
+BUBBLE		= ./bubble
+
+MESH		= $(CORE)/common/mesh
+
+INCS 		= $(FLAG_FFT) $(HDF5_INC) $(IO_INC) $(SOLVERS_INC) $(MISCELLANEOUS_INC) $(SCHEMES_INC) -I $(COMMON) -I $(SCALAR) -I $(MHD) -I $(VELOCITY) 
+#INCS 		= $(FLAG_FFT) $(HDF5_INC) $(IO_INC) $(SOLVERS_INC) $(MISCELLANEOUS_INC) $(SCHEMES_INC) -I $(COMMON) -I $(SCALAR) -I $(VELOCITY) 
+OBJ		= $(BUBBLE)/bubble_data.o IBM.o diagnostic.o multiphysics.o IO_handler.o \
+		  main.o $(BUBBLE)/fields_utils.o $(BUBBLE)/Bubble_generator.o
+
+
+# Dependencies __________________________________________________________
+
+#$(SCALAR)/scalar_data.o 	: $(COMMON)/mesh_settings.o 
+
+
+main.o			: build_common build_scalar build_mhd $(BUBBLE)/bubble_data.o $(BUBBLE)/fields_utils.o $(BUBBLE)/Bubble_generator.o IBM.o build_velocity IO_handler.o diagnostic.o multiphysics.o  
+#main.o			: build_common build_scalar $(BUBBLE)/bubble_data.o $(BUBBLE)/fields_utils.o $(BUBBLE)/Bubble_generator.o IBM.o build_velocity IO_handler.o diagnostic.o multiphysics.o  
+# Rules _________________________________________________________________
+$(EXEC_NAME):	main.o    
+	$(FF) $(LDFLAG) $(EXEC_NAME) $(OBJ) $(SCALAR_LIB) $(MHD_LIB) $(VELOCITY_LIB) $(COMMON_LIB) $(LIBS) 
+#	$(FF) $(LDFLAG) $(EXEC_NAME) $(OBJ) $(SCALAR_LIB) $(VELOCITY_LIB) $(COMMON_LIB) $(LIBS)
+	
+build: $(EXEC_NAME)
+
+clean:
+	rm ./$(EXEC_NAME);							\
+	rm ./*.o; rm ./*.mod; 						\
+	make -C $(COMMON) clean ;					\
+	make -C $(SCALAR) clean ; 					\
+	
+	make -C $(MHD) clean ;						\
+	
+	make -C $(VELOCITY) clean ;					\
+	rm $(BUBBLE)/*.o; rm $(BUBBLE)/*.mod;		\
+	rm $(MESH)/*.o; rm $(MESH)/*.mod;
+
+	
+$(BUBBLE)/%.o:	$(BUBBLE)/%.f90
+	echo -e "\n BUBBLE"; 				\
+	$(FF) -o $@ $(FFLAGS) $(INCS)  $<
+	
+$(VELOCITY)/%.o:	$(VELOCITY)/%.f90
+	echo -e "\n VELOCITY"; 				\
+	$(FF) -o $@ $(FFLAGS) $(INCS)  $<
+	
+$(MHD)/%.o:	$(MHD)/%.f90
+	echo -e "\n MHD"; 				\
+	$(FF) -o $@ $(FFLAGS) $(INCS)  $<	
+	
+build_common :	
+	echo -e "\n build_common"; 				\
+	make -C $(COMMON) PATHS_FILE=$(PATHS_FILE) ;
+	
+build_scalar :	
+	echo -e "\n build_scalar"; 				\
+	make -C $(SCALAR) PATHS_FILE=$(PATHS_FILE) COMMON=$(COMMON) ;
+
+build_mhd :	
+	echo -e "\n build_mhd"; 				\
+	make -C $(MHD) PATHS_FILE=$(PATHS_FILE) COMMON=$(COMMON) ;
+	
+build_velocity:
+	echo -e "\n build_velocity"; 				\
+	make -C $(VELOCITY) PATHS_FILE=$(PATHS_FILE) COMMON=$(COMMON) CORE=$(CORE) ;
+
+	
+%.o:	%.f90
+	echo -e "\n PFFFFF"  $(FF) $@ $<; 				\
+	$(FF) $(FFLAGS) $(INCS) $<
