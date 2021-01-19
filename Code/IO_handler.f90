@@ -80,7 +80,7 @@ contains
             read(15,*) stretch_Y, mesh_type
 
             close(15)
-
+    
             n1m=n1-1                !number of spanwise cells
             n2m=n2-1                !number of normal cells
             n3m=n3-1                !number of streamwise cells
@@ -474,6 +474,8 @@ contains
                         write(*,*)'BC1: Freeslip'
                     case (NOSLIP)
                         write(*,*)'BC1: Noslip'
+                    case (FRINGE)
+                        write(*,*)'BC1: Pseudo-Periodic with Fringe function'
                     case (OPEN)
                         write(*,*)'BC1: In/Outflow'
                         if (flow_type==FLOW_FROM_INFLOW)write(*,*)'First field from outflow'
@@ -508,6 +510,8 @@ contains
                         write(*,*)'BC3: Noslip'
                     case (OPEN)
                         write(*,*)'BC3: In/Outflow'
+                    case (FRINGE)
+                        write(*,*)'BC1: Pseudo-Periodic with Fringe function'
 
                     case default
 

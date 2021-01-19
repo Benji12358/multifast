@@ -122,26 +122,26 @@ contains
         end if
 
         ! CLEAN FIELDS ***************************************************************
-        if ((yend(1)==n1).and.(streamwise==1)) then
-            do k = ystart(3), yend(3)
-                do j = 1, n2
-                    q1_y(n1,j,k)=0.d0
-                    q2_y(n1,j,k)=0.d0
-                    q3_y(n1,j,k)=0.d0
-                    !if ((BC1==OPEN).or.(BC1==UNBOUNDED).or.(BC1==UNBOUNDED)
-                end do
-            end do
-        end if
+        ! if (yend(1)==n1) then
+        !     do k = ystart(3), yend(3)
+        !         do j = 1, n2
+        !             q1_y(n1,j,k)=0.d0
+        !             q2_y(n1,j,k)=0.d0
+        !             q3_y(n1,j,k)=0.d0
+        !             !if ((BC1==OPEN).or.(BC1==UNBOUNDED).or.(BC1==UNBOUNDED)
+        !         end do
+        !     end do
+        ! end if
 
-        if ((yend(3)==n3).and.(streamwise==3)) then
-            do j = 1, n2
-                do i = ystart(1), yend(1)
-                    q1_y(i,j,n3)=0.d0
-                    q2_y(i,j,n3)=0.d0
-                    q3_y(i,j,n3)=0.d0
-                end do
-            end do
-        end if
+        ! if (yend(3)==n3) then
+        !     do j = 1, n2
+        !         do i = ystart(1), yend(1)
+        !             q1_y(i,j,n3)=0.d0
+        !             q2_y(i,j,n3)=0.d0
+        !             q3_y(i,j,n3)=0.d0
+        !         end do
+        !     end do
+        ! end if
 
         do k = ystart(3), yend(3)
             do i = ystart(1), yend(1)
@@ -1377,6 +1377,7 @@ contains
         call create_snapshot(COMMON_snapshot_path, "INITIALIZATION", q1_y, "W", 2)
         call create_snapshot(COMMON_snapshot_path, "INITIALIZATION", q2_y, "V", 2)
         call create_snapshot(COMMON_snapshot_path, "INITIALIZATION", q3_y, "U", 2)
+
 
     end subroutine init_turbulent_field
 

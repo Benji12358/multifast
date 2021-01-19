@@ -111,6 +111,7 @@ contains
             read(15,*) inflow_buff
             read(15,*) inflow_mode
             read(15,'(a)')COMMON_inflow_path  ! path for inflow
+            read(15,*) fringe_length
             read(15,*) divro
             read(15,*) d ! with physical unity (mm)
             read(15,*) g ! with physical unity (mm/s/s)

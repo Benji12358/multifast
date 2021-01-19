@@ -271,6 +271,10 @@ contains
         use VELOCITY_inout_flow, only:    &
         OPEN_get_inflow=>get_inflow
 
+        use FRINGE_data
+        use FRINGE_solver, only:    &
+        FRINGE_set_inflow=>set_inflow
+    
         use IBM_data
         use IBM
         use mpi
@@ -280,6 +284,7 @@ contains
         implicit none
 
         integer, intent(in) :: ns, ntime
+        integer             :: j
         real*8              :: mean_grad_P1, mean_grad_P3
         integer :: mpi_err
 
@@ -320,9 +325,9 @@ contains
 
         ! ****************** ADDING Fext in the RHS *******************
 
-        RHS1_x = RHS1_x + Fext1
-        RHS2_x = RHS2_x + Fext2
-        RHS3_x = RHS3_x + Fext3
+        RHS1_x = RHS1_x + Fext1*al*dt
+        RHS2_x = RHS2_x + Fext2*al*dt
+        RHS3_x = RHS3_x + Fext3*al*dt
 
         ! The mean pressure gradient is performed so as to fullfill the flow rate conservation
         if (streamwise==3) then
@@ -351,6 +356,7 @@ contains
 !            call SCALAR_OPEN_get_inflow(ntime, ns)
             call perform_outflow_velocity()
         endif
+        if (use_fringe) call FRINGE_set_inflow
 
         if (nrank==debugproc) then
             open(15, file="debugoutflow", position="append")
@@ -569,12 +575,10 @@ contains
             if (BC2==UNBOUNDED) n2s=xstart(2)
             if (BC2/=UNBOUNDED) n2s=max(2,xstart(2))
             ! On ne touche que q2[2..n1-2]
+            if (BC1==FRINGE) n1s=2
             if (BC1==OPEN) then
                 n1s=2
                 n1e=n1-2
-            else
-                n1s=1
-                n1e=n1-1
             endif
 
             n3s=xstart(3)
@@ -591,6 +595,7 @@ contains
 
             if (BC3==UNBOUNDED) n3s=xstart(3)
             if (BC3/=UNBOUNDED) n3s=max(2,xstart(3))
+            if (BC1==FRINGE) n1s=2
 
             ! On ne touche que q3[2..n1-2]
             if (BC1==OPEN) then
@@ -643,6 +648,8 @@ contains
         use VELOCITY_inout_flow, only:    &
         OPEN_add_outflow=>add_outflow
 
+        use FRINGE_data
+
         use IBM_data
         use IBM
         use mpi
@@ -653,7 +660,7 @@ contains
 
         real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: dpdy_old, dpdz_old
         real*8                                                  :: errorsum, errorsum_glob, divy_mean
-        integer                                                 :: mpi_err, s
+        integer                                                 :: mpi_err, s, j
 
 
         ! ******************  CORRECT VELOCITY *********************
@@ -715,6 +722,18 @@ contains
         if (outflow_buff>0) then
             if(.not. inout_newversion) call OPEN_OLD_add_outflow(ntime, ns)
             if(inout_newversion) call OPEN_add_outflow
+        endif
+
+        if (use_fringe) then
+            write(*,*) 'ERROR VELOCITY IN/OUT:', sum(abs(q1_x(1,:,:)-q1_x(n1,:,:))), sum(abs(q2_x(1,:,:)-q2_x(n1,:,:))), sum(abs(q3_x(1,:,:)-q3_x(n1,:,:)))
+            if (ntime.eq.20) then
+                open(15, file='debugFringe')
+                write(15,*) 'Yc(j)', 'q1_x(1,j,1)', 'q1_x(n1,j,1)', 'q1_x(1,j,30)', 'q1_x(n1,j,30)', 'q1_x(1,j,n3)', 'q1_x(n1,j,n3)'
+                do j=xstart(2),yend(2)
+                    write(15,*) q2_x(1,j,1), q2_x(n1,j,1), q2_x(1,j,32), q2_x(n1,j,32), q2_x(1,j,n3), q2_x(n1,j,n3)
+                enddo
+                close(15)
+            endif
         endif
 
         contains
@@ -919,7 +938,7 @@ contains
                 ! U correction
                 !do j = 1, n2m
                 do j = zstart(2), min(n2m, zend(2))
-                    do i=zstart(1), min(n1m, zend(1))
+                    do i=max(2,zstart(1)), min(n1m, zend(1))
                         q3_z(i,j,:)=q3_z(i,j,:)-dphidx3_z(i,j,:)*al*dt
                     enddo
                 enddo
@@ -930,7 +949,7 @@ contains
                 !do k=1,n3m
                 do k=ystart(3), min(n3m, yend(3))
                     !do i=1,n1m
-                    do i=ystart(1), min(n1m, yend(1))
+                    do i=max(2,ystart(1)), min(n1m, yend(1))
                         q2_y(i,:,k)=q2_y(i,:,k)-dphidx2_y(i,:,k)*al*dt
                     enddo
                 enddo
@@ -941,7 +960,7 @@ contains
 
                     !do j=1,n2m
                     do j=xstart(2), min(n2m, xend(2))
-                        q1_x(:,j,k)=q1_x(:,j,k)-dphidx1_x(:,j,k)*al*dt
+                        q1_x(2:,j,k)=q1_x(2:,j,k)-dphidx1_x(2:,j,k)*al*dt
 
 !                        pr_x(:,j,k)=0.d0!pr_x(:,j,k) + dph_x(:,j,k)/aldt
 
@@ -1365,7 +1384,7 @@ contains
         n2e=xsize(2)!(min(n2m, xend(2))-xstart(2))+1
         n3e=xsize(3)!(min(n3m, xend(3))-xstart(3))+1
 
-        if((BC1==NOSLIP).or.(BC1==PSEUDO_PERIODIC).or.(BC1==OPEN)) call diff_at_wall_1   ! ATTENTION
+        if((BC1==NOSLIP).or.(BC1==PSEUDO_PERIODIC).or.(BC1==OPEN).or.(BC1==FRINGE)) call diff_at_wall_1   ! ATTENTION
 
         call D0s_3Dx(q1_x, q1q1_x, n1,xsize(2),n2e,xsize(3),n3e, NS_Q1_BC1)
         q1q1_x=q1q1_x**2
@@ -1498,13 +1517,11 @@ contains
 
             if (BC2==UNBOUNDED) n2s=xstart(2)
             if (BC2/=UNBOUNDED) n2s=max(2,xstart(2))
+            if (BC1==FRINGE) n1s=2
             ! On ne touche que q2[2..n1-2]
             if (BC1==OPEN) then
                 n1s=2
                 n1e=n1-2
-            else
-                n1s=1
-                n1e=n1-1
             endif
 
             n3s=xstart(3)
@@ -1520,6 +1537,7 @@ contains
 
             if (BC3==UNBOUNDED) n3s=xstart(3)
             if (BC3/=UNBOUNDED) n3s=max(2,xstart(3))
+            if (BC1==FRINGE) n1s=2
 
             ! On ne touche que q3[2..n1-2]
             if (BC1==OPEN) then
@@ -1555,6 +1573,7 @@ contains
 
             if (BC2==UNBOUNDED) n2s=xstart(2)
             if (BC2/=UNBOUNDED) n2s=max(2,xstart(2))
+            if (BC1==FRINGE) n1s=2
             ! On ne touche que q2[2..n1-2]
             if (BC1==OPEN) then
                 n1s=2
@@ -1576,6 +1595,7 @@ contains
 
             if (BC3==UNBOUNDED) n3s=xstart(3)
             if (BC3/=UNBOUNDED) n3s=max(2,xstart(3))
+            if (BC1==FRINGE) n1s=2
 
             ! On ne touche que q3[2..n1-2]
             if (BC1==OPEN) then

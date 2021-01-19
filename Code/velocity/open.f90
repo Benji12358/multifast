@@ -76,21 +76,18 @@ contains
 
                 if (nrank==0) write(*,*)'PERFORMING default inflow'
 
-                open(15, file="Poiseuille_Inlet")
+                !if (nrank==0) open(15, file="Poiseuille.csv")
                 do j = xstart(2), min(xend(2), n2-1)
-                    !q1_x(1,j,:)=1.d0!-(Yc(j)-1.d0)**2
-                    q1_x(1,j,:) = - ( 6 * 1.d0 / (2*h_height)**2 ) * Yc(j) * (Yc(j) - 2*h_height)
-                    write(15,*) Yc(j), q1_x(1,j,1)
+                    q1_x(1,j,:)=1.d0!-(Yc(j)-1.d0)**2
+                    !if (nrank==0) write(15,*) Yc(j), 1.d0-(Yc(j)-1.d0)**2
                 end do
 
-                close(15)
+                !if (nrank==0) close(15)
 
-                q1_wall10(:,:)=q1_x(1,:,:)
-                q2_x(1,:,:)=0.d0
-                q3_x(1,:,:)=0.d0
+                q1_wall10(:,:)=q1_x(1, :,:)
+                q2_x(1, :,:)=0.d0
+                q3_x(1, :,:)=0.d0
 
-                ! Here the Inlet is set to be a Poiseuille profile
-                ! Not sure it is changing anything
 
             end subroutine default_inflow
 

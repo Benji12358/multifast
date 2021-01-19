@@ -24,11 +24,13 @@ contains
         use numerical_methods_settings
         use boundaries
         use start_settings, only: n1c, n2c, n3c, start_from_coarse_file
+        use fringe_data
 
         use COMMON_workspace_view
 
         use ISCALAR_IO_settings
         use IMHD_IO_settings
+        use IFRINGE_IO_settings
         use IVELOCITY_IO_settings
 
         use CORE_IO_settings
@@ -51,6 +53,7 @@ contains
 
         call SCALAR_IO_read_settings
         call MHD_IO_read_settings
+        call FRINGE_IO_read_settings
         call VELOCITY_IO_read_blowing_settings
         call read_bubble_settings
 
@@ -74,8 +77,8 @@ contains
             call exit
         endif
 
-        if ((.not. use_generic_poisson).and.((BC1/=UNBOUNDED).or.(BC2/=NOSLIP).or.(BC3/=UNBOUNDED))) then
-            if (nrank==0) write(*,*)'ERROR: The physial solver is only suited for (BC1-BC2-BC3)=0-2-0'
+        if ((.not. use_generic_poisson).and.((BC1/=UNBOUNDED).or.(BC2/=NOSLIP).or.(BC3/=UNBOUNDED)).and.(.not.use_fringe)) then
+            if (nrank==0) write(*,*)'ERROR: The physial solver is only suited for (BC1-BC2-BC3)=0-2-0 or with the use of the Fringe function'
             if (nrank==0) write(*,*)'Choose the Lamballais purely spectral solver or change the set of boundary conditions'
             call exit
         endif
@@ -482,6 +485,7 @@ contains
         use VELOCITY_final, VELOCITY_finalize=>finalize
         use SCALAR_final, SCALAR_finalize=>finalize
         use MHD_final, MHD_finalize=>finalize
+        use FRINGE_final, FRINGE_finalize=>finalize
 
         use CORE_data
         use MHD_data, only: MHD_state
@@ -544,6 +548,8 @@ program main
     use IMHD_IO
     use IMHD_LIFE
 
+    use IFRINGE_LIFE
+
     use IBM
     use CORE_IO_settings
     use CORE_data
@@ -562,6 +568,7 @@ program main
     use Bubble_generator
 
     use MHD_data, only: MHD_state, MHD_export_3D
+    use FRINGE_data, only: use_fringe
 
     use flow_buffer_handler_test
 
@@ -589,6 +596,7 @@ program main
     call VELOCITY_initialize
     if (SCA_state/=0) call SCALAR_initialize
     if (MHD_state/=0) call MHD_initialize
+    if (use_fringe) call FRINGE_initialize
 
 
     first_it=first_it+1
