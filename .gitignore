@@ -33,3 +33,6 @@
 # Simulations inputs and results
 Simulations/*
 TMP/*
+DNS_EXEC
+TEST_EXEC
+job_TEST_laptop.sh
