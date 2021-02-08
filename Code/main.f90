@@ -279,8 +279,6 @@ contains
 
         call MPI_BARRIER(MPI_COMM_WORLD , mpi_err)
 
-
-
         call init_workspace
 
         call read_settings
@@ -351,6 +349,7 @@ contains
                 COMMON_snapshot_path=trim(COMMON_results_path)//"Snapshots/"
                 COMMON_anim2D_path          =trim(COMMON_results_path)//"Animation/Anim2D/"
                 COMMON_anim2D_bubble_path   =trim(COMMON_results_path)//"Animation/Bubbles/"
+
 
 
             end subroutine init_workspace
@@ -548,6 +547,7 @@ program main
     use IMHD_IO
     use IMHD_LIFE
 
+    use IFRINGE_IO
     use IFRINGE_LIFE
 
     use IBM
@@ -589,7 +589,6 @@ program main
     call MPI_INIT(mpi_err)
 
     t0 = MPI_WTIME()
-
 
     call CORE_initialize
 
@@ -669,6 +668,7 @@ program main
             call VELOCITY_IO_write_fields(ntime)
             if (SCA_state==1) call SCALAR_IO_write_fields(ntime)
             if ((MHD_state/=0).and.(MHD_export_3D.eq.1)) call MHD_IO_write_fields(ntime)
+            if (use_fringe) call FRINGE_IO_write_fields(ntime)
         endif
 
         ! Animation2D -----------------------------------------------------------------------------

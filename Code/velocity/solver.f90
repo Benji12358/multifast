@@ -296,7 +296,6 @@ contains
 
         !   Time integration implicit viscous
         !   if nb_substep=1 Adams-Bashfort if nb_substep=3 Runge-Kutta
-
         call set_time_coeffs
         call set_NS_coeffs
 
@@ -325,9 +324,9 @@ contains
 
         ! ****************** ADDING Fext in the RHS *******************
 
-        RHS1_x = RHS1_x + Fext1*al*dt
-        RHS2_x = RHS2_x + Fext2*al*dt
-        RHS3_x = RHS3_x + Fext3*al*dt
+        RHS1_x = RHS1_x + Fext1
+        RHS2_x = RHS2_x + Fext2
+        RHS3_x = RHS3_x + Fext3
 
         ! The mean pressure gradient is performed so as to fullfill the flow rate conservation
         if (streamwise==3) then
@@ -356,7 +355,8 @@ contains
 !            call SCALAR_OPEN_get_inflow(ntime, ns)
             call perform_outflow_velocity()
         endif
-        if (use_fringe) call FRINGE_set_inflow
+        ! Reinject the flow at the outlet at the inlet for fringe
+        if (use_fringe) call FRINGE_set_inflow(ntime)
 
         if (nrank==debugproc) then
             open(15, file="debugoutflow", position="append")
@@ -575,7 +575,6 @@ contains
             if (BC2==UNBOUNDED) n2s=xstart(2)
             if (BC2/=UNBOUNDED) n2s=max(2,xstart(2))
             ! On ne touche que q2[2..n1-2]
-            if (BC1==FRINGE) n1s=2
             if (BC1==OPEN) then
                 n1s=2
                 n1e=n1-2
@@ -595,7 +594,6 @@ contains
 
             if (BC3==UNBOUNDED) n3s=xstart(3)
             if (BC3/=UNBOUNDED) n3s=max(2,xstart(3))
-            if (BC1==FRINGE) n1s=2
 
             ! On ne touche que q3[2..n1-2]
             if (BC1==OPEN) then
@@ -667,7 +665,6 @@ contains
         !  RHS3 becomes divergence(q)/(al*dt) (= laplacien (phi))
         if (BC1==OPEN) call force_flowrate_at_outflow
 
-
         ! BC and IBM are applied BEFORE correction step: => The velocity at BC and body must be adapted to be
         ! correct AFTER correction step.
         ! Use of an iterative process
@@ -680,13 +677,14 @@ contains
             ! Vc=Vc+grad(p)[s] (Vc = desired value of velocity)
             ! after correction the velocity in body and BC will be : Vc+grad(p)[N-1]-grad(p)[N]
             ! where n is the number of iteration and will be near to u
-            if (BC1==OPEN) call perform_new_target_velocity_estimate
+            if ((BC1==OPEN).or.(BC1==FRINGE)) call perform_new_target_velocity_estimate
 
             call transpose_x_to_y(q2_x, q2_y)
             call transpose_x_to_y(q3_x, q3_y)
             call transpose_y_to_z(q3_y, q3_z)
 
             ! Applying the boundary condition
+            call apply_BC3
             call apply_BC2
             call apply_BC1
 
@@ -708,7 +706,6 @@ contains
         ! Correction of velocity so as ensuring the free-divergence condition
         call correct_velocity
 
-
         ! ******************  PERFORM RESIDUAL DIVERGENCE **********
         ! RHS3_z=P*aldt
         call perform_divergence(divu_z, q3_z, q2_y, q1_x, divy_mean)
@@ -725,15 +722,7 @@ contains
         endif
 
         if (use_fringe) then
-            write(*,*) 'ERROR VELOCITY IN/OUT:', sum(abs(q1_x(1,:,:)-q1_x(n1,:,:))), sum(abs(q2_x(1,:,:)-q2_x(n1,:,:))), sum(abs(q3_x(1,:,:)-q3_x(n1,:,:)))
-            if (ntime.eq.20) then
-                open(15, file='debugFringe')
-                write(15,*) 'Yc(j)', 'q1_x(1,j,1)', 'q1_x(n1,j,1)', 'q1_x(1,j,30)', 'q1_x(n1,j,30)', 'q1_x(1,j,n3)', 'q1_x(n1,j,n3)'
-                do j=xstart(2),yend(2)
-                    write(15,*) q2_x(1,j,1), q2_x(n1,j,1), q2_x(1,j,32), q2_x(n1,j,32), q2_x(1,j,n3), q2_x(n1,j,n3)
-                enddo
-                close(15)
-            endif
+            write(*,*) 'ERROR VELOCITY IN/OUT:', sum(abs(q1_x(1,:,:)-q1_x(n1,:,:))), sum(abs(q2_x(1,:,:)-q2_x(n1-1,:,:))), sum(abs(q3_x(1,:,:)-q3_x(n1-1,:,:)))
         endif
 
         contains
@@ -807,6 +796,9 @@ contains
                 ! j: 1->n2-1
                 do k=xstart(3),min(xend(3),n3-1)
                     do j=xstart(2),min(xend(2),n2-1)
+
+                        q1_x(n1,j,k)=q1_save(n1,j,k)+dphidx1_x(n1,j,k)*al*dt
+                        q1_x(1,j,k)=q1_save(1,j,k)+dphidx1_x(1,j,k)*al*dt
 
                         if (IBM_activated) then
 
@@ -938,7 +930,7 @@ contains
                 ! U correction
                 !do j = 1, n2m
                 do j = zstart(2), min(n2m, zend(2))
-                    do i=max(2,zstart(1)), min(n1m, zend(1))
+                    do i=zstart(1), min(n1m, zend(1))
                         q3_z(i,j,:)=q3_z(i,j,:)-dphidx3_z(i,j,:)*al*dt
                     enddo
                 enddo
@@ -949,7 +941,7 @@ contains
                 !do k=1,n3m
                 do k=ystart(3), min(n3m, yend(3))
                     !do i=1,n1m
-                    do i=max(2,ystart(1)), min(n1m, yend(1))
+                    do i=ystart(1), min(n1m, yend(1))
                         q2_y(i,:,k)=q2_y(i,:,k)-dphidx2_y(i,:,k)*al*dt
                     enddo
                 enddo
@@ -960,7 +952,7 @@ contains
 
                     !do j=1,n2m
                     do j=xstart(2), min(n2m, xend(2))
-                        q1_x(2:,j,k)=q1_x(2:,j,k)-dphidx1_x(2:,j,k)*al*dt
+                        q1_x(:,j,k)=q1_x(:,j,k)-dphidx1_x(:,j,k)*al*dt
 
 !                        pr_x(:,j,k)=0.d0!pr_x(:,j,k) + dph_x(:,j,k)/aldt
 
@@ -1384,7 +1376,8 @@ contains
         n2e=xsize(2)!(min(n2m, xend(2))-xstart(2))+1
         n3e=xsize(3)!(min(n3m, xend(3))-xstart(3))+1
 
-        if((BC1==NOSLIP).or.(BC1==PSEUDO_PERIODIC).or.(BC1==OPEN).or.(BC1==FRINGE)) call diff_at_wall_1   ! ATTENTION
+        !if((BC1==NOSLIP).or.(BC1==PSEUDO_PERIODIC).or.(BC1==OPEN).or.(BC1==FRINGE)) call diff_at_wall_1   ! ATTENTION
+        if((BC1==NOSLIP).or.(BC1==PSEUDO_PERIODIC).or.(BC1==OPEN)) call diff_at_wall_1   ! ATTENTION
 
         call D0s_3Dx(q1_x, q1q1_x, n1,xsize(2),n2e,xsize(3),n3e, NS_Q1_BC1)
         q1q1_x=q1q1_x**2
@@ -1517,7 +1510,6 @@ contains
 
             if (BC2==UNBOUNDED) n2s=xstart(2)
             if (BC2/=UNBOUNDED) n2s=max(2,xstart(2))
-            if (BC1==FRINGE) n1s=2
             ! On ne touche que q2[2..n1-2]
             if (BC1==OPEN) then
                 n1s=2
@@ -1537,7 +1529,6 @@ contains
 
             if (BC3==UNBOUNDED) n3s=xstart(3)
             if (BC3/=UNBOUNDED) n3s=max(2,xstart(3))
-            if (BC1==FRINGE) n1s=2
 
             ! On ne touche que q3[2..n1-2]
             if (BC1==OPEN) then
@@ -1573,7 +1564,6 @@ contains
 
             if (BC2==UNBOUNDED) n2s=xstart(2)
             if (BC2/=UNBOUNDED) n2s=max(2,xstart(2))
-            if (BC1==FRINGE) n1s=2
             ! On ne touche que q2[2..n1-2]
             if (BC1==OPEN) then
                 n1s=2
@@ -1595,7 +1585,6 @@ contains
 
             if (BC3==UNBOUNDED) n3s=xstart(3)
             if (BC3/=UNBOUNDED) n3s=max(2,xstart(3))
-            if (BC1==FRINGE) n1s=2
 
             ! On ne touche que q3[2..n1-2]
             if (BC1==OPEN) then

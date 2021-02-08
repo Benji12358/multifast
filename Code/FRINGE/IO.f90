@@ -11,7 +11,7 @@ contains
         use mesh
 
         implicit none
-        integer             :: fringe_state, previous_n_streamwise
+        integer             :: fringe_state, n_interest_region, n_fringe_region
 
         open(15,file=trim(COMMON_settings_path)//'fringe.d')
 
@@ -19,7 +19,9 @@ contains
         read(15,*) fringe_length
         read(15,*) delta_rise
         read(15,*) delta_fall
+        read(15,*) delta_activation
         read(15,*) max_strength_damping
+        read(15,*) number_it_periodic_activation
         read(15,*)
         read(15,*) inflow_type ! 0 : poiseuille inflow, 1 : square inflow, 2 : inflow from file
         read(15,*) 
@@ -34,17 +36,17 @@ contains
 
             if (streamwise==1) then
 
-                previous_n_streamwise = n1
-                n1 = int(n1*(1+fringe_length)) + 1
                 L1 = L1*(1+fringe_length)
+                n_interest_region = int(n1/(1+fringe_length))
+                n_fringe_region = n1 - n_interest_region
                 n_fringe_end = n1
             endif
 
             if (streamwise==3) then
 
-                previous_n_streamwise = n3
-                n3 = int(n3*(1+fringe_length)) + 1
                 L3 = L3*(1+fringe_length)
+                n_interest_region = int(n3/(1+fringe_length))
+                n_fringe_region = n3 - n_interest_region
                 n_fringe_end = n3
             endif
     
@@ -54,9 +56,9 @@ contains
             n3m=n3-1                !number of streamwise cells
 
             ! At this stage, L1/L3/n1 and n3 have not been updated
-            n_delta_rise = int(delta_rise*previous_n_streamwise)
-            n_delta_fall = int(delta_fall*previous_n_streamwise)
-            n_fringe_start = previous_n_streamwise
+            n_delta_rise = int(delta_rise*n_fringe_region)
+            n_delta_fall = int(delta_fall*n_fringe_region)
+            n_fringe_start = n_interest_region + delta_activation
 
         endif
 
@@ -65,77 +67,77 @@ contains
 
 end module FRINGE_settings
 
-! module FRINGE_dao
+module FRINGE_dao
 
-!     use mpi
-!     use decomp_2d
-!     use decomp_2d_io
-!     use FRINGE_data
+    use mpi
+    use decomp_2d
+    use decomp_2d_io
+    use FRINGE_data
 
-!     implicit none
+    implicit none
 
-! contains
+contains
 
-!     subroutine write_fields(fields_dir)
-! !
-!         use physical_fields
-!         use mesh
-!         use DNS_settings
-!         use HDF5_IO
-! !
-!         implicit none
-!         character(*)    :: fields_dir
-! !
-! !
-!         character(200)    :: file_path
-! !
-! !
-!         file_path=trim(fields_dir)//"/Elec_Cur_J3"
-!         call hdf_write_3Dfield(file_path, A3_z(:,:,:), "J3", nx_global, ny_global, nz_global, zstart(1),zend(1),zstart(2),zend(2),zstart(3),zend(3))
-! !
-!         file_path=trim(fields_dir)//"/Elec_Cur_J2"
-!         call hdf_write_3Dfield(file_path, A2_y(:,:,:), "J2", nx_global, ny_global, nz_global, ystart(1),yend(1),ystart(2),yend(2),ystart(3),yend(3))
-! !
-!         file_path=trim(fields_dir)//"/Elec_Cur_J1"
-!         call hdf_write_3Dfield(file_path, A1_x(:,:,:), "J1", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
-! !
-!     end subroutine write_fields
+    subroutine write_fields(fields_dir)
+!
+        use physical_fields
+        use mesh
+        use DNS_settings
+        use HDF5_IO
+!
+        implicit none
+        character(*)    :: fields_dir
+!
+!
+        character(200)    :: file_path
+!
+!
+        file_path=trim(fields_dir)//"/f3_fringe"
+        call hdf_write_3Dfield(file_path, f3_fringe_x(:,:,:), "f3_fringe", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+!
+        file_path=trim(fields_dir)//"/f2_fringe"
+        call hdf_write_3Dfield(file_path, f2_fringe_x(:,:,:), "f2_fringe", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+!
+        file_path=trim(fields_dir)//"/f1_fringe"
+        call hdf_write_3Dfield(file_path, f1_fringe_x(:,:,:), "f1_fringe", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+!
+    end subroutine write_fields
 
-! end module FRINGE_dao
+end module FRINGE_dao
 
 
 
-! module FRINGE_results_writer
+module FRINGE_results_writer
 
-!     use mpi
-!     use decomp_2d
-!     use decomp_2d_io
-!     use FRINGE_data
+    use mpi
+    use decomp_2d
+    use decomp_2d_io
+    use FRINGE_data
 
-!     implicit none
+    implicit none
 
-! contains
+contains
 
-!     ! Export all physical field (velocity and scalar) in HDF5 format in individual files
-!     ! More generic, better than 2decomp format (not generic)
-!     subroutine write_fields(it)
-! !
-!         use run_ctxt_data
-!         use COMMON_workspace_view
-!         use FRINGE_dao, only: DAO_write_fields=>write_fields
-! !
-!         implicit none
-! !
-!         integer, intent(in) :: it
-! !
-!         character*10 tmp_str
-!         character*80 result_dir_path
-! !
-!         write(tmp_str, "(i10)")it
-!         result_dir_path=trim(COMMON_results3D_path)//'field'//trim(adjustl(tmp_str))
-! !
-!         call DAO_write_fields(result_dir_path)
-! !
-!     end subroutine write_fields
+    ! Export all physical field (velocity and scalar) in HDF5 format in individual files
+    ! More generic, better than 2decomp format (not generic)
+    subroutine write_fields(it)
+!
+        use run_ctxt_data
+        use COMMON_workspace_view
+        use FRINGE_dao, only: DAO_write_fields=>write_fields
+!
+        implicit none
+!
+        integer, intent(in) :: it
+!
+        character*10 tmp_str
+        character*80 result_dir_path
+!
+        write(tmp_str, "(i10)")it
+        result_dir_path=trim(COMMON_results3D_path)//'field'//trim(adjustl(tmp_str))
+!
+        call DAO_write_fields(result_dir_path)
+!
+    end subroutine write_fields
 
-! end module FRINGE_results_writer
+end module FRINGE_results_writer

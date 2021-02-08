@@ -164,6 +164,21 @@ contains
                 NS_Q2_BC1=Dirichlet
                 NS_Q3_BC1=Dirichlet
 
+            case (FRINGE)
+
+                NS_DEF_BC1=periodic
+                NS_PR_BC1=periodic
+                POISSON_VEL_BC1=periodic
+                POISSON_PR_BC1=periodic
+
+                NS_P11_BC1=periodic
+                NS_P12_BC1=periodic
+                NS_P13_BC1=periodic
+
+                NS_Q1_BC1=periodic
+                NS_Q2_BC1=periodic
+                NS_Q3_BC1=periodic
+
         end select
 
         !write(*,*)'TRANSPORT_Q2S_BC2', TRANSPORT_Q2S_BC2, Dirichlet
@@ -326,6 +341,14 @@ contains
             q3_wall11(xstart(2):xend(2), xstart(3):xend(3))=q3_x(n1-1, xstart(2):xend(2), xstart(3):xend(3))  ! Neumann
             q2_wall11(xstart(2):xend(2), xstart(3):xend(3))=q2_x(n1-1, xstart(2):xend(2), xstart(3):xend(3))  ! Neumann
             q1_wall11(xstart(2):xend(2), xstart(3):xend(3))=0.d0                                             ! No penetration
+
+        end if
+
+        if (BC1==FRINGE) then
+
+            q3_wall10(xstart(2):xend(2), xstart(3):xend(3))=q3_x(1, xstart(2):xend(2), xstart(3):xend(3))     ! Neumann
+            q2_wall10(xstart(2):xend(2), xstart(3):xend(3))=q2_x(1, xstart(2):xend(2), xstart(3):xend(3))     ! Neumann
+            q1_wall10(xstart(2):xend(2), xstart(3):xend(3))=q1_x(1, xstart(2):xend(2), xstart(3):xend(3))     ! No penetration
 
         end if
 

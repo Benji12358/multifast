@@ -107,6 +107,7 @@ contains
             read(15,*) BC1, BC2, BC3
             read(15,*) streamwise
             read(15,*) flow_type
+            read(15,*) delta_BL
             read(15,*) outflow_buff
             read(15,*) inflow_buff
             read(15,*) inflow_mode

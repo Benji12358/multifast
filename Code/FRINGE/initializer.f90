@@ -48,6 +48,14 @@ contains
                           q2_inflow(:,:)=0.d0
                           q3_inflow(:,:)=0.d0
 
+                    case (BOUNDARY_LAYER_INFLOW)
+
+                        if (nrank==0) write(*,*)'PERFORMING default boundary layer inflow with a boundary thickness:', delta_BL
+
+                          call perform_boundary_layer_1(q1_inflow, delta_BL)
+                          q2_inflow(:,:)=0.d0
+                          q3_inflow(:,:)=0.d0
+
                 endselect
 
             end subroutine default_inflow
@@ -130,6 +138,33 @@ contains
               end if
 
           end subroutine perform_stream1
+
+          subroutine perform_boundary_layer_1(stream1, delta_BL)
+            implicit none
+
+            real*8, dimension(ystart(2):yend(2), ystart(3):yend(3)) :: stream1
+
+            real*8                                                  :: delta_BL
+            integer                                                 :: j
+            logical                                                 :: pair_n2
+
+            pair_n2 = (mod(n2, 2)==0)
+
+            do j=ystart(2),n2/2
+                if (Yc(j)<delta_BL) then
+                    stream1(j,:) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
+                    stream1(n2-j,:) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
+                else
+                    stream1(j,:) = 1.d0
+                    stream1(n2-j,:) = 1.d0
+                endif
+            enddo
+
+            if (pair_n2) then
+                stream1(n2/2+1,:) = 1.d0
+            endif
+
+        end subroutine perform_boundary_layer_1
 
 
     end subroutine get_inflow

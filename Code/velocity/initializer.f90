@@ -100,6 +100,10 @@ contains
             call get_inflow(ts1)
         end if
 
+        if (flow_type==BOUNDARY_LAYER) then
+            if (streamwise==1) call perform_boundary_layer_1(ts1, delta_BL) 
+            if (streamwise==3) call perform_boundary_layer_3(ts3, delta_BL)
+        end if
 
 
         ! At this point, the 2D array ts1 and ts3 contain the correct q1 and q3 profiles
@@ -121,8 +125,8 @@ contains
             call perform_vortices
         end if
 
-        ! CLEAN FIELDS ***************************************************************
-        ! if (yend(1)==n1) then
+        ! ! CLEAN FIELDS ***************************************************************
+        ! if ((yend(1)==n1) then
         !     do k = ystart(3), yend(3)
         !         do j = 1, n2
         !             q1_y(n1,j,k)=0.d0
@@ -167,6 +171,14 @@ contains
             q2_wall11(xstart(2):xend(2), xstart(3):xend(3)) =0.d0
             q1_wall11(xstart(2):xend(2), xstart(3):xend(3)) =0.d0
             q1_x(n1, xstart(2):xend(2), xstart(3):xend(3))  =0.d0
+
+        end if
+
+        if (BC1==FRINGE) then
+
+            q3_wall10(xstart(2):xend(2), xstart(3):xend(3)) =0.d0
+            q2_wall10(xstart(2):xend(2), xstart(3):xend(3)) =0.d0
+            q1_wall10(xstart(2):xend(2), xstart(3):xend(3)) = ts1(:,:)
 
         end if
 
@@ -362,6 +374,62 @@ contains
             end if !BC2
 
         end subroutine perform_stream3
+
+
+        subroutine perform_boundary_layer_1(stream1, delta_BL)
+            implicit none
+
+            real*8, dimension(ystart(2):yend(2), ystart(3):yend(3)) :: stream1
+
+            real*8                                                  :: delta_BL
+            integer                                                 :: j
+            logical                                                 :: pair_n2
+
+            pair_n2 = (mod(n2, 2)==0)
+
+            do j=ystart(2),n2/2
+                if (Yc(j)<delta_BL) then
+                    stream1(j,:) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
+                    stream1(n2-j,:) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
+                else
+                    stream1(j,:) = 1.d0
+                    stream1(n2-j,:) = 1.d0
+                endif
+            enddo
+
+            if (pair_n2) then
+                stream1(n2/2+1,:) = 1.d0
+            endif
+
+        end subroutine perform_boundary_layer_1
+
+
+        subroutine perform_boundary_layer_3(stream3, delta_BL)
+            implicit none
+
+            real*8, dimension(ystart(1):yend(1), ystart(2):yend(2)) :: stream3
+
+            real*8                                                  :: delta_BL
+            integer                                                 :: j
+            logical                                                 :: pair_n2
+
+            pair_n2 = (mod(n2, 2)==0)
+
+            do j=ystart(2),n2/2
+                if (Yc(j)<delta_BL) then
+                    stream3(:,j) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
+                    stream3(:,n2-j) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
+                else
+                    stream3(:,j) = 1.d0
+                    stream3(:,n2-j) = 1.d0
+                endif
+            enddo
+
+            if (pair_n2) then
+                stream3(:,n2/2+1) = 1.d0
+            endif
+
+        end subroutine perform_boundary_layer_3
 
 
         subroutine rectangle_channel_flow_init(stream3_temp,c1,c2)
@@ -1203,7 +1271,7 @@ contains
             if(dabs(1.d0-Yc(j)).lt.0.025) disturbance_intensity_at_j=disturbance_intensity/5.d0
 
             do k=ystart(3), min(n3m, yend(3))
-                do i=ystart(1), min(n1m, yend(1))
+                do i=max(ystart(1),2), min(n1m, yend(1))
 
                     ph1=4.d0*2.d0*pi*(i-1)/(n1-1)
                     ph2=6.d0*2.d0*pi*(j-1)/(n2-1)
@@ -1246,7 +1314,7 @@ contains
 
      do j=1,n2m
           do k=ystart(3), min(n3m, yend(3))
-                do i=ystart(1), min(n1m, yend(1))
+                do i=max(ystart(1),2), min(n1m, yend(1))
 !
                     !! Setting the mean along (X, Z) directions to 0
                     q3_y(i,j,k)=q3_y(i,j,k) - v3m(j)

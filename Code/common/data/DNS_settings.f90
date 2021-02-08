@@ -5,14 +5,14 @@ module DNS_settings
     ! FLOW_FROM_INFLOW: In turbulence generator, the flow will be build from the first 2D fields of inflow,
     ! obtained from an external simulation. This non-physical first solution garantees a minimal consistancy between
     ! inflow and inner field and avoid divergence of code
-    integer, parameter  :: CONSTANT_FLOW=0, CHANNEL_FLOW=1, FLOW_FROM_INFLOW=2, VORTICES=3
+    integer, parameter  :: CONSTANT_FLOW=0, CHANNEL_FLOW=1, FLOW_FROM_INFLOW=2, VORTICES=3, BOUNDARY_LAYER=4
 
     real*8         :: dt,ren, Uc, g, h_height
     integer         :: save_gradP_frequency ! mean_gradP export frequency
     integer         :: first_it=0
     integer         :: last_it
     integer         :: flow_type
-    real*8          :: inflow_int=0.4d0
+    real*8          :: inflow_int=0.4d0, delta_BL
     integer         :: streamwise
     real*8          :: q1_x_av, q2_x_av, q3_x_av
 

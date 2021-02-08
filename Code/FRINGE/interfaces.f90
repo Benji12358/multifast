@@ -15,19 +15,19 @@ module IFRINGE_IO_settings
 
 end module IFRINGE_IO_settings
 
-! module IFRINGE_IO_dao
-! !
-!     use FRINGE_dao, only:       &
-!     FRINGE_IO_write_fields => write_fields
-! !
-! end module IFRINGE_IO_dao
+module IFRINGE_IO_dao
+!
+    use FRINGE_dao, only:       &
+    FRINGE_IO_write_fields => write_fields
+!
+end module IFRINGE_IO_dao
 
-! module IFRINGE_IO_results_writer
-! !
-!     use FRINGE_results_writer, only:       &
-!     FRINGE_IO_write_fields => write_fields
-! !
-! end module IFRINGE_IO_results_writer
+module IFRINGE_IO_results_writer
+!
+    use FRINGE_results_writer, only:       &
+    FRINGE_IO_write_fields => write_fields
+!
+end module IFRINGE_IO_results_writer
 
 !module IFRINGE_IO_loader
 !
@@ -36,13 +36,13 @@ end module IFRINGE_IO_settings
 !
 !end module IFRINGE_IO_loader
 
-! module IFRINGE_IO
-!     use IFRINGE_IO_settings
-!     use IFRINGE_IO_results_writer
-! !    use IFRINGE_IO_loader
-! contains
+module IFRINGE_IO
+    use IFRINGE_IO_settings
+    use IFRINGE_IO_results_writer
+!    use IFRINGE_IO_loader
+contains
 
-! end module IFRINGE_IO
+end module IFRINGE_IO
 
 
 
