@@ -89,8 +89,11 @@ TEXT_LEVEL2="-------------"
 #DNS_NAME=TEST2
 #DNS_NAME=TEST_Laminar_OPEN
 #DNS_NAME=TEST_Laminar_Olivier
-#DNS_NAME=TEST_Laminar
-DNS_NAME=TEST_Laminar_PostTreatment
+#DNS_NAME=TEST_Laminar_Fringe_0.75
+#DNS_NAME=TEST_Turbulent_Fringe_0.75_Debug_V2
+#DNS_NAME=TEST_Turbulent_Fringe_BLFlow_Debug
+#DNS_NAME=TEST_Laminar_PostTreatment
+DNS_NAME=$1
 DNS_OUTPUT=OUT_DNS
 DNS_TIME=345000
 #JOB_NAME=job
@@ -106,7 +109,7 @@ TMPDIR=/home/benj/WORKSPACE/Codes/DNS/MULTIFAST_MHD_v2/TMP/$DNS_NAME
 SIMULATION_DIR=/home/benj/WORKSPACE/Codes/DNS/MULTIFAST_MHD_v2/Simulations/$DNS_NAME
 IT1=0
 EVERY=100
-IT2=5000
+IT2=$2
 
 
 dir_to_create_list=$TMPDIR/mkdir_dir_list
