@@ -3,4 +3,4 @@
 #rm -r TMP/TEST_Laminar/
 #make clean_all
 make
-./job_TEST_laptop.sh $1 $2
+./job_TEST_laptop.sh $1 $2 $3
