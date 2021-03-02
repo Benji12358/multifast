@@ -125,8 +125,13 @@ contains
             call perform_vortices
         end if
 
+        ! Generation of counterrotating vortices
+        if (use_counterrotating_vortices) then
+            call perform_counterrotating_vortices
+        end if
+
         ! ! CLEAN FIELDS ***************************************************************
-        ! if ((yend(1)==n1) then
+        ! if (yend(1)==n1) then
         !     do k = ystart(3), yend(3)
         !         do j = 1, n2
         !             q1_y(n1,j,k)=0.d0
@@ -174,14 +179,6 @@ contains
 
         end if
 
-        if (BC1==FRINGE) then
-
-            q3_wall10(xstart(2):xend(2), xstart(3):xend(3)) =0.d0
-            q2_wall10(xstart(2):xend(2), xstart(3):xend(3)) =0.d0
-            q1_wall10(xstart(2):xend(2), xstart(3):xend(3)) = ts1(:,:)
-
-        end if
-
         ! X2 direction
         if ((BC2==FREESLIP).or.(BC2==NOSLIP)) then
 
@@ -212,6 +209,20 @@ contains
             q3_z(zstart(1):zend(1), zstart(2):zend(2), n3) =0.d0
 
         end if
+
+        ! if (BC3==FRINGE) then
+
+        !     q3_wall30(zstart(1):zend(1), zstart(2):zend(2))=ts3(:,:)
+        !     q2_wall30(zstart(1):zend(1), zstart(2):zend(2))=0.d0
+        !     q1_wall30(zstart(1):zend(1), zstart(2):zend(2))=0.d0
+        !     q3_z(zstart(1):zend(1), zstart(2):zend(2), 1) =ts3(:,:)
+
+        !     q3_wall31(zstart(1):zend(1), zstart(2):zend(2))=ts3(:,:)
+        !     q2_wall31(zstart(1):zend(1), zstart(2):zend(2))=0.d0
+        !     q1_wall31(zstart(1):zend(1), zstart(2):zend(2))=0.d0
+        !     q3_z(zstart(1):zend(1), zstart(2):zend(2), n3) =ts3(:,:)
+
+        ! end if
 
         ! ATTENTION
         if (BC1==OPEN) then
@@ -331,7 +342,7 @@ contains
             if (BC2==NOSLIP) then
 
 
-                do j=1,n2
+                do j=1,n2-1
 
                     if (mod(n2, 2)==0) then
                        c2=Yc(n2/2)
@@ -339,7 +350,7 @@ contains
                         c2=Y((n2-1)/2+1)
                     end if
 
-                    f2(j)=(1.d0-((Y(j)-c2)/(0.5d0*L2))**2)
+                    f2(j)=(1.d0-((Yc(j)-c2)/(0.5d0*L2))**2)
 
                 enddo
 
@@ -614,6 +625,100 @@ contains
 
 
         end subroutine perform_vortices
+
+        subroutine perform_counterrotating_vortices()
+            use DNS_settings
+            use COMMON_workspace_view, only: COMMON_snapshot_path
+            use snapshot_writer
+            implicit none
+
+            real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))      :: ucv_y, vcv_y, wcv_y
+
+            integer     :: i,j,k
+            real*8      :: x_adim, z_adim, F, phi_y, phi_z
+
+            ucv_y=0.d0
+            vcv_y=0.d0
+            wcv_y=0.d0
+
+            do i=ystart(1),min(yend(1),n1m)
+                do j=ystart(2),min(yend(2),n2m)
+                    do k=ystart(3),min(yend(3),n3m)
+
+                        ! Be carefull, X is in dimension 3, and Z in dimension 1
+
+                        !!!!!!!!!!!!!!!!!!!!!!!! PAIR A !!!!!!!!!!!!!!!!!!!!!!!!
+                        ! For u
+                        x_adim = ( (Z(i)-xc_A)*cos(perturbation_angle) - (Xc(k)-zc_A)*sin(perturbation_angle))/lx_A
+                        z_adim = ( (Z(i)-xc_A)*sin(perturbation_angle) - (Xc(k)-zc_A)*cos(perturbation_angle))/lz_A
+                        F = epsilon_A * Yc(j)**(p_A-1) * (2-Yc(j))**(q_A-1) * x_adim * z_adim * lz_A
+                        F = F * exp( - x_adim**2 - z_adim**2 )
+                        phi_y = ( p_A*(2-Yc(j)) - q_A*Yc(j) ) * F
+                        ucv_y(i,j,k) = ucv_y(i,j,k) - phi_y*sin(perturbation_angle)
+
+                        ! For v
+                        x_adim = ( (Zc(i)-xc_A)*cos(perturbation_angle) - (Xc(k)-zc_A)*sin(perturbation_angle))/lx_A
+                        z_adim = ( (Zc(i)-xc_A)*sin(perturbation_angle) - (Xc(k)-zc_A)*cos(perturbation_angle))/lz_A
+                        F = epsilon_A * Yc(j)**p_A * (2-Yc(j))**q_A * x_adim
+                        F = F * exp( - x_adim**2 - z_adim**2 )
+                        phi_z = ( 1 - 2*z_adim**2 ) * F
+                        vcv_y(i,j,k) = vcv_y(i,j,k) - phi_z
+
+                        ! For w
+                        x_adim = ( (Zc(i)-xc_A)*cos(perturbation_angle) - (X(k)-zc_A)*sin(perturbation_angle))/lx_A
+                        z_adim = ( (Zc(i)-xc_A)*sin(perturbation_angle) - (X(k)-zc_A)*cos(perturbation_angle))/lz_A
+                        F = epsilon_A * Yc(j)**(p_A-1) * (2-Yc(j))**(q_A-1) * x_adim * z_adim * lz_A
+                        F = F * exp( - x_adim**2 - z_adim**2 )
+                        phi_y = ( p_A*(2-Yc(j)) - q_A*Yc(j) ) * F
+                        wcv_y(i,j,k) = wcv_y(i,j,k) - phi_y*cos(perturbation_angle)
+
+                        !!!!!!!!!!!!!!!!!!!!!!!! PAIR B !!!!!!!!!!!!!!!!!!!!!!!!
+                        ! For u
+                        x_adim = ( (Z(i)-xc_B)*cos(perturbation_angle) - (Xc(k)-zc_B)*sin(perturbation_angle))/lx_B
+                        z_adim = ( (Z(i)-xc_B)*sin(perturbation_angle) - (Xc(k)-zc_B)*cos(perturbation_angle))/lz_B
+                        F = epsilon_B * Yc(j)**(p_B-1) * (2-Yc(j))**(q_B-1) * x_adim * z_adim * lz_B
+                        F = F * exp( - x_adim**2 - z_adim**2 )
+                        phi_y = ( p_B*(2-Yc(j)) - q_B*Yc(j) ) * F
+                        ucv_y(i,j,k) = ucv_y(i,j,k) - phi_y*sin(perturbation_angle)
+
+                        ! For v
+                        x_adim = ( (Zc(i)-xc_B)*cos(perturbation_angle) - (Xc(k)-zc_B)*sin(perturbation_angle))/lx_B
+                        z_adim = ( (Zc(i)-xc_B)*sin(perturbation_angle) - (Xc(k)-zc_B)*cos(perturbation_angle))/lz_B
+                        F = epsilon_B * Yc(j)**p_B * (2-Yc(j))**q_B * x_adim
+                        F = F * exp( - x_adim**2 - z_adim**2 )
+                        phi_z = ( 1 - 2*z_adim**2 ) * F
+                        vcv_y(i,j,k) = vcv_y(i,j,k) - phi_z
+
+                        ! For w
+                        x_adim = ( (Zc(i)-xc_B)*cos(perturbation_angle) - (X(k)-zc_B)*sin(perturbation_angle))/lx_B
+                        z_adim = ( (Zc(i)-xc_B)*sin(perturbation_angle) - (X(k)-zc_B)*cos(perturbation_angle))/lz_B
+                        F = epsilon_B * Yc(j)**(p_B-1) * (2-Yc(j))**(q_B-1) * x_adim * z_adim * lz_B
+                        F = F * exp( - x_adim**2 - z_adim**2 )
+                        phi_y = ( p_B*(2-Yc(j)) - q_B*Yc(j) ) * F
+                        wcv_y(i,j,k) = wcv_y(i,j,k) - phi_y*cos(perturbation_angle)
+
+                    enddo
+                enddo
+            enddo
+
+            do i=ystart(1),yend(1)
+                do j=ystart(2),yend(2)
+                    do k=ystart(3),yend(3)
+
+                        q1_y(i,j,k) = q1_y(i,j,k) + ucv_y(i,j,k)
+                        q2_y(i,j,k) = q2_y(i,j,k) + vcv_y(i,j,k)
+                        q3_y(i,j,k) = q3_y(i,j,k) + wcv_y(i,j,k)
+
+                    enddo
+                enddo
+            enddo
+
+
+        write(*,*) 'U', sum(ucv_y(:,:,:))
+        write(*,*) 'V', sum(vcv_y(:,:,:))
+        write(*,*) 'W', sum(wcv_y(:,:,:))
+
+        end subroutine perform_counterrotating_vortices
 
     end subroutine
 !
@@ -1445,6 +1550,8 @@ contains
         call create_snapshot(COMMON_snapshot_path, "INITIALIZATION", q1_y, "W", 2)
         call create_snapshot(COMMON_snapshot_path, "INITIALIZATION", q2_y, "V", 2)
         call create_snapshot(COMMON_snapshot_path, "INITIALIZATION", q3_y, "U", 2)
+
+        !write(*,*) 'q3_x', q3_x(32,:,n3m)
 
 
     end subroutine init_turbulent_field

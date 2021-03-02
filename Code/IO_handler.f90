@@ -108,6 +108,7 @@ contains
             read(15,*) streamwise
             read(15,*) flow_type
             read(15,*) delta_BL
+            read(15,*) outflow_type
             read(15,*) outflow_buff
             read(15,*) inflow_buff
             read(15,*) inflow_mode
@@ -325,6 +326,53 @@ contains
 
         end subroutine read_vortices_settings
 
+        subroutine read_counterrotating_vortices_settings()
+
+            use mathematical_constants
+            use DNS_settings
+
+            implicit none
+            integer :: counterrotating_vortices_state
+
+            open(10,file=trim(COMMON_settings_path)//'counterrotating_vortices.d')
+
+            read(10,*) 
+            read(10,*) 
+            read(10,*) counterrotating_vortices_state
+            read(10,*) perturbation_angle
+            read(10,*)
+            read(10,*) epsilon_A
+            read(10,*) p_A
+            read(10,*) q_A
+            read(10,*) lx_A
+            read(10,*) lz_A
+            read(10,*) xc_A
+            read(10,*) zc_A
+            read(10,*)
+            read(10,*) epsilon_B
+            read(10,*) p_B
+            read(10,*) q_B
+            read(10,*) lx_B
+            read(10,*) lz_B
+            read(10,*) xc_B
+            read(10,*) zc_B
+
+            close(10)
+
+            xc_A = xc_A*pi
+            zc_A = zc_A*pi
+            xc_B = xc_B*pi
+            zc_B = zc_B*pi
+
+            !lx_A = lx_A*pi
+            !lz_A = lz_A*pi
+            !lx_B = lx_B*pi
+            !lz_B = lz_B*pi
+
+            use_counterrotating_vortices = (counterrotating_vortices_state==1)
+
+        end subroutine read_counterrotating_vortices_settings
+
 
         subroutine resume_settings()
 
@@ -512,7 +560,7 @@ contains
                     case (OPEN)
                         write(*,*)'BC3: In/Outflow'
                     case (FRINGE)
-                        write(*,*)'BC1: Pseudo-Periodic with Fringe function'
+                        write(*,*)'BC3: Pseudo-Periodic with Fringe function'
 
                     case default
 

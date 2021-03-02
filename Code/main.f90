@@ -58,6 +58,7 @@ contains
         call read_bubble_settings
 
         call read_vortices_settings
+        call read_counterrotating_vortices_settings
 
         !! nrank not yet defined, equals 0 for every process. Will be in decomp_2d_init
         if (start_from_coarse_file) then

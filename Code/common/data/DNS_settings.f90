@@ -14,11 +14,18 @@ module DNS_settings
     integer         :: flow_type
     real*8          :: inflow_int=0.4d0, delta_BL
     integer         :: streamwise
+    integer         :: outflow_type
     real*8          :: q1_x_av, q2_x_av, q3_x_av
 
     !!!!! VORTEX PARAMETERS !!!!!
     integer     ::  vort_dir !! vortex direction, starting 1-3 plane
     real*8      ::  Lvort, dvort, x1vs, hvort, x3vs, Urot !! length, diameter, center height of vortex and rotational velocity
+
+    !!!!! COUNTERROTATING VORTICES PARAMETERS !!!!!
+    logical     ::  use_counterrotating_vortices
+    real*8      ::  perturbation_angle
+    real*8      ::  epsilon_A, p_A, q_A, lx_A, lz_A, xc_A, zc_A !! pair A
+    real*8      ::  epsilon_B, p_B, q_B, lx_B, lz_B, xc_B, zc_B !! pair B
 
 end module DNS_settings
 
