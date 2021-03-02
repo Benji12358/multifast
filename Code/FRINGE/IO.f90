@@ -59,6 +59,7 @@ contains
             n_delta_rise = int(delta_rise*n_fringe_region)
             n_delta_fall = int(delta_fall*n_fringe_region)
             n_fringe_start = n_interest_region + delta_activation
+            n_fringe_end = n_fringe_end + n_delta_fall
 
         endif
 

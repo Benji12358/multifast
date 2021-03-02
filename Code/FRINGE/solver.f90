@@ -1,7 +1,5 @@
 module FRINGE_solver
-!
-!*********** ASSUMING THAT STREAMWISE = 1 ******************
-!
+
     use decomp_2d
     use mesh
     use boundaries
@@ -24,15 +22,32 @@ contains
       if (ntime.gt.number_it_periodic_activation) then
         ! the outflow is reinject at the inflow
         write(*,*) 'The outflow is reinjected at the inflow'
-        q1_x(1,:,:) = q1_x(n1,:,:)
-        q2_x(1,:,:) = q2_x(n1-1,:,:)
-        q3_x(1,:,:) = q3_x(n1-1,:,:)
+
+        if (streamwise==1) then
+          q1_x(1,:,:) = q1_x(n1,:,:)
+          q2_x(1,:,:) = q2_x(n1-1,:,:)
+          q3_x(1,:,:) = q3_x(n1-1,:,:)
+        endif
+
+        if (streamwise==3) then
+          q1_x(:,:,1) = q1_x(:,:,n3-1)
+          q2_x(:,:,1) = q2_x(:,:,n3-1)
+          q3_x(:,:,1) = q3_x(:,:,n3)
+        endif
 
       else
         ! the inflow is imposed
-        q1_x(1,:,:) = q1_inflow(:,:)
-        q2_x(1,:,:) = q2_inflow(:,:)
-        q3_x(1,:,:) = q3_inflow(:,:)
+        if (streamwise==1) then
+          q1_x(1,:,:) = q1_inflow(:,:)
+          q2_x(1,:,:) = q2_inflow(:,:)
+          q3_x(1,:,:) = q3_inflow(:,:)
+        endif
+
+        if (streamwise==3) then
+          q1_x(:,:,1) = q1_inflow(:,:)
+          q2_x(:,:,1) = q2_inflow(:,:)
+          q3_x(:,:,1) = q3_inflow(:,:)
+        endif
 
       endif
 
@@ -47,21 +62,50 @@ contains
       integer :: i,j,k
       real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: q1_x, q2_x, q3_x
       real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(inout) :: f1_fringe_x, f2_fringe_x, f3_fringe_x
-      real*8, dimension(xstart(1):xend(1)) :: lambda_x
 
-      do i=xstart(1),xend(1)
-        lambda_x(i) = max_strength_damping * ( fringe_smooth_step_function( real(i-n_fringe_start,8)/real(n_delta_rise, 8) ) - fringe_smooth_step_function( real(i-n_fringe_end,8)/real(n_delta_fall,8) + 1) )
-      enddo
+      if (streamwise==1) then
+        do i=xstart(1),xend(1)
+          lambda_x(i) = max_strength_damping * ( fringe_smooth_step_function( real(i-n_fringe_start,8)/real(n_delta_rise, 8) ) - fringe_smooth_step_function( real(i-n_fringe_end,8)/real(n_delta_fall,8) + 1) )
+        enddo
+      endif
 
-      do i=xstart(1),xend(1)
-        do j=xstart(2),xend(2)
-          do k=xstart(3),xend(3)
-            f1_fringe_x(i,j,k) = lambda_x(i) * ( q1_inflow(j,k) - q1_x(i,j,k) )
-            f2_fringe_x(i,j,k) = lambda_x(i) * ( q2_inflow(j,k) - q2_x(i,j,k) )
-            f3_fringe_x(i,j,k) = lambda_x(i) * ( q3_inflow(j,k) - q3_x(i,j,k) )
+      if (streamwise==3) then
+        do k=xstart(3),xend(3)
+          lambda_x(k) = max_strength_damping * ( fringe_smooth_step_function( real(k-n_fringe_start,8)/real(n_delta_rise, 8) ) - fringe_smooth_step_function( real(k-n_fringe_end,8)/real(n_delta_fall,8) + 1) )
+        enddo
+      endif
+
+      if (streamwise==1) then
+
+        do i=xstart(1),xend(1)
+          do j=xstart(2),xend(2)
+            do k=xstart(3),xend(3)
+              f1_fringe_x(i,j,k) = lambda_x(i) * ( q1_inflow(j,k) - q1_x(i,j,k) )
+              f2_fringe_x(i,j,k) = lambda_x(i) * ( q2_inflow(j,k) - q2_x(i,j,k) )
+              f3_fringe_x(i,j,k) = lambda_x(i) * ( q3_inflow(j,k) - q3_x(i,j,k) )
+            enddo
           enddo
         enddo
-      enddo
+
+      endif
+
+      if (streamwise==3) then
+
+        do i=xstart(1),xend(1)
+          do j=xstart(2),xend(2)
+            do k=xstart(3),xend(3)
+              f1_fringe_x(i,j,k) = lambda_x(k) * ( q1_inflow(i,j) - q1_x(i,j,k) )
+              f2_fringe_x(i,j,k) = lambda_x(k) * ( q2_inflow(i,j) - q2_x(i,j,k) )
+              f3_fringe_x(i,j,k) = lambda_x(k) * ( q3_inflow(i,j) - q3_x(i,j,k) )
+            enddo
+          enddo
+        enddo
+
+      endif
+
+      !write(*,*) 'f1_fringe_x sum', sum(f1_fringe_x)
+      !write(*,*) 'f2_fringe_x sum', sum(f2_fringe_x)
+      !write(*,*) 'f3_fringe_x sum', sum(f3_fringe_x)
 
       !open(11, file="debugFringeForce")
       !do j=xstart(2),xend(2)

@@ -656,7 +656,8 @@ contains
 
         integer, intent(in)                                     :: ns, ntime
 
-        real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: dpdy_old, dpdz_old
+        real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: dpdy_old1
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2)) :: dpdy_old3
         real*8                                                  :: errorsum, errorsum_glob, divy_mean
         integer                                                 :: mpi_err, s, j
 
@@ -671,13 +672,15 @@ contains
 
         do s = 1, 1         ! Loop for iterative process
 
-            dpdy_old=dphidx2_x(n1-1,:,:)
+            if (streamwise==1) dpdy_old1=dphidx2_x(n1-1,:,:)
+            if (streamwise==3) dpdy_old3=dphidx2_x(:,:,n3-1)
 
             ! applying current estimation s of grad(p) to BC and body
             ! Vc=Vc+grad(p)[s] (Vc = desired value of velocity)
             ! after correction the velocity in body and BC will be : Vc+grad(p)[N-1]-grad(p)[N]
             ! where n is the number of iteration and will be near to u
             if ((BC1==OPEN).or.(BC1==FRINGE)) call perform_new_target_velocity_estimate
+            if ((BC3==OPEN).or.(BC3==FRINGE)) call perform_new_target_velocity_estimate
 
             call transpose_x_to_y(q2_x, q2_y)
             call transpose_x_to_y(q3_x, q3_y)
@@ -696,7 +699,8 @@ contains
             call perform_gradp(dp_z)
 
             ! Convergence control of iterative process :
-            errorsum=sum(abs(dpdy_old-dphidx2_x(n1-1,:,:)))
+            if (streamwise==1) errorsum=sum(abs(dpdy_old1-dphidx2_x(n1-1,:,:)))
+            if (streamwise==3) errorsum=sum(abs(dpdy_old3-dphidx2_x(:,:,n3-1)))
 
             call MPI_ALLREDUCE(errorsum,errorsum_glob,1,MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
             if (nrank==0) write(*,*) 'ERROR GRADP:', s, errorsum_glob
@@ -722,7 +726,12 @@ contains
         endif
 
         if (use_fringe) then
-            write(*,*) 'ERROR VELOCITY IN/OUT:', sum(abs(q1_x(1,:,:)-q1_x(n1,:,:))), sum(abs(q2_x(1,:,:)-q2_x(n1-1,:,:))), sum(abs(q3_x(1,:,:)-q3_x(n1-1,:,:)))
+            if (streamwise==1) then
+                write(*,*) 'ERROR VELOCITY IN/OUT:', sum(abs(q1_inflow-q1_x(n1,:,:))), sum(abs(q2_inflow-q2_x(n1-1,:,:))), sum(abs(q3_inflow-q3_x(n1-1,:,:)))
+            endif
+            if (streamwise==3) then
+                write(*,*) 'ERROR VELOCITY IN/OUT:', sum(abs(q1_inflow-q1_x(:,:,n3-1))), sum(abs(q2_inflow-q2_x(:,:,n3-1))), sum(abs(q3_inflow-q3_x(:,:,n3)))
+            endif
         endif
 
         contains
@@ -784,7 +793,7 @@ contains
             ! When IBM or OPEN boundary condition are activated, a correct target velocity must be applied BEFORE
             ! the correction by the pressure gradient SO AS to obtain the correct desired velocity field AFTER correction
             ! The current estimation of the target velocity is stored in the "q" array
-            subroutine perform_new_target_velocity_estimate
+            subroutine perform_new_target_velocity_estimate1
                 use IBM_settings
                 use IBM_data
                 implicit none
@@ -847,7 +856,72 @@ contains
                     enddo
                 enddo
 
-            end subroutine perform_new_target_velocity_estimate
+            end subroutine perform_new_target_velocity_estimate1
+
+            subroutine perform_new_target_velocity_estimate3
+                use IBM_settings
+                use IBM_data
+                implicit none
+                integer     :: i, j, k
+
+
+
+                ! k: 1->n3-1 (periodique
+                ! j: 1->n2-1
+                do i=xstart(1),min(xend(1),n1-1)
+                    do j=xstart(2),min(xend(2),n2-1)
+
+                        q1_x(i,j,n3-1)=q1_save(i,j,n3-1)+dphidx1_x(i,j,n3-1)*al*dt
+                        q1_x(i,j,1)=q1_save(i,j,1)+dphidx1_x(i,j,1)*al*dt
+
+                        if (IBM_activated) then
+
+                            do k = 2, n3-2
+                                q1_x(i,j,k)=q1_save(i,j,k)+IBM_mask1(i,j,k)*dphidx1_x(i,j,k)*al*dt
+                            end do
+
+                        endif
+                    enddo
+                enddo
+
+                ! k: 1->n3-1
+                ! j: 2->n2-1 (Dirichlet)
+                do i=xstart(1),min(xend(1),n1-1)
+                    do j=max(2,xstart(2)),min(xend(2),n2-1)
+
+                        q2_x(i,j,n3-1)=q2_save(i,j,n3-1)+dphidx2_x(i,j,n3-1)*al*dt
+                        q2_x(i,j,1)=q2_save(i,j,1)+dphidx2_x(i,j,1)*al*dt
+
+                        if (IBM_activated) then
+
+                            do k = 2, n3-2
+                                q2_x(i,j,k)=q2_save(i,j,k)+IBM_mask2(i,j,k)*dphidx2_x(i,j,k)*al*dt
+                            end do
+
+                        endif
+
+                    enddo
+                enddo
+
+                ! k: 1->n3-1 (periodique
+                ! j: 1->n2-1
+                do i=xstart(1),min(xend(1),n1-1)
+                    do j=xstart(2),min(xend(2),n2-1)
+
+                        q3_x(i,j,n3)=q3_save(i,j,n3)+dphidx3_x(i,j,n3)*al*dt
+                        q3_x(i,j,1)=q3_save(i,j,1)+dphidx3_x(i,j,1)*al*dt
+
+                        if (IBM_activated) then
+
+                            do k = 2, n3-1
+                                q3_x(i,j,k)=q3_save(i,j,k)+IBM_mask3(i,j,k)*dphidx3_x(i,j,k)*al*dt
+                            end do
+
+                        endif
+                    enddo
+                enddo
+
+            end subroutine perform_new_target_velocity_estimate3
 
 
 
@@ -998,7 +1072,7 @@ contains
         use irregular_derivative_coefficients
         implicit none
         integer, save   :: nb=1
-        integer, parameter  :: outflow_type=6
+        !integer, parameter  :: outflow_type=6
         real*8          :: q1max, q1min, q1max_g, q1min_g, a1,a2
         integer         :: n2s,n2e, n3s,n3e, j,k, mpi_err
         real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: cx, cx1, cx2, cx3
@@ -1376,7 +1450,6 @@ contains
         n2e=xsize(2)!(min(n2m, xend(2))-xstart(2))+1
         n3e=xsize(3)!(min(n3m, xend(3))-xstart(3))+1
 
-        !if((BC1==NOSLIP).or.(BC1==PSEUDO_PERIODIC).or.(BC1==OPEN).or.(BC1==FRINGE)) call diff_at_wall_1   ! ATTENTION
         if((BC1==NOSLIP).or.(BC1==PSEUDO_PERIODIC).or.(BC1==OPEN)) call diff_at_wall_1   ! ATTENTION
 
         call D0s_3Dx(q1_x, q1q1_x, n1,xsize(2),n2e,xsize(3),n3e, NS_Q1_BC1)
@@ -1568,9 +1641,6 @@ contains
             if (BC1==OPEN) then
                 n1s=2
                 n1e=n1-2
-            else
-                n1s=1
-                n1e=n1-1
             endif
 
             n3s=xstart(3)
@@ -1623,7 +1693,7 @@ contains
 
         ! X ------------------------------------------------------------------------
 
-        if ((BC1==NOSLIP).or.(BC1==freeslip).or.(BC1==PSEUDO_PERIODIC).or.(BC1==OPEN)) then
+        if ((BC1==NOSLIP).or.(BC1==FREESLIP).or.(BC1==PSEUDO_PERIODIC).or.(BC1==OPEN)) then
 
             do k=xstart(3), xend(3)       !do k=1,n3
                 do j=xstart(2), xend(2)       !do j=1,n2
@@ -1643,7 +1713,7 @@ contains
         ! Y ------------------------------------------------------------------------
         call transpose_x_to_y(p12_x, p12_y)
 
-        if ((BC2==NOSLIP).or.(BC2==freeslip)) then
+        if ((BC2==NOSLIP).or.(BC2==FREESLIP)) then
 
             do k=ystart(3), yend(3)      !do k=1,n3
                 do i=ystart(1),yend(1)       !do i=1,n1

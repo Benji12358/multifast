@@ -6,7 +6,7 @@ contains
     subroutine allocate_data()
 
         use decomp_2d
-
+        use DNS_settings
         use FRINGE_data
         implicit none
 
@@ -14,11 +14,26 @@ contains
         allocate(f2_fringe_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
         allocate(f3_fringe_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
 
-        allocate(q1_inflow(xstart(2):xend(2), xstart(3):xend(3)))
-        allocate(q2_inflow(xstart(2):xend(2), xstart(3):xend(3)))
-        allocate(q3_inflow(xstart(2):xend(2), xstart(3):xend(3)))
+        if (streamwise==1) then
+            allocate(q1_inflow(xstart(2):xend(2), xstart(3):xend(3)))
+            allocate(q2_inflow(xstart(2):xend(2), xstart(3):xend(3)))
+            allocate(q3_inflow(xstart(2):xend(2), xstart(3):xend(3)))
+        endif
 
-        allocate(lambda_x(xstart(1):xend(1)))
+        if (streamwise==3) then
+            allocate(q1_inflow(xstart(1):xend(1), xstart(2):xend(2)))
+            allocate(q2_inflow(xstart(1):xend(1), xstart(2):xend(2)))
+            allocate(q3_inflow(xstart(1):xend(1), xstart(2):xend(2)))
+        endif
+
+        if (streamwise==1) then
+            allocate(lambda_x(xstart(1):xend(1)))
+        endif
+
+        if (streamwise==3) then
+            allocate(lambda_x(xstart(3):xend(3)))
+        endif
+        
 
         f1_fringe_x = 0.d0
         f2_fringe_x = 0.d0

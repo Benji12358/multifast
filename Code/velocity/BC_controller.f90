@@ -51,6 +51,21 @@ contains
                 NS_Q2_BC3=periodic
                 NS_Q3_BC3=periodic
 
+            case (FRINGE)
+
+                NS_DEF_BC3=periodic
+                NS_PR_BC3=periodic
+                POISSON_VEL_BC3=periodic
+                POISSON_PR_BC3=periodic
+
+                NS_P13_BC3=periodic
+                NS_P23_BC3=periodic
+                NS_P33_BC3=periodic
+
+                NS_Q1_BC3=periodic
+                NS_Q2_BC3=periodic
+                NS_Q3_BC3=periodic
+
         end select
 
         select case (BC2)
@@ -341,14 +356,6 @@ contains
             q3_wall11(xstart(2):xend(2), xstart(3):xend(3))=q3_x(n1-1, xstart(2):xend(2), xstart(3):xend(3))  ! Neumann
             q2_wall11(xstart(2):xend(2), xstart(3):xend(3))=q2_x(n1-1, xstart(2):xend(2), xstart(3):xend(3))  ! Neumann
             q1_wall11(xstart(2):xend(2), xstart(3):xend(3))=0.d0                                             ! No penetration
-
-        end if
-
-        if (BC1==FRINGE) then
-
-            q3_wall10(xstart(2):xend(2), xstart(3):xend(3))=q3_x(1, xstart(2):xend(2), xstart(3):xend(3))     ! Neumann
-            q2_wall10(xstart(2):xend(2), xstart(3):xend(3))=q2_x(1, xstart(2):xend(2), xstart(3):xend(3))     ! Neumann
-            q1_wall10(xstart(2):xend(2), xstart(3):xend(3))=q1_x(1, xstart(2):xend(2), xstart(3):xend(3))     ! No penetration
 
         end if
 
