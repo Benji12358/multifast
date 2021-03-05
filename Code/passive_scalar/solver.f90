@@ -214,7 +214,7 @@ contains
 
         implicit none
         integer, save                                           :: nb=1
-        integer, parameter                                      :: outflow_type=2
+        ! integer, parameter                                      :: outflow_type=2
         integer                                                 :: n2s,n2e, n3s, n3e, j, k
         real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: cx4
         real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: conv4
