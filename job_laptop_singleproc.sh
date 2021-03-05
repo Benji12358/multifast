@@ -1,16 +1,10 @@
 #!/bin/bash
-#OAR -n TEST_Laminar_Olivier
-#OAR -l /nodes=4/core=16,walltime=0:30:00
-#OAR --project turbulentdragcontrol
-
 
 launch_simulation(){
 	cd $TMPDIR
 	
 	echo $TEXT_LEVEL1 Running simulation...
-	echo $openmpi_DIR
-	ls -l $openmpi_DIR
-	mpirun -np `cat $OAR_FILE_NODES|wc -l` -x LD_LIBRARY_PATH --prefix $openmpi_DIR --machinefile $OAR_NODE_FILE $TMPDIR/DNS_EXEC $DNS_NAME $DNS_TIME $PROW $PCOL 0 > $DNS_OUTPUT 2>temp_arrays.log
+	mpirun -np $NPROCS -x LD_LIBRARY_PATH $TMPDIR/DNS_EXEC $DNS_NAME $DNS_TIME $PROW $PCOL 0 > $DNS_OUTPUT 2>temp_arrays.log
 
 	cd -
 }
@@ -42,7 +36,7 @@ build_running_env(){
 
 	echo $TEXT_LEVEL1 Building running environnment...
 
-	rm -rf $TMPDIR/*
+	rm -rf $TMPDIR
 	mkdir $TMPDIR
 	cp -r $SIMULATION_DIR/.recovery/arborescence $TMPDIR/$DNS_NAME
 
@@ -91,36 +85,28 @@ save_simulation(){
 TEXT_LEVEL1="---------"
 TEXT_LEVEL2="-------------"
 
-. /applis/site/env.bash
-module load openmpi/1.6.4_gcc-4.4.6
-echo 'louloulou'
 
-
-
-
-
-DNS_NAME=TEST_Laminar_Olivier
+#DNS_NAME=TEST_Laminar_Olivier
+DNS_NAME=$1
 DNS_OUTPUT=OUT_DNS
 DNS_TIME=345000
-JOB_NAME=job
-DNS_PROCS=4
-PROC_BY_NODE=16
-PROW=8
-PCOL=8
+#JOB_NAME=job
+#DNS_PROCS=4
+#PROC_BY_NODE=16
+PROW=1
+PCOL=1
+NPROCS=1
 
 
-
-DNS_CODE=/scratch/umairm/WORKSPACE/Codes/DNS/MULTIFAST_MHD_v2
-TMPDIR=/scratch/umairm/WORKSPACE/Codes/DNS/MULTIFAST_MHD_v2/TMP/TEST_laminar_Olivier$OAR_JOBID
-SIMULATION_DIR=/scratch/umairm/WORKSPACE/Codes/DNS/MULTIFAST_MHD_v2/Simulations/$DNS_NAME
+DNS_CODE=/home/users/arrondea7b/WORKSPACE/Codes/DNS/MULTIFAST_MHD_v2
+TMPDIR=/home/users/arrondea7b/WORKSPACE/Codes/DNS/MULTIFAST_MHD_v2/TMP/$DNS_NAME
+SIMULATION_DIR=/home/users/arrondea7b/WORKSPACE/Codes/DNS/MULTIFAST_MHD_v2/Simulations/$DNS_NAME
 IT1=0
-EVERY=100
-IT2=10000
-
+EVERY=$3
+IT2=$2
 
 
 dir_to_create_list=$TMPDIR/mkdir_dir_list
-
 
 build_running_env
 #list_dir_to_create
