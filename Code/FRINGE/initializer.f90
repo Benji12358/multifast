@@ -42,6 +42,10 @@ contains
                       if (streamwise==1) call perform_stream1(q1_inflow, BC2, BC3)
                       if (streamwise==3) call perform_stream3(q3_inflow, BC1, BC2)
 
+                      write(*,*) 'q1_inflow', q1_inflow(32,:)
+                      write(*,*) 'q2_inflow', q2_inflow(32,:)
+                      write(*,*) 'q3_inflow', q3_inflow(32,:)
+
                     case (SQUARE_INFLOW)
 
                       if (nrank==0) write(*,*)'PERFORMING default square inflow'

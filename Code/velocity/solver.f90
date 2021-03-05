@@ -592,8 +592,8 @@ contains
                 end do
             end do
 
-            if (BC3==UNBOUNDED) n3s=xstart(3)
-            if (BC3/=UNBOUNDED) n3s=max(2,xstart(3))
+            if ((BC3==UNBOUNDED).or.(BC3==FRINGE)) n3s=xstart(3)
+            if ((BC3/=UNBOUNDED).and.(BC3/=FRINGE)) n3s=max(2,xstart(3))
 
             ! On ne touche que q3[2..n1-2]
             if (BC1==OPEN) then
@@ -679,8 +679,8 @@ contains
             ! Vc=Vc+grad(p)[s] (Vc = desired value of velocity)
             ! after correction the velocity in body and BC will be : Vc+grad(p)[N-1]-grad(p)[N]
             ! where n is the number of iteration and will be near to u
-            if ((BC1==OPEN).or.(BC1==FRINGE)) call perform_new_target_velocity_estimate
-            if ((BC3==OPEN).or.(BC3==FRINGE)) call perform_new_target_velocity_estimate
+            if (BC1==OPEN) call perform_new_target_velocity_estimate1
+            if (BC3==OPEN) call perform_new_target_velocity_estimate3
 
             call transpose_x_to_y(q2_x, q2_y)
             call transpose_x_to_y(q3_x, q3_y)
@@ -727,10 +727,10 @@ contains
 
         if (use_fringe) then
             if (streamwise==1) then
-                write(*,*) 'ERROR VELOCITY IN/OUT:', sum(abs(q1_inflow-q1_x(n1,:,:))), sum(abs(q2_inflow-q2_x(n1-1,:,:))), sum(abs(q3_inflow-q3_x(n1-1,:,:)))
+                write(*,*) 'ERROR VELOCITY IN/OUT:', sum(abs(q1_inflow-q1_x(n1-1,:,:))), sum(abs(q2_inflow-q2_x(n1-1,:,:))), sum(abs(q3_inflow-q3_x(n1-1,:,:)))
             endif
             if (streamwise==3) then
-                write(*,*) 'ERROR VELOCITY IN/OUT:', sum(abs(q1_inflow-q1_x(:,:,n3-1))), sum(abs(q2_inflow-q2_x(:,:,n3-1))), sum(abs(q3_inflow-q3_x(:,:,n3)))
+                write(*,*) 'ERROR VELOCITY IN/OUT:', sum(abs(q1_x(:,:,1)-q1_x(:,:,n3-1))), sum(abs(q2_x(:,:,1)-q2_x(:,:,n3-1))), sum(abs(q3_x(:,:,1)-q3_x(:,:,n3-1)))
             endif
         endif
 
@@ -1653,8 +1653,8 @@ contains
                 end do
             end do
 
-            if (BC3==UNBOUNDED) n3s=xstart(3)
-            if (BC3/=UNBOUNDED) n3s=max(2,xstart(3))
+            if ((BC3==UNBOUNDED).or.(BC3==FRINGE)) n3s=xstart(3)
+            if ((BC3/=UNBOUNDED).and.(BC3/=FRINGE)) n3s=max(2,xstart(3))
 
             ! On ne touche que q3[2..n1-2]
             if (BC1==OPEN) then

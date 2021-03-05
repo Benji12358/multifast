@@ -1295,6 +1295,8 @@ contains
         use mathematical_constants
         use DNS_settings
         use workspace_view
+        use boundaries
+        use FRINGE_data
 
 
         use mpi
@@ -1323,6 +1325,7 @@ contains
         character(200)  :: field_generator_path
         integer :: meanXZ_perturbation_file_id=21, zone_id, var_id
         integer, dimension(n2m) :: j_array
+        integer             :: n1s, n2s, n3s, n1e, n2e, n3e
 
         real*8  :: ycenter
 
@@ -1357,8 +1360,22 @@ contains
 
         !        TO NOTE : The random number generator depends on the computer
 
+        n1s = max(1, ystart(3))
+        n3s = max(1, ystart(1))
 
-        do j=1,n2m
+        if (streamwise==3) n3s=max(2, ystart(3))
+        if (streamwise==1) n1s=max(2, ystart(1))
+        n2s = 1
+
+        n1e = min(n1m, yend(1))
+        n2e = n2m
+        n3e = min(n3m, yend(3))
+
+        if (BC3==FRINGE) n3e=min(n_fringe_start, yend(3))
+
+        write(*,*) n1s, n1e, n2s, n2e, n3s, n3e
+
+        do j=n2s,n2e
             v1m(j)=0.d0
             v2m(j)=0.d0
             v3m(j)=0.d0
@@ -1375,8 +1392,8 @@ contains
             disturbance_intensity_at_j=disturbance_intensity
             if(dabs(1.d0-Yc(j)).lt.0.025) disturbance_intensity_at_j=disturbance_intensity/5.d0
 
-            do k=ystart(3), min(n3m, yend(3))
-                do i=max(ystart(1),2), min(n1m, yend(1))
+            do k=n3s,n3e
+                do i=n1s,n1e
 
                     ph1=4.d0*2.d0*pi*(i-1)/(n1-1)
                     ph2=6.d0*2.d0*pi*(j-1)/(n2-1)
@@ -1416,10 +1433,9 @@ contains
         velocity_Y_disturbance  =0.d0
         velocity_X_disturbance  =0.d0
 
-
-     do j=1,n2m
-          do k=ystart(3), min(n3m, yend(3))
-                do i=max(ystart(1),2), min(n1m, yend(1))
+        do j=n2s, n2e
+            do k=n3s, n3e
+                do i=n1s, n1e
 !
                     !! Setting the mean along (X, Z) directions to 0
                     q3_y(i,j,k)=q3_y(i,j,k) - v3m(j)

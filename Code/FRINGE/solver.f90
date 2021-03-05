@@ -24,7 +24,7 @@ contains
         write(*,*) 'The outflow is reinjected at the inflow'
 
         if (streamwise==1) then
-          q1_x(1,:,:) = q1_x(n1,:,:)
+          q1_x(1,:,:) = q1_x(n1-1,:,:)
           q2_x(1,:,:) = q2_x(n1-1,:,:)
           q3_x(1,:,:) = q3_x(n1-1,:,:)
         endif
@@ -32,7 +32,7 @@ contains
         if (streamwise==3) then
           q1_x(:,:,1) = q1_x(:,:,n3-1)
           q2_x(:,:,1) = q2_x(:,:,n3-1)
-          q3_x(:,:,1) = q3_x(:,:,n3)
+          q3_x(:,:,1) = q3_x(:,:,n3-1)
         endif
 
       else
@@ -80,9 +80,17 @@ contains
         do i=xstart(1),xend(1)
           do j=xstart(2),xend(2)
             do k=xstart(3),xend(3)
-              f1_fringe_x(i,j,k) = lambda_x(i) * ( q1_inflow(j,k) - q1_x(i,j,k) )
-              f2_fringe_x(i,j,k) = lambda_x(i) * ( q2_inflow(j,k) - q2_x(i,j,k) )
-              f3_fringe_x(i,j,k) = lambda_x(i) * ( q3_inflow(j,k) - q3_x(i,j,k) )
+
+              if (ntime.gt.number_it_periodic_activation) then
+                f1_fringe_x(i,j,k) = lambda_x(i) * ( q1_x(1,j,k) - q1_x(i,j,k) )
+                f2_fringe_x(i,j,k) = lambda_x(i) * ( q2_x(1,j,k) - q2_x(i,j,k) )
+                f3_fringe_x(i,j,k) = lambda_x(i) * ( q3_x(1,j,k) - q3_x(i,j,k) )
+              else
+                f1_fringe_x(i,j,k) = lambda_x(i) * ( q1_inflow(j,k) - q1_x(i,j,k) )
+                f2_fringe_x(i,j,k) = lambda_x(i) * ( q2_inflow(j,k) - q2_x(i,j,k) )
+                f3_fringe_x(i,j,k) = lambda_x(i) * ( q3_inflow(j,k) - q3_x(i,j,k) )
+              endif
+
             enddo
           enddo
         enddo
@@ -94,9 +102,18 @@ contains
         do i=xstart(1),xend(1)
           do j=xstart(2),xend(2)
             do k=xstart(3),xend(3)
-              f1_fringe_x(i,j,k) = lambda_x(k) * ( q1_inflow(i,j) - q1_x(i,j,k) )
-              f2_fringe_x(i,j,k) = lambda_x(k) * ( q2_inflow(i,j) - q2_x(i,j,k) )
-              f3_fringe_x(i,j,k) = lambda_x(k) * ( q3_inflow(i,j) - q3_x(i,j,k) )
+
+              if (ntime.gt.number_it_periodic_activation) then
+                f1_fringe_x(i,j,k) = lambda_x(k) * ( q1_x(i,j,1) - q1_x(i,j,k) )
+                f2_fringe_x(i,j,k) = lambda_x(k) * ( q2_x(i,j,1) - q2_x(i,j,k) )
+                f3_fringe_x(i,j,k) = lambda_x(k) * ( q3_x(i,j,1) - q3_x(i,j,k) )
+              else
+                f1_fringe_x(i,j,k) = lambda_x(k) * ( q1_inflow(i,j) - q1_x(i,j,k) )
+                f2_fringe_x(i,j,k) = lambda_x(k) * ( q2_inflow(i,j) - q2_x(i,j,k) )
+                f3_fringe_x(i,j,k) = lambda_x(k) * ( q3_inflow(i,j) - q3_x(i,j,k) )
+              endif
+
+              
             enddo
           enddo
         enddo
