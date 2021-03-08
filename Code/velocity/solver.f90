@@ -342,8 +342,6 @@ contains
         ! and must not been applied to the current step velocity field
         ! MUST BE BEFORE calculation of u* : the outflow condition is performed from velocity field u at the current
         ! time step
-
-
         if (nrank==debugproc) then
             open(15, file="debugoutflow", position="append")
             write(15,*)"Point E", sum(abs(q1_x(:,:,:)))/NNN, sum(abs(q2_x(:,:,:)))/NNN, sum(abs(q3_x(:,:,:)))/NNN
@@ -356,7 +354,31 @@ contains
             call perform_outflow_velocity()
         endif
         ! Reinject the flow at the outlet at the inlet for fringe
-        if (use_fringe) call FRINGE_set_inflow(ntime)
+        if (use_fringe) then
+            if (streamwise==3) then
+                ! q1
+                call transpose_x_to_y(q1_x, q1_y)
+                call transpose_y_to_z(q1_y, q1_z)
+                ! q2
+                call transpose_x_to_y(q2_x, q2_y)
+                call transpose_y_to_z(q2_y, q2_z)
+                ! q3
+                call transpose_x_to_y(q3_x, q3_y)
+                call transpose_y_to_z(q3_y, q3_z)
+            endif
+            call FRINGE_set_inflow(ntime)
+            if (streamwise==3) then
+                ! q1
+                call transpose_z_to_y(q1_z, q1_y)
+                call transpose_y_to_x(q1_y, q1_x)
+                ! q2
+                call transpose_z_to_y(q2_z, q2_y)
+                call transpose_y_to_x(q2_y, q2_x)
+                ! q3
+                call transpose_z_to_y(q3_z, q3_y)
+                call transpose_y_to_x(q3_y, q3_x)
+            endif
+        endif
 
         if (nrank==debugproc) then
             open(15, file="debugoutflow", position="append")
@@ -560,6 +582,10 @@ contains
 
             if (BC1==UNBOUNDED) n1s=xstart(1)
             if (BC1/=UNBOUNDED) n1s=max(2,xstart(1))
+            if (BC1==OPEN) then
+                n1s=2
+                n1e=n1-2
+            endif
             n2s=xstart(2)
             n3s=xstart(3)
             do k = n3s, n3e
@@ -760,7 +786,7 @@ contains
                 ut=0.d0
                 do k=xstart(3),min(xend(3),n3-1)
                     do j=xstart(2),min(xend(2),n2-1)
-                        ut=ut+q1_x(n1,j,k)*(Y(j+1)-Y(j))*dx3
+                        ut=ut+q1_x(n1-1,j,k)*(Y(j+1)-Y(j))*dx3
                     enddo
                 enddo
 
@@ -772,7 +798,7 @@ contains
                 ! Adjusting the outflow rate to inflow rate
                 do k=xstart(3),min(xend(3),n3-1)
                     do j=xstart(2),min(xend(2),n2-1)
-                        q1_x(n1,j,k)=q1_x(n1,j,k)*ut11/utt
+                        q1_x(n1,j,k)=q1_x(n1-1,j,k)*ut11/utt
                     enddo
                 enddo
 
@@ -780,7 +806,7 @@ contains
                 ut=0.d0
                 do k=xstart(3),min(xend(3),n3-1)
                     do j=xstart(2),min(xend(2),n2-1)
-                        ut=ut+q1_x(n1,j,k)*(Y(j+1)-Y(j))*dx3
+                        ut=ut+q1_x(n1-1,j,k)*(Y(j+1)-Y(j))*dx3
                     enddo
                 enddo
                 call MPI_ALLREDUCE(ut, utt, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
@@ -806,12 +832,12 @@ contains
                 do k=xstart(3),min(xend(3),n3-1)
                     do j=xstart(2),min(xend(2),n2-1)
 
-                        q1_x(n1,j,k)=q1_save(n1,j,k)+dphidx1_x(n1,j,k)*al*dt
+                        q1_x(n1-1,j,k)=q1_save(n1-1,j,k)+dphidx1_x(n1-1,j,k)*al*dt
                         q1_x(1,j,k)=q1_save(1,j,k)+dphidx1_x(1,j,k)*al*dt
 
                         if (IBM_activated) then
 
-                            do i = 2, n1-1
+                            do i = 2, n1-2
                                 q1_x(i,j,k)=q1_save(i,j,k)+IBM_mask1(i,j,k)*dphidx1_x(i,j,k)*al*dt
                             end do
 
@@ -1138,8 +1164,8 @@ contains
 
         do k=n3s,n3e
             do j=n2s,n2e
-                q1_x(n1,j,k)=q1_x(n1,j,k)+conv1(j,k)+diff1(j,k)*dt
-                q1_wall11(j,k)=q1_x(n1,j,k)
+                q1_x(n1-1,j,k)=q1_x(n1-1,j,k)+conv1(j,k)+diff1(j,k)*dt
+                q1_wall11(j,k)=q1_x(n1-1,j,k)
                 q2_x(n1-1,j,k)=q2_x(n1-1,j,k)+conv2(j,k)+diff2(j,k)*dt
                 q3_x(n1-1,j,k)=q3_x(n1-1,j,k)+conv3(j,k)+diff3(j,k)*dt
             enddo
@@ -1242,7 +1268,7 @@ contains
 
             do k=xstart(3),min(xend(3), n3-1)
                 do j=xstart(2),min(xend(2), n2-1)
-                    outflow_conv1c(j,k)=-cx1(j,k)*(q1_x(n1,j,k)-q1_x(n1-1,j,k))
+                    outflow_conv1c(j,k)=-cx1(j,k)*(q1_x(n1-1,j,k)-q1_x(n1-2,j,k))
                     outflow_conv2c(j,k)=-cx2(j,k)*(q2_x(n1-1,j,k)-q2_x(n1-2,j,k))
                     outflow_conv3c(j,k)=-cx3(j,k)*(q3_x(n1-1,j,k)-q3_x(n1-2,j,k))
                 enddo
@@ -1624,6 +1650,10 @@ contains
 
             if (BC1==UNBOUNDED) n1s=xstart(1)
             if (BC1/=UNBOUNDED) n1s=max(2,xstart(1))
+            if (BC1==OPEN) then
+                n1s=2
+                n1e=n1-2
+            endif
             n2s=xstart(2)
             n3s=xstart(3)
             do k = n3s, n3e

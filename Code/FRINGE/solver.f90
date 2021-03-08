@@ -30,9 +30,9 @@ contains
         endif
 
         if (streamwise==3) then
-          q1_x(:,:,1) = q1_x(:,:,n3-1)
-          q2_x(:,:,1) = q2_x(:,:,n3-1)
-          q3_x(:,:,1) = q3_x(:,:,n3-1)
+          q1_z(:,:,1) = q1_z(:,:,n3-1)
+          q2_z(:,:,1) = q2_z(:,:,n3-1)
+          q3_z(:,:,1) = q3_z(:,:,n3-1)
         endif
 
       else
@@ -44,9 +44,9 @@ contains
         endif
 
         if (streamwise==3) then
-          q1_x(:,:,1) = q1_inflow(:,:)
-          q2_x(:,:,1) = q2_inflow(:,:)
-          q3_x(:,:,1) = q3_inflow(:,:)
+          q1_z(:,:,1) = q1_inflow(:,:)
+          q2_z(:,:,1) = q2_inflow(:,:)
+          q3_z(:,:,1) = q3_inflow(:,:)
         endif
 
       endif
