@@ -42,10 +42,6 @@ contains
                       if (streamwise==1) call perform_stream1(q1_inflow, BC2, BC3)
                       if (streamwise==3) call perform_stream3(q3_inflow, BC1, BC2)
 
-                      write(*,*) 'q1_inflow', q1_inflow(32,:)
-                      write(*,*) 'q2_inflow', q2_inflow(32,:)
-                      write(*,*) 'q3_inflow', q3_inflow(32,:)
-
                     case (SQUARE_INFLOW)
 
                       if (nrank==0) write(*,*)'PERFORMING default square inflow'
@@ -99,7 +95,7 @@ contains
             subroutine perform_stream1(stream1, BC2, BC3)
               implicit none
 
-              real*8, dimension(ystart(2):yend(2), ystart(3):yend(3)) :: stream1
+              real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: stream1
               integer                                                 :: BC2, BC3
 
               real*8                                                  :: f2(n2), f3(n3), c2, c3
@@ -137,8 +133,8 @@ contains
 
                   end if
 
-                  do k = ystart(3),yend(3)
-                      do j= ystart(2),yend(2)
+                  do k = xstart(3),xend(3)
+                      do j= xstart(2),xend(2)
                           stream1(j,k)=f2(j)*f3(k)
                       end do
                   end do
@@ -152,7 +148,7 @@ contains
         subroutine perform_stream3(stream3, BC1, BC2)
             implicit none
 
-            real*8, dimension(ystart(1):yend(1), ystart(2):yend(2)) :: stream3
+            real*8, dimension(zstart(1):zend(1), zstart(2):zend(2)) :: stream3
             integer                                                 :: BC1, BC2
 
             real*8                                                  :: f1(n1), f2(n2), c1, c2
@@ -187,8 +183,8 @@ contains
                     
                  else !
 
-                    do j = ystart(2),yend(2)
-                     do i= ystart(1),yend(1)
+                    do j = zstart(2),zend(2)
+                     do i= zstart(1),zend(1)
                         stream3(i,j)=f2(j)*f1(i)
                      end do
                    end do

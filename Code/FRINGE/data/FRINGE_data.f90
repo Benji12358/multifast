@@ -11,7 +11,8 @@ module fringe_data
     integer                                   :: number_it_periodic_activation
 
     real*8, dimension(:,:,:), allocatable     :: f1_fringe_x, f2_fringe_x, f3_fringe_x
+    real*8, dimension(:,:,:), allocatable     :: f1_fringe_z, f2_fringe_z, f3_fringe_z
     real*8, dimension(:,:), allocatable       :: q1_inflow, q2_inflow, q3_inflow
-    real*8, dimension(:), allocatable         :: lambda_x
+    real*8, dimension(:), allocatable         :: lambda_x, lambda_z
 
 end module fringe_data

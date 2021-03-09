@@ -14,6 +14,10 @@ contains
         allocate(f2_fringe_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
         allocate(f3_fringe_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
 
+        allocate(f1_fringe_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        allocate(f2_fringe_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        allocate(f3_fringe_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+
         if (streamwise==1) then
             allocate(q1_inflow(xstart(2):xend(2), xstart(3):xend(3)))
             allocate(q2_inflow(xstart(2):xend(2), xstart(3):xend(3)))
@@ -21,29 +25,29 @@ contains
         endif
 
         if (streamwise==3) then
-            allocate(q1_inflow(xstart(1):xend(1), xstart(2):xend(2)))
-            allocate(q2_inflow(xstart(1):xend(1), xstart(2):xend(2)))
-            allocate(q3_inflow(xstart(1):xend(1), xstart(2):xend(2)))
+            allocate(q1_inflow(zstart(1):zend(1), zstart(2):zend(2)))
+            allocate(q2_inflow(zstart(1):zend(1), zstart(2):zend(2)))
+            allocate(q3_inflow(zstart(1):zend(1), zstart(2):zend(2)))
         endif
 
-        if (streamwise==1) then
-            allocate(lambda_x(xstart(1):xend(1)))
-        endif
-
-        if (streamwise==3) then
-            allocate(lambda_x(xstart(3):xend(3)))
-        endif
+        allocate(lambda_x(xstart(1):xend(1)))
+        allocate(lambda_z(zstart(3):zend(3)))
         
 
         f1_fringe_x = 0.d0
         f2_fringe_x = 0.d0
         f3_fringe_x = 0.d0
 
+        f1_fringe_z = 0.d0
+        f2_fringe_z = 0.d0
+        f3_fringe_z = 0.d0
+
         q1_inflow = 0.d0
         q2_inflow = 0.d0
         q3_inflow = 0.d0
 
         lambda_x = 0.d0
+        lambda_z = 0.d0
 
     end subroutine allocate_data
 

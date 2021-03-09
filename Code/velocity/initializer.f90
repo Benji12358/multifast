@@ -1360,8 +1360,8 @@ contains
 
         !        TO NOTE : The random number generator depends on the computer
 
-        n1s = max(1, ystart(3))
-        n3s = max(1, ystart(1))
+        n1s = max(1, ystart(1))
+        n3s = max(1, ystart(3))
 
         if (streamwise==3) n3s=max(2, ystart(3))
         if (streamwise==1) n1s=max(2, ystart(1))
@@ -1372,8 +1372,6 @@ contains
         n3e = min(n3m, yend(3))
 
         if (BC3==FRINGE) n3e=min(n_fringe_start, yend(3))
-
-        write(*,*) n1s, n1e, n2s, n2e, n3s, n3e
 
         do j=n2s,n2e
             v1m(j)=0.d0

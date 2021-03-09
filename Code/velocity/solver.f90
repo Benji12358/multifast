@@ -18,7 +18,7 @@ module VELOCITY_solver
     implicit none
 
     ! Only update_velocity is callable from the outside
-    public :: update_velocity, init, save_state, update_multiphysics_velocity, add_action, substract_action
+    public :: update_velocity, init, save_state, update_multiphysics_velocity, add_action_x, add_action_z, substract_action
     public :: Fext1, Fext2, Fext3
     public :: finalize
 
@@ -683,9 +683,10 @@ contains
         integer, intent(in)                                     :: ns, ntime
 
         real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: dpdy_old1
-        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2)) :: dpdy_old3
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2)) :: dpdy_old3
         real*8                                                  :: errorsum, errorsum_glob, divy_mean
         integer                                                 :: mpi_err, s, j
+        real*8, dimension(3)                                    :: fringe_error_velocity, fringe_error_velocity_glob
 
 
         ! ******************  CORRECT VELOCITY *********************
@@ -699,7 +700,11 @@ contains
         do s = 1, 1         ! Loop for iterative process
 
             if (streamwise==1) dpdy_old1=dphidx2_x(n1-1,:,:)
-            if (streamwise==3) dpdy_old3=dphidx2_x(:,:,n3-1)
+            if (streamwise==3) then
+                call transpose_x_to_y(dphidx2_x, dphidx2_y)
+                call transpose_y_to_z(dphidx2_y, dphidx2_z)
+                dpdy_old3=dphidx2_z(:,:,n3-1)
+            endif
 
             ! applying current estimation s of grad(p) to BC and body
             ! Vc=Vc+grad(p)[s] (Vc = desired value of velocity)
@@ -726,7 +731,11 @@ contains
 
             ! Convergence control of iterative process :
             if (streamwise==1) errorsum=sum(abs(dpdy_old1-dphidx2_x(n1-1,:,:)))
-            if (streamwise==3) errorsum=sum(abs(dpdy_old3-dphidx2_x(:,:,n3-1)))
+            if (streamwise==3) then
+                call transpose_x_to_y(dphidx2_x, dphidx2_y)
+                call transpose_y_to_z(dphidx2_y, dphidx2_z)
+                errorsum=sum(abs(dpdy_old3-dphidx2_z(:,:,n3-1)))
+            endif
 
             call MPI_ALLREDUCE(errorsum,errorsum_glob,1,MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
             if (nrank==0) write(*,*) 'ERROR GRADP:', s, errorsum_glob
@@ -753,11 +762,18 @@ contains
 
         if (use_fringe) then
             if (streamwise==1) then
-                write(*,*) 'ERROR VELOCITY IN/OUT:', sum(abs(q1_inflow-q1_x(n1-1,:,:))), sum(abs(q2_inflow-q2_x(n1-1,:,:))), sum(abs(q3_inflow-q3_x(n1-1,:,:)))
+                fringe_error_velocity(1) = sum(abs(q1_inflow-q1_x(n1-1,:,:)))
+                fringe_error_velocity(2) = sum(abs(q2_inflow-q2_x(n1-1,:,:)))
+                fringe_error_velocity(3) = sum(abs(q3_inflow-q3_x(n1-1,:,:)))
             endif
             if (streamwise==3) then
-                write(*,*) 'ERROR VELOCITY IN/OUT:', sum(abs(q1_x(:,:,1)-q1_x(:,:,n3-1))), sum(abs(q2_x(:,:,1)-q2_x(:,:,n3-1))), sum(abs(q3_x(:,:,1)-q3_x(:,:,n3-1)))
+                fringe_error_velocity(1) = sum(abs(q1_z(:,:,1)-q1_z(:,:,n3-1)))
+                fringe_error_velocity(2) = sum(abs(q2_z(:,:,1)-q2_z(:,:,n3-1)))
+                fringe_error_velocity(3) = sum(abs(q3_z(:,:,1)-q3_z(:,:,n3-1)))
             endif
+
+            call MPI_ALLREDUCE(fringe_error_velocity,fringe_error_velocity_glob,1,MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
+            if (nrank==0) write(*,*) 'ERROR VELOCITY IN/OUT:', fringe_error_velocity_glob
         endif
 
         contains
@@ -1065,7 +1081,7 @@ contains
     end subroutine final_velocity
 
 
-    subroutine add_action(fx1, fx2, fx3)
+    subroutine add_action_x(fx1, fx2, fx3)
         implicit none
 
         real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in)  :: fx1, fx2, fx3
@@ -1074,7 +1090,27 @@ contains
         Fext2 = fx2
         Fext3 = fx3
 
-    end subroutine add_action
+    end subroutine add_action_x
+
+    subroutine add_action_z(fz1, fz2, fz3)
+        implicit none
+
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)), intent(in)  :: fz1, fz2, fz3
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))  :: fy1, fy2, fy3
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))  :: fx1, fx2, fx3
+
+        call transpose_z_to_y(fz1,fy1)
+        call transpose_z_to_y(fz2,fy2)
+        call transpose_z_to_y(fz3,fy3)
+        call transpose_y_to_x(fy1,fx1)
+        call transpose_y_to_x(fy2,fx2)
+        call transpose_y_to_x(fy3,fx3)
+
+        Fext1 = fx1
+        Fext2 = fx2
+        Fext3 = fx3
+
+    end subroutine add_action_z
 
     subroutine substract_action(fx1, fx2, fx3)
         implicit none

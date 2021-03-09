@@ -124,6 +124,8 @@ contains
         dphidx2_y=0.d0
         allocate(dphidx2_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
         dphidx2_x=0.d0
+        allocate(dphidx2_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        dphidx2_z=0.d0
         allocate(dphidx3_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
         dphidx3_z=0.d0
         allocate(dphidx3_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
@@ -330,6 +332,7 @@ contains
         deallocate(dphidx1_x)
         deallocate(dphidx2_y)
         deallocate(dphidx2_x)
+        deallocate(dphidx2_z)
         deallocate(dphidx3_z)
         deallocate(dphidx3_x)
 

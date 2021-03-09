@@ -18,7 +18,7 @@ module physical_fields
     real*8,dimension (:,:), allocatable         :: q3_wall31, q2_wall31, q1_wall31
 
     real*8,dimension (:,:,:), allocatable       :: divu_x, divu_y, divu_z
-    real*8,dimension (:,:,:), allocatable       :: dphidx2_y, dphidx3_z
+    real*8,dimension (:,:,:), allocatable       :: dphidx2_y, dphidx3_z, dphidx2_z
     real*8,dimension (:,:,:), allocatable       :: dphidx1_x, dphidx2_x, dphidx3_x
 
     real*8,dimension (:,:,:), allocatable       :: om1_x, om2_x, om3_x
