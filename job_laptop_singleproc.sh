@@ -99,11 +99,11 @@ NPROCS=1
 
 
 DNS_CODE=/home/users/arrondea7b/WORKSPACE/Codes/DNS/MULTIFAST_MHD_v2
-TMPDIR=/home/users/arrondea7b/WORKSPACE/Codes/DNS/MULTIFAST_MHD_v2/TMP/$DNS_NAME
-SIMULATION_DIR=/home/users/arrondea7b/WORKSPACE/Codes/DNS/MULTIFAST_MHD_v2/Simulations/$DNS_NAME
-IT1=0
-EVERY=$3
-IT2=$2
+TMPDIR=/data/$DNS_NAME
+SIMULATION_DIR=/home/users/arrondea7b/WORKSPACE/Codes/DNS/Simulations/$DNS_NAME
+IT1=$2
+EVERY=$4
+IT2=$3
 
 
 dir_to_create_list=$TMPDIR/mkdir_dir_list
