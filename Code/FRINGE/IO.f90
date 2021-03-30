@@ -11,7 +11,7 @@ contains
         use mesh
 
         implicit none
-        integer             :: fringe_state, n_interest_region, n_fringe_region
+        integer             :: fringe_state, n_interest_region
 
         open(15,file=trim(COMMON_settings_path)//'fringe.d')
 
@@ -21,7 +21,6 @@ contains
         read(15,*) delta_fall
         read(15,*) delta_activation
         read(15,*) max_strength_damping
-        read(15,*) number_it_periodic_activation
         read(15,*)
         read(15,*) inflow_type ! 0 : poiseuille inflow, 1 : square inflow, 2 : inflow from file
         read(15,*) 
@@ -59,7 +58,7 @@ contains
             n_delta_rise = int(delta_rise*n_fringe_region)
             n_delta_fall = int(delta_fall*n_fringe_region)
             n_fringe_start = n_interest_region + delta_activation
-            ! n_fringe_end = n_fringe_end + n_delta_fall
+            n_delta_fall = 1
 
         endif
 
@@ -79,6 +78,19 @@ module FRINGE_dao
 
 contains
 
+    subroutine fringe_infos()
+        implicit none
+        if (nrank==0) then
+            write(*,*) 'FRINGE INFOS___________________________'
+            write(*,*)'fringe_length:',fringe_length
+            write(*,*)'n_interest_region:',n_fringe_start-delta_activation, 'n_fringe_region:',n_fringe_region
+            write(*,*)'n_fringe_start:', n_fringe_start, 'n_fringe_end:', n_fringe_end
+            write(*,*)'n_delta_rise', n_delta_rise
+            write(*,*)'n_delta_fall', n_delta_fall
+            write(*,*) '_______________________________________________________'
+        endif
+    end subroutine fringe_infos
+
     subroutine write_fields(fields_dir)
 !
         use physical_fields
@@ -93,15 +105,28 @@ contains
         character(200)    :: file_path
 !
 !
-        file_path=trim(fields_dir)//"/f3_fringe"
-        call hdf_write_3Dfield(file_path, f3_fringe_x(:,:,:), "f3_fringe", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+        if (streamwise==1) then
+            file_path=trim(fields_dir)//"/f3_fringe"
+            call hdf_write_3Dfield(file_path, f3_fringe_x(:,:,:), "f3_fringe", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+    !
+            file_path=trim(fields_dir)//"/f2_fringe"
+            call hdf_write_3Dfield(file_path, f2_fringe_x(:,:,:), "f2_fringe", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+    !
+            file_path=trim(fields_dir)//"/f1_fringe"
+            call hdf_write_3Dfield(file_path, f1_fringe_x(:,:,:), "f1_fringe", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+        endif
 !
-        file_path=trim(fields_dir)//"/f2_fringe"
-        call hdf_write_3Dfield(file_path, f2_fringe_x(:,:,:), "f2_fringe", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
-!
-        file_path=trim(fields_dir)//"/f1_fringe"
-        call hdf_write_3Dfield(file_path, f1_fringe_x(:,:,:), "f1_fringe", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
-!
+        if (streamwise==3) then
+            file_path=trim(fields_dir)//"/f3_fringe"
+            call hdf_write_3Dfield(file_path, f3_fringe_z(:,:,:), "f3_fringe", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+    !
+            file_path=trim(fields_dir)//"/f2_fringe"
+            call hdf_write_3Dfield(file_path, f2_fringe_z(:,:,:), "f2_fringe", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+    !
+            file_path=trim(fields_dir)//"/f1_fringe"
+            call hdf_write_3Dfield(file_path, f1_fringe_z(:,:,:), "f1_fringe", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+        endif
+
     end subroutine write_fields
 
 end module FRINGE_dao

@@ -29,7 +29,6 @@ contains
 
             subroutine default_inflow()
                 implicit none
-                integer j
 
                 select case (inflow_type)
                     case (POISEUILLE_INFLOW)
@@ -60,7 +59,7 @@ contains
                       q2_inflow = 0.d0
                       q3_inflow = 0.d0
                       if (streamwise==1) call perform_boundary_layer_1(q1_inflow, delta_BL)
-                      if (streamwise==3) call perform_boundary_layer_1(q3_inflow, delta_BL)
+                      if (streamwise==3) call perform_boundary_layer_3(q3_inflow, delta_BL)
 
                 endselect
 
@@ -133,7 +132,7 @@ contains
 
                   end if
 
-                  do k = xstart(3),xend(3)
+                  do k = xstart(3),min(xend(3),n3-1)
                       do j= xstart(2),xend(2)
                           stream1(j,k)=f2(j)*f3(k)
                       end do
@@ -184,7 +183,7 @@ contains
                  else !
 
                     do j = zstart(2),zend(2)
-                     do i= zstart(1),zend(1)
+                     do i= zstart(1),min(zend(1),n1-1)
                         stream3(i,j)=f2(j)*f1(i)
                      end do
                    end do
@@ -200,7 +199,8 @@ contains
           subroutine perform_boundary_layer_1(stream1, delta_BL)
             implicit none
 
-            real*8, dimension(ystart(2):yend(2), ystart(3):yend(3)) :: stream1
+            real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: stream1
+            real*8, dimension(1:n2)                                 :: f1
 
             real*8                                                  :: delta_BL
             integer                                                 :: j
@@ -208,26 +208,31 @@ contains
 
             pair_n2 = (mod(n2, 2)==0)
 
-            do j=ystart(2),n2/2
+            do j=1,n2/2
                 if (Yc(j)<delta_BL) then
-                    stream1(j,:) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
-                    stream1(n2-j,:) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
+                    f1(j) = 1.5d0 * (Yc(j)/delta_BL) - 0.5d0 * (Yc(j)/delta_BL)**2
+                    f1(n2-j) = 1.5d0 * (Yc(j)/delta_BL) - 0.5d0 * (Yc(j)/delta_BL)**2
                 else
-                    stream1(j,:) = 1.d0
-                    stream1(n2-j,:) = 1.d0
+                    f1(j) = 1.d0
+                    f1(n2-j) = 1.d0
                 endif
             enddo
 
             if (pair_n2) then
-                stream1(n2/2+1,:) = 1.d0
+                f1(n2/2+1) = 1.d0
             endif
+
+            do j = xstart(2),xend(2)
+                stream1(j,1:min(xend(3),n3-1))=f1(j)
+            end do
 
         end subroutine perform_boundary_layer_1
 
         subroutine perform_boundary_layer_3(stream3, delta_BL)
             implicit none
 
-            real*8, dimension(ystart(1):yend(1), ystart(2):yend(2)) :: stream3
+            real*8, dimension(zstart(1):zend(1), zstart(2):zend(2)) :: stream3
+            real*8, dimension(1:n2)                                 :: f3
 
             real*8                                                  :: delta_BL
             integer                                                 :: j
@@ -235,19 +240,23 @@ contains
 
             pair_n2 = (mod(n2, 2)==0)
 
-            do j=ystart(2),n2/2
+            do j=1,n2/2
                 if (Yc(j)<delta_BL) then
-                    stream3(:,j) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
-                    stream3(:,n2-j) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
+                    f3(j) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
+                    f3(n2-j) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
                 else
-                    stream3(:,j) = 1.d0
-                    stream3(:,n2-j) = 1.d0
+                    f3(j) = 1.d0
+                    f3(n2-j) = 1.d0
                 endif
             enddo
 
             if (pair_n2) then
-                stream3(:,n2/2+1) = 1.d0
+                f3(n2/2+1) = 1.d0
             endif
+
+            do j = zstart(2),zend(2)
+                stream3(1:min(xend(1),n1-1),j)=f3(j)
+            end do
 
         end subroutine perform_boundary_layer_3
 
