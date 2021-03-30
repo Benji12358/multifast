@@ -5,6 +5,7 @@ module physical_fields
     real*8,dimension (:,:,:), allocatable       :: q2_x, q2_y, q2_z
     real*8,dimension (:,:,:), allocatable       :: q1_x, q1_y, q1_z
     real*8,dimension (:,:,:), allocatable       :: dp_x, dp_y, dp_z
+    !real*8,dimension (:,:,:), allocatable       :: pr_x, pr_y, pr_z
 
     real*8      :: dP_streamwise, dP_spanwise
 
@@ -18,8 +19,9 @@ module physical_fields
     real*8,dimension (:,:), allocatable         :: q3_wall31, q2_wall31, q1_wall31
 
     real*8,dimension (:,:,:), allocatable       :: divu_x, divu_y, divu_z
-    real*8,dimension (:,:,:), allocatable       :: dphidx2_y, dphidx3_z, dphidx2_z
     real*8,dimension (:,:,:), allocatable       :: dphidx1_x, dphidx2_x, dphidx3_x
+    real*8,dimension (:,:,:), allocatable       :: dphidx1_y, dphidx2_y, dphidx3_y
+    real*8,dimension (:,:,:), allocatable       :: dphidx1_z, dphidx2_z, dphidx3_z
 
     real*8,dimension (:,:,:), allocatable       :: om1_x, om2_x, om3_x
     real*8,dimension (:,:,:), allocatable       :: void_x

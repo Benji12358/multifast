@@ -613,9 +613,9 @@ contains
         open(velmax_file_id, file=velmax_file)
 
         do i = 1, n
-            mask1_max(i)=maxval(IBM_mask1(i,:,:))
-            mask2_max(i)=maxval(IBM_mask2(i,:,:))
-            mask3_max(i)=maxval(IBM_mask3(i,:,:))
+            mask1_max(i)=maxval(IBM_mask1_x(i,:,:))
+            mask2_max(i)=maxval(IBM_mask2_x(i,:,:))
+            mask3_max(i)=maxval(IBM_mask3_x(i,:,:))
         end do
 
         do i = 1, n

@@ -78,7 +78,7 @@ contains
             call exit
         endif
 
-        if ((.not. use_generic_poisson).and.((BC1/=UNBOUNDED).or.(BC2/=NOSLIP).or.(BC3/=UNBOUNDED)).and.(.not.use_fringe)) then
+        if ((.not. use_generic_poisson).and.((BC1/=UNBOUNDED).or.(BC2/=NOSLIP).or.(BC3/=UNBOUNDED)).and.((BC1/=FRINGE))) then
             if (nrank==0) write(*,*)'ERROR: The physial solver is only suited for (BC1-BC2-BC3)=0-2-0 or with the use of the Fringe function'
             if (nrank==0) write(*,*)'Choose the Lamballais purely spectral solver or change the set of boundary conditions'
             call exit
@@ -143,6 +143,7 @@ contains
     subroutine allocate_data()
 
         use decomp_2d
+        use DNS_settings
 
         use IBM_data
         use IBM_settings
@@ -153,48 +154,98 @@ contains
 
         implicit none
 
-        allocate(IBM_mask1(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-        IBM_mask1=0.d0
-        allocate(flow_rate_IBM(n1))
-        flow_rate_IBM=0.d0
-        allocate(kin1_IBM(n1))
-        kin1_IBM=0.d0
-        allocate(kin2_IBM(n1))
-        kin2_IBM=0.d0
-        allocate(kin3_IBM(n1))
-        kin3_IBM=0.d0
-        allocate(q1max_IBM(n1))
-        q1max_IBM=0.d0
-        allocate(q2max_IBM(n1))
-        q2max_IBM=0.d0
-        allocate(q3max_IBM(n1))
-        q3max_IBM=0.d0
-        allocate(prmax_IBM(n1))
-        prmax_IBM=0.d0
-        allocate(q1min_IBM(n1))
-        q1min_IBM=0.d0
-        allocate(q2min_IBM(n1))
-        q2min_IBM=0.d0
-        allocate(q3min_IBM(n1))
-        q3min_IBM=0.d0
-        allocate(prmin_IBM(n1))
-        prmin_IBM=0.d0
-
-        ! IBM_mask1 is used even when IBM is not activated and is always allocated
         if (IBM_activated) then
-            allocate(IBM_mask2(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-            IBM_mask2=0.d0
-            allocate(IBM_mask3(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-            IBM_mask3=0.d0
-
             allocate(vel_term1(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
             vel_term1=0.d0
             allocate(vel_term2(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
             vel_term2=0.d0
             allocate(vel_term3(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
             vel_term3=0.d0
+        endif
 
-        end if
+        if (streamwise==1) then
+
+            allocate(IBM_mask1_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+            IBM_mask1_x=0.d0
+            allocate(flow_rate_IBM(n1))
+            flow_rate_IBM=0.d0
+            allocate(kin1_IBM(n1))
+            kin1_IBM=0.d0
+            allocate(kin2_IBM(n1))
+            kin2_IBM=0.d0
+            allocate(kin3_IBM(n1))
+            kin3_IBM=0.d0
+            allocate(q1max_IBM(n1))
+            q1max_IBM=0.d0
+            allocate(q2max_IBM(n1))
+            q2max_IBM=0.d0
+            allocate(q3max_IBM(n1))
+            q3max_IBM=0.d0
+            allocate(prmax_IBM(n1))
+            prmax_IBM=0.d0
+            allocate(q1min_IBM(n1))
+            q1min_IBM=0.d0
+            allocate(q2min_IBM(n1))
+            q2min_IBM=0.d0
+            allocate(q3min_IBM(n1))
+            q3min_IBM=0.d0
+            allocate(prmin_IBM(n1))
+            prmin_IBM=0.d0
+
+            ! IBM_mask1_x is used even when IBM is not activated and is always allocated
+            if (IBM_activated) then
+                allocate(IBM_mask2_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+                IBM_mask2_x=0.d0
+                allocate(IBM_mask3_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+                IBM_mask3_x=0.d0
+            end if
+
+        endif
+
+        if (streamwise==3) then
+
+            allocate(IBM_mask1_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+            IBM_mask1_x=0.d0
+            allocate(IBM_mask3_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+            IBM_mask3_x=0.d0
+            allocate(flow_rate_IBM(n3))
+            flow_rate_IBM=0.d0
+            allocate(kin1_IBM(n3))
+            kin1_IBM=0.d0
+            allocate(kin2_IBM(n3))
+            kin2_IBM=0.d0
+            allocate(kin3_IBM(n3))
+            kin3_IBM=0.d0
+            allocate(q1max_IBM(n3))
+            q1max_IBM=0.d0
+            allocate(q2max_IBM(n3))
+            q2max_IBM=0.d0
+            allocate(q3max_IBM(n3))
+            q3max_IBM=0.d0
+            allocate(prmax_IBM(n3))
+            prmax_IBM=0.d0
+            allocate(q1min_IBM(n3))
+            q1min_IBM=0.d0
+            allocate(q2min_IBM(n3))
+            q2min_IBM=0.d0
+            allocate(q3min_IBM(n3))
+            q3min_IBM=0.d0
+            allocate(prmin_IBM(n3))
+            prmin_IBM=0.d0
+
+            ! IBM_mask3_x is used even when IBM is not activated and is always allocated
+            if (IBM_activated) then
+                allocate(IBM_mask2_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+                IBM_mask2_x=0.d0
+                allocate(IBM_mask1_z(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3)))
+                IBM_mask1_x=0.d0
+                allocate(IBM_mask2_z(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3)))
+                IBM_mask1_x=0.d0
+                allocate(IBM_mask3_z(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3)))
+                IBM_mask1_x=0.d0
+            end if
+
+        endif
 
 
         ! Bubble_parallel_data
@@ -430,7 +481,7 @@ contains
 
         implicit none
 
-        deallocate(IBM_mask1)
+        deallocate(IBM_mask1_x)
         deallocate(flow_rate_IBM)
         deallocate(kin1_IBM)
         deallocate(kin2_IBM)
@@ -444,10 +495,10 @@ contains
         deallocate(q3min_IBM)
         deallocate(prmin_IBM)
 
-        ! IBM_mask1 is used even when IBM is not activated and is always allocated
+        ! IBM_mask1_x is used even when IBM is not activated and is always allocated
         if (IBM_activated) then
-            deallocate(IBM_mask2)
-            deallocate(IBM_mask3)
+            deallocate(IBM_mask2_x)
+            deallocate(IBM_mask3_x)
 
             deallocate(vel_term1)
             deallocate(vel_term2)
@@ -621,7 +672,7 @@ program main
     if (IBM_activated) then
         call IBM_setup
     else
-        IBM_mask1=0.d0
+        IBM_mask1_x=0.d0
     endif
 
 

@@ -599,6 +599,7 @@ contains
         use object_file_reader
         use mesh
         use COMMON_workspace_view
+        use DNS_settings
         implicit none
 
         real*8, dimension(:,:), allocatable                 :: vertex
@@ -650,22 +651,50 @@ contains
         vertex(:,3)=vertex(:,3)*body_scale_x3+body_x3*L3
 
         ! PERFORMING THE MASK
-        call perform_mask(vertex, faces, nb_vertex, nb_faces, IBM_mask1, n1, &
+        call perform_mask(vertex, faces, nb_vertex, nb_faces, IBM_mask1_x, n1, &
         n2,xstart(2),xend(2), n3,xstart(3),xend(3), X1, X2c, X3c, 1.d0)
 
-        call perform_mask(vertex, faces, nb_vertex, nb_faces, IBM_mask2, n1, &
+        call perform_mask(vertex, faces, nb_vertex, nb_faces, IBM_mask2_x, n1, &
         n2,xstart(2),xend(2), n3,xstart(3),xend(3), X1c, X2, X3c, 1.d0)
 
-        call perform_mask(vertex, faces, nb_vertex, nb_faces, IBM_mask3, n1, &
+        call perform_mask(vertex, faces, nb_vertex, nb_faces, IBM_mask3_x, n1, &
         n2,xstart(2),xend(2), n3,xstart(3),xend(3), X1c, X2c, X3, 1.d0)
 
         ! FOR DEBUGGING, export the mask array in snapshot directory
-        call create_stretch_snapshot(COMMON_snapshot_path, "IBM", IBM_mask1, "mask1", 1, X1,X2c,X3c)
-        call create_stretch_snapshot(COMMON_snapshot_path, "IBM", IBM_mask2, "mask2", 1, X1c,X2,X3c)
-        call create_stretch_snapshot(COMMON_snapshot_path, "IBM", IBM_mask3, "mask3", 1, X1c,X2c,X3)
+        call create_stretch_snapshot(COMMON_snapshot_path, "IBM", IBM_mask1_x, "mask1", 1, X1,X2c,X3c)
+        call create_stretch_snapshot(COMMON_snapshot_path, "IBM", IBM_mask2_x, "mask2", 1, X1c,X2,X3c)
+        call create_stretch_snapshot(COMMON_snapshot_path, "IBM", IBM_mask3_x, "mask3", 1, X1c,X2c,X3)
+
+        if (streamwise==3) then
+            call transpose_mask_x_to_z(IBM_mask1_x, IBM_mask2_x, IBM_mask3_x)
+        endif
 
         ! Default: qbound is zero everywhere at the interface body/flow
         qbound=0.d0
+
+    contains
+
+        subroutine transpose_mask_x_to_z(IBM_mask1x, IBM_mask2x, IBM_mask3x)
+
+            implicit none
+
+            real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in)    :: IBM_mask1x
+            real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in)    :: IBM_mask2x
+            real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in)    :: IBM_mask3x
+
+            real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))                :: IBM_mask_tmp_y
+
+
+            call transpose_x_to_y(IBM_mask1x, IBM_mask_tmp_y)
+            call transpose_y_to_z(IBM_mask_tmp_y, IBM_mask1_z)
+            ! q2
+            call transpose_x_to_y(IBM_mask2x, IBM_mask_tmp_y)
+            call transpose_y_to_z(IBM_mask_tmp_y, IBM_mask2_z)
+            ! q3
+            call transpose_x_to_y(IBM_mask3x, IBM_mask_tmp_y)
+            call transpose_y_to_z(IBM_mask_tmp_y, IBM_mask3_z)
+
+        end subroutine transpose_mask_x_to_z
 
     end subroutine IBM_setup
 

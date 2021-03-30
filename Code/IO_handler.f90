@@ -1120,15 +1120,15 @@ contains
                     if(nrank==0)  call hdf_addgroup(file_path, slice_name)
 
                     if (param_anim2D_1%export_q1) then
-                        call hdf_add_2Dfield(trim(file_path), IBM_mask1(i, :,:), trim(slice_name)//"/q1", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+                        call hdf_add_2Dfield(trim(file_path), IBM_mask1_x(i, :,:), trim(slice_name)//"/q1", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
                     end if
 
                     if (param_anim2D_1%export_q2) then
-                        call hdf_add_2Dfield(trim(file_path), IBM_mask2(i, :,:), trim(slice_name)//"/q2", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+                        call hdf_add_2Dfield(trim(file_path), IBM_mask2_x(i, :,:), trim(slice_name)//"/q2", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
                     end if
 
                     if (param_anim2D_1%export_q3) then
-                        call hdf_add_2Dfield(trim(file_path), IBM_mask2(i, :,:), trim(slice_name)//"/q3", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+                        call hdf_add_2Dfield(trim(file_path), IBM_mask2_x(i, :,:), trim(slice_name)//"/q3", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
                     end if
 
                 end do
@@ -1215,15 +1215,15 @@ contains
 !                    if(nrank==0)  call hdf_addgroup(file_path, slice_name)
 !
 !                    if (param_anim2D_1%export_q1) then
-!                        call hdf_add_2Dfield(trim(file_path), IBM_mask1(i, :,:), trim(slice_name)//"/q1", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+!                        call hdf_add_2Dfield(trim(file_path), IBM_mask1_x(i, :,:), trim(slice_name)//"/q1", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
 !                    end if
 !
 !                    if (param_anim2D_1%export_q2) then
-!                        call hdf_add_2Dfield(trim(file_path), IBM_mask2(i, :,:), trim(slice_name)//"/q2", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+!                        call hdf_add_2Dfield(trim(file_path), IBM_mask2_x(i, :,:), trim(slice_name)//"/q2", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
 !                    end if
 !
 !                    if (param_anim2D_1%export_q3) then
-!                        call hdf_add_2Dfield(trim(file_path), IBM_mask2(i, :,:), trim(slice_name)//"/q3", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+!                        call hdf_add_2Dfield(trim(file_path), IBM_mask2_x(i, :,:), trim(slice_name)//"/q3", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
 !                    end if
 !
 !                end do
@@ -1736,7 +1736,6 @@ contains
         character(10)           :: tmp_str
         integer                 :: i,j
 
-        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))  :: IBM_mask1_z, IBM_mask2_z, IBM_mask3_z
         real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))  :: IBM_mask1_y, IBM_mask2_y, IBM_mask3_y
 
         integer         :: k,s, xdmf_id, ierr, anim_id
@@ -1803,13 +1802,13 @@ contains
 
             if (IBM_activated) then
 
-                call transpose_x_to_y(IBM_mask1, IBM_mask1_y)
+                call transpose_x_to_y(IBM_mask1_x, IBM_mask1_y)
                 call transpose_y_to_z(IBM_mask1_y, IBM_mask1_z)
 
-                call transpose_x_to_y(IBM_mask2, IBM_mask2_y)
+                call transpose_x_to_y(IBM_mask2_x, IBM_mask2_y)
                 call transpose_y_to_z(IBM_mask2_y, IBM_mask2_z)
 
-                call transpose_x_to_y(IBM_mask3, IBM_mask3_y)
+                call transpose_x_to_y(IBM_mask3_x, IBM_mask3_y)
                 call transpose_y_to_z(IBM_mask3_y, IBM_mask3_z)
 
                 do s = 1, param_anim2D_3%nb_slices
@@ -1910,14 +1909,14 @@ contains
 !
 !                if(nrank==0)  call hdf_addgroup(file_path, "MASKS")
 !
-!                call transpose_x_to_y(IBM_mask1, IBM_mask1_y)
-!                call transpose_y_to_z(IBM_mask1_y, IBM_mask1_z)
+!                call transpose_x_to_y(IBM_mask1_x, IBM_mask1_x_y)
+!                call transpose_y_to_z(IBM_mask1_x_y, IBM_mask1_x_z)
 !
-!                call transpose_x_to_y(IBM_mask2, IBM_mask2_y)
-!                call transpose_y_to_z(IBM_mask2_y, IBM_mask2_z)
+!                call transpose_x_to_y(IBM_mask2_x, IBM_mask2_x_y)
+!                call transpose_y_to_z(IBM_mask2_x_y, IBM_mask2_x_z)
 !
-!                call transpose_x_to_y(IBM_mask3, IBM_mask3_y)
-!                call transpose_y_to_z(IBM_mask3_y, IBM_mask3_z)
+!                call transpose_x_to_y(IBM_mask3_x, IBM_mask3_x_y)
+!                call transpose_y_to_z(IBM_mask3_x_y, IBM_mask3_x_z)
 !
 !                do s = 1, param_anim2D_3%nb_slices
 !
@@ -1927,15 +1926,15 @@ contains
 !                    if(nrank==0)  call hdf_addgroup(file_path, slice_name)
 !
 !                    if (param_anim2D_3%export_q1) then
-!                        call hdf_add_2Dfield(trim(file_path), IBM_mask1_z(:, :,k), trim(slice_name)//"/q1", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+!                        call hdf_add_2Dfield(trim(file_path), IBM_mask1_x_z(:, :,k), trim(slice_name)//"/q1", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
 !                    end if
 !
 !                    if (param_anim2D_3%export_q2) then
-!                        call hdf_add_2Dfield(trim(file_path), IBM_mask2_z(:, :,k), trim(slice_name)//"/q2", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+!                        call hdf_add_2Dfield(trim(file_path), IBM_mask2_x_z(:, :,k), trim(slice_name)//"/q2", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
 !                    end if
 !
 !                    if (param_anim2D_3%export_q3) then
-!                        call hdf_add_2Dfield(trim(file_path), IBM_mask3_z(:, :,k), trim(slice_name)//"/q3", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+!                        call hdf_add_2Dfield(trim(file_path), IBM_mask3_x_z(:, :,k), trim(slice_name)//"/q3", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
 !                    end if
 !
 !                end do

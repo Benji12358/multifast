@@ -105,7 +105,6 @@ contains
             if (streamwise==3) call perform_boundary_layer_3(ts3, delta_BL)
         end if
 
-
         ! At this point, the 2D array ts1 and ts3 contain the correct q1 and q3 profiles
         ! and can be used to define the inner velocity field.
         do j=1,n2
@@ -142,15 +141,15 @@ contains
         !     end do
         ! end if
 
-        ! if (yend(3)==n3) then
-        !     do j = 1, n2
-        !         do i = ystart(1), yend(1)
-        !             q1_y(i,j,n3)=0.d0
-        !             q2_y(i,j,n3)=0.d0
-        !             q3_y(i,j,n3)=0.d0
-        !         end do
-        !     end do
-        ! end if
+        if (yend(3)==n3) then
+            do j = 1, n2
+                do i = ystart(1), yend(1)
+                    q1_y(i,j,n3)=0.d0
+                    q2_y(i,j,n3)=0.d0
+                    q3_y(i,j,n3)=0.d0
+                end do
+            end do
+        end if
 
         do k = ystart(3), yend(3)
             do i = ystart(1), yend(1)
@@ -400,8 +399,8 @@ contains
 
             do j=ystart(2),n2/2
                 if (Yc(j)<delta_BL) then
-                    stream1(j,:) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
-                    stream1(n2-j,:) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
+                    stream1(j,:) = 1.5d0 * (Yc(j)/delta_BL) - 0.5d0 * (Yc(j)/delta_BL)**2
+                    stream1(n2-j,:) = 1.5d0 * (Yc(j)/delta_BL) - 0.5d0 * (Yc(j)/delta_BL)**2
                 else
                     stream1(j,:) = 1.d0
                     stream1(n2-j,:) = 1.d0
