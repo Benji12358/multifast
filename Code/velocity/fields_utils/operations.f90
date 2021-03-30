@@ -12,6 +12,68 @@ module VELOCITY_operations
     implicit none 
 contains 
 
+    subroutine velocity_transpose_x_to_z(q1x, q2x, q3x)
+
+        use physical_fields
+        implicit none
+
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in)    :: q3x
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in)    :: q2x
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in)    :: q1x
+
+
+        call transpose_x_to_y(q1x, q1_y)
+        call transpose_y_to_z(q1_y, q1_z)
+        ! q2
+        call transpose_x_to_y(q2x, q2_y)
+        call transpose_y_to_z(q2_y, q2_z)
+        ! q3
+        call transpose_x_to_y(q3x, q3_y)
+        call transpose_y_to_z(q3_y, q3_z)
+
+    end subroutine velocity_transpose_x_to_z
+
+    subroutine velocity_transpose_z_to_x(q1z, q2z, q3z)
+
+        use physical_fields
+        implicit none
+
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)), intent(in)    :: q3z
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)), intent(in)    :: q2z
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)), intent(in)    :: q1z
+
+
+        call transpose_z_to_y(q1z, q1_y)
+        call transpose_y_to_x(q1_y, q1_x)
+        ! q2
+        call transpose_z_to_y(q2z, q2_y)
+        call transpose_y_to_x(q2_y, q2_x)
+        ! q3
+        call transpose_z_to_y(q3z, q3_y)
+        call transpose_y_to_x(q3_y, q3_x)
+
+    end subroutine velocity_transpose_z_to_x
+
+    subroutine pressure_gradient_transpose_x_to_z(dphidx1x, dphidx2x, dphidx3x)
+
+        use physical_fields
+        implicit none
+
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in)    :: dphidx3x
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in)    :: dphidx2x
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in)    :: dphidx1x
+
+
+        call transpose_x_to_y(dphidx1x, dphidx1_y)
+        call transpose_y_to_z(dphidx1_y, dphidx1_z)
+        ! q2
+        call transpose_x_to_y(dphidx2x, dphidx2_y)
+        call transpose_y_to_z(dphidx2_y, dphidx2_z)
+        ! q3
+        call transpose_x_to_y(dphidx3x, dphidx3_y)
+        call transpose_y_to_z(dphidx3_y, dphidx3_z)
+
+    end subroutine pressure_gradient_transpose_x_to_z
 
     subroutine spread_to_all_pencil(q3z, q2y, q1x, dpz)
 
@@ -43,6 +105,9 @@ contains
         use snapshot_writer
         use mpi
         use schemes_interface
+
+        use COMMON_workspace_view, only: COMMON_snapshot_path
+        use snapshot_writer
 
         implicit none
         real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)), intent(in)    :: q3_z
@@ -93,7 +158,6 @@ contains
             enddo
 
         end if
-
 
         ! Z orientation ---------------------------------------------------------
 

@@ -76,6 +76,8 @@ contains
         use numerical_methods_settings
         use poisson_generic_solver
         use VELOCITY_workspace_view, only:recovery_RHS_dir
+        use FRINGE_data
+        use FRINGE_dao, only:fringe_infos
 
         implicit none
 
@@ -89,6 +91,8 @@ contains
             solve_Poisson=>ORL_solve_Poisson
         end if
         !call generic_poisson_infos
+
+        if (use_fringe) call fringe_infos
 
         ! Allocate AND initialize the array used by the VELOCITY_solver (RHS, previousRHS etc.)
         call allocate_data
@@ -162,20 +166,30 @@ contains
             allocate(previousRHS3_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
             previousRHS3_x=0.d0
 
-
-            allocate(q1_save(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
-            q1_save=0.d0
-            allocate(q2_save(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
-            q2_save=0.d0
-            allocate(q3_save(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
-            q3_save=0.d0
-
             allocate(q1_save2(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
             q1_save2=0.d0
             allocate(q2_save2(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
             q2_save2=0.d0
             allocate(q3_save2(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
             q3_save2=0.d0
+
+            if (streamwise==1) then
+                allocate(q1_save(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+                q1_save=0.d0
+                allocate(q2_save(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+                q2_save=0.d0
+                allocate(q3_save(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+                q3_save=0.d0
+            endif
+
+            if (streamwise==3) then
+                allocate(q1_save(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+                q1_save=0.d0
+                allocate(q2_save(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+                q2_save=0.d0
+                allocate(q3_save(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+                q3_save=0.d0
+            endif
 
 
             ! Cross quantities array allocation
@@ -240,7 +254,6 @@ contains
             file_path=trim(recovery_RHS_dir)//"/RHS2"
             call hdf_read_3Dfield(file_path, previousRHS2_x, "RHS2", nx_global,ny_global,nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
 
-
             file_path=trim(recovery_RHS_dir)//"/RHS3"
             call hdf_read_3Dfield(file_path, previousRHS3_x, "RHS3", nx_global,ny_global,nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
 
@@ -262,6 +275,7 @@ contains
 
         use numerical_methods_settings
         use VELOCITY_bc_controller
+        use VELOCITY_operations
         use IBM_settings
         use inflow_settings
 
@@ -299,42 +313,18 @@ contains
         call set_time_coeffs
         call set_NS_coeffs
 
-        NNN=xsize(1)*xsize(2)*xsize(3)
-        NN=xsize(2)*xsize(3)
-
-        if (nrank==debugproc) then
-            open(15, file="debugoutflow", position="append")
-            write(15,*)
-            write(15,*) ntime
-            write(15,*) "Point A", sum(abs(previousRHS1_x))/NNN, sum(abs(previousRHS2_x))/NNN, sum(abs(previousRHS3_x))/NNN
-            write(15,*) "Point B", gam, rom, al
-            close(15)
-        endif
 
         ! ****************  RHS COMPUTATION ************************
         call perform_velocity_products
         call perform_RHS
 
-        if (nrank==debugproc) then
-            open(15, file="debugoutflow", position="append")
-            write(15,*)"Point C", sum(abs(p23_z(:,:,:)))/NNN, sum(abs(p13_z(:,:,:)))/NNN, sum(abs(p12_y(:,:,:)))/NNN
-            write(15,*)"Point D", sum(abs(RHS1_x(:,:,:)))/NNN, sum(abs(RHS2_x(:,:,:)))/NNN, sum(abs(RHS3_x(:,:,:)))/NNN
-            close(15)
-        endif
-
-        ! ****************** ADDING Fext in the RHS *******************
-
-        RHS1_x = RHS1_x + Fext1
-        RHS2_x = RHS2_x + Fext2
-        RHS3_x = RHS3_x + Fext3
-
         ! The mean pressure gradient is performed so as to fullfill the flow rate conservation
-        if (streamwise==3) then
-            call perform_mean_gradP3(dP_streamwise)
-            call perform_mean_gradP1(dP_spanwise)
-        elseif(streamwise==1) then
-            call perform_mean_gradP3(dP_spanwise)
-            call perform_mean_gradP1(dP_streamwise)
+        if (streamwise==3)  then
+            call perform_mean_gradP3(mean_grad_P3)
+            mean_grad_P1=0.d0
+        elseif (streamwise==1)  then
+            call perform_mean_gradP1(mean_grad_P1)
+            mean_grad_P3=0.d0
         endif
 
         ! Define the velocity field at the inlet/outlet for an open boundary problem
@@ -342,11 +332,6 @@ contains
         ! and must not been applied to the current step velocity field
         ! MUST BE BEFORE calculation of u* : the outflow condition is performed from velocity field u at the current
         ! time step
-        if (nrank==debugproc) then
-            open(15, file="debugoutflow", position="append")
-            write(15,*)"Point E", sum(abs(q1_x(:,:,:)))/NNN, sum(abs(q2_x(:,:,:)))/NNN, sum(abs(q3_x(:,:,:)))/NNN
-            close(15)
-        endif
         if (BC1==OPEN) then
             if (.not. inout_newversion) call OPEN_OLD_get_inflow(ntime, ns)
             if (inout_newversion) call OPEN_get_inflow
@@ -355,37 +340,14 @@ contains
         endif
         ! Reinject the flow at the outlet at the inlet for fringe
         if (use_fringe) then
-            if (streamwise==3) then
-                ! q1
-                call transpose_x_to_y(q1_x, q1_y)
-                call transpose_y_to_z(q1_y, q1_z)
-                ! q2
-                call transpose_x_to_y(q2_x, q2_y)
-                call transpose_y_to_z(q2_y, q2_z)
-                ! q3
-                call transpose_x_to_y(q3_x, q3_y)
-                call transpose_y_to_z(q3_y, q3_z)
-            endif
-            call FRINGE_set_inflow(ntime)
-            if (streamwise==3) then
-                ! q1
-                call transpose_z_to_y(q1_z, q1_y)
-                call transpose_y_to_x(q1_y, q1_x)
-                ! q2
-                call transpose_z_to_y(q2_z, q2_y)
-                call transpose_y_to_x(q2_y, q2_x)
-                ! q3
-                call transpose_z_to_y(q3_z, q3_y)
-                call transpose_y_to_x(q3_y, q3_x)
-            endif
+            !if (streamwise==3) then
+            !    call velocity_transpose_x_to_z(q1_x, q2_x, q3_x)
+            !endif
+            call FRINGE_set_inflow
+            !if (streamwise==3) then
+            !    call velocity_transpose_z_to_x(q1_z, q2_z, q3_z)
+            !endif
         endif
-
-        if (nrank==debugproc) then
-            open(15, file="debugoutflow", position="append")
-            write(15,*)"Point F", sum(abs(q1_x(:,:,:)))/NNN, sum(abs(q2_x(:,:,:)))/NNN, sum(abs(q3_x(:,:,:)))/NNN
-            close(15)
-        endif
-
 
         ! ******************  UPDATE VELOCITY **********************
         ! RHS=(Non linear terms + Diffusive terms)
@@ -399,23 +361,7 @@ contains
         q2_save2=q2_x
         q3_save2=q3_x
 
-        if (nrank==debugproc) then
-            open(15, file="debugoutflow", position="append")
-            write(15,*)"Point G", sum(abs(q1_x(1, :,:)))/NN, sum(abs(q2_x(1, :,:)))/NN, sum(abs(q3_x(1, :,:)))/NN
-            write(15,*)"Point H", sum(abs(q1_x(:,:,:)))/NNN, sum(abs(q2_x(:,:,:)))/NNN, sum(abs(q3_x(:,:,:)))/NNN
-            write(15,*)"Point I", sum(abs(RHS1_x(:,:,:)))/NNN, sum(abs(RHS2_x(:,:,:)))/NNN, sum(abs(RHS3_x(:,:,:)))/NNN
-            write(15,*)"Point J", sum(abs(gradP1_x(:,:,:)))/NNN, sum(abs(gradP2_x(:,:,:)))/NNN, sum(abs(gradP3_x(:,:,:)))/NNN
-            write(15,*)"Point K", mean_grad_P1
-            close(15)
-        endif
-
         call perform_NSterms
-
-        if (nrank==debugproc) then
-            open(15, file="debugoutflow", position="append")
-            write(15,*)"Point L", sum(abs(NSTERMS1(:,:,:)))/NNN, sum(abs(NSTERMS2(:,:,:)))/NNN, sum(abs(NSTERMS3(:,:,:)))/NNN
-            close(15)
-        endif
 
         ! Note : here the time advancement is restricted to point where the velocity field is not constrained
         ! by the inflow/outflow condition (
@@ -426,13 +372,20 @@ contains
         previousRHS2_x=RHS2_x
         previousRHS3_x=RHS3_x
 
-        q1_save=q1_x
-        q2_save=q2_x
-        q3_save=q3_x
+        if (streamwise==1) then
+            q1_save=q1_x
+            q2_save=q2_x
+            q3_save=q3_x
+        endif
+
+        if (streamwise==3) then
+            call velocity_transpose_x_to_z(q1_x, q2_x, q3_x)
+            q1_save=q1_z
+            q2_save=q2_z
+            q3_save=q3_z
+        endif
 
         call final_velocity(ntime, ns)
-
-        !        write (*,*) '------------------- update', nrank, sum(abs(previousRHS1_x))
 
         return
 
@@ -482,78 +435,196 @@ contains
 
         ! Flow rate conservation : mean of grad(P) in flow direction is performed so as to ensure conservation
         ! grad(P)=sum(laplacian(u)) in space
-
         subroutine perform_mean_gradP1(mean_grad_P1)
 
+            use boundary_scheme
 
             implicit none
 
             real*8, intent(out) :: mean_grad_P1
 
-            real*8 s1tot
+            real*8,dimension (n1)           :: don1
+            real*8,dimension (n2)           :: don2
+            real*8,dimension (n3)           :: don3
+            real*8,dimension (xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))          :: tmp1
+            real*8,dimension (ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))          :: tmp2
+            real*8,dimension (zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))          :: tmp3
+
+            real*8 s1tot, s1tot_glob
             integer k,i,j, mpi_err, n1e, n2e, n3e
 
             s1tot=0.d0
+            tmp1=0.d0
+            tmp2=0.d0
+            tmp3=0.d0
 
-            ! ********************** WARNING ************************* !
-            ! Integral should be effectuated on CELL CENTERED variable !
-            ! ************* Here, RHS3 is FACE CENTERED ************** !
-            ! ******* But it is ok for periodic condition ************ !
-            ! ******************************************************** !
+            ! _______________________________________________________________________________________________________________________
+            ! ***********************************************************************************************************************
+            ! ****************************** Derivative along the Z direction *******************************************************
+            ! ***********************************************************************************************************************
+
+            !do j=1,n2m
+            if (NS_Q1_BC3/=periodic) then
+
+                n1e=(min(n1m, zend(1))-zstart(1))+1
+                n2e=(min(n2m, zend(2))-zstart(2))+1
+
+                call D2c_3Dz(q1_z, tmp3, zsize(1),n1e,zsize(2),n2e,n3, dx3, .true., NS_Q1_BC3)
+
+                do j = zstart(2), min(n2m, zend(2))
+                    do i=zstart(1), min(n1m, zend(1))   !do i=1,n1m
+
+                        do k=1,n3m
+                            s1tot=s1tot+don3(k)*dx1*dx3*cell_size_Y(j)
+                        enddo
+
+                    enddo
+                enddo
+
+            endif
+
+
+
+            n1e=(min(n1m, yend(1))-ystart(1))+1
+            n3e=(min(n3m, yend(3))-ystart(3))+1
+
+            call D1c_MULT_3Dy(q1_y, tmp2, ysize(1),n1e,n2,ysize(3),n3e, dx2, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,1))
+            call D2c_MULTACC_3Dy(q1_y, tmp2, ysize(1),n1e,n2,ysize(3),n3e, dx2, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,2))
+
+            do k=ystart(3), min(n3m, yend(3))   !do k=1,n3m
+                do i=ystart(1), min(n1m, yend(1))   !do i=1,n1m
+
+                    tmp2(i,1,k)= ( q1_y(i,2,k)*a3_d + q1_y(i,1,k)*a2_d + q1_wall20(i,k)*a1_d )/dx2**2
+                    tmp2(i,n2m,k)= ( q1_y(i,n2m-1,k)*a1_u + q1_y(i,n2m,k) *a2_u + q1_wall21(i,k)*a3_u)/dx2**2
+                    do j = 1, n2m
+                        s1tot=s1tot+tmp2(i,j,k)*dx1*dx3*cell_size_Y(j)
+                    end do
+
+                enddo
+            enddo
+
+            ! X ------------------------------------------------------------------------
+
+            n2e=(min(n2m, xend(2))-xstart(2))+1
+            n3e=(min(n3m, xend(3))-xstart(3))+1
+
+            call D2c_3Dx(q1_x, tmp1, n1,xsize(2),n2e,xsize(3),n3e, dx1, .false., NS_Q1_BC1)
 
             do k=xstart(3), min(n3m, xend(3))   !do k=1,n3m
                 do j=xstart(2), min(n2m, xend(2))   !do j=1,n2m
 
                     do i=1,n1m
-                        s1tot=s1tot + RHS1_x(i,j,k)*dx1*dx3*cell_size_Y(j)
+                        s1tot=s1tot+tmp1(i,j,k)*dx1*dx3*cell_size_Y(j)
                     enddo
 
                 enddo
             enddo
 
-            call MPI_ALLREDUCE (s1tot, mean_grad_P1, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+            if(isnan(s1tot)) then
+                write(*,*)'proc C', nrank
+                write(*,*)'channel D: s1tot', s1tot
+                write(*,*)'channel D: Q1', sum(q1_x), dx1, NS_Q1_BC1
+                write(*,*)'channel D: x3', xstart(3), xend(3)
+                write(*,*)'channel D: x2', xstart(2), xend(2)
 
-            mean_grad_P1=mean_grad_P1/(L1*L2*L3)
-            RHS1_x = RHS1_x - mean_grad_P1
+                call exit
+
+            endif
+
+            call MPI_ALLREDUCE (s1tot, s1tot_glob, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+
+            mean_grad_P1=s1tot_glob/(2.d0*L1*L3*ren)
+
 
             return
         end subroutine
 
 
         ! Same as perform_mean_gradP1 but for the direction 3 as flow direction
-
         subroutine perform_mean_gradP3(mean_grad_P3)
+            use boundary_scheme
 
             implicit none
 
             real*8, intent(out) :: mean_grad_P3
 
-            real*8 s3tot
+            real*8,dimension (n1)           :: don1
+            real*8,dimension (n2)           :: don2
+            real*8,dimension (n3)           :: don3
+            real*8,dimension (xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))          :: tmp1
+            real*8,dimension (ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))          :: tmp2
+            real*8,dimension (zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))          :: tmp3
+
+            real*8 s3tot, s3tot_glob
             integer k,i,j, mpi_err, n1e, n2e, n3e
 
             s3tot=0.d0
 
-            ! ********************** WARNING ************************* !
-            ! Integral should be effectuated on CELL CENTERED variable !
-            ! ************* Here, RHS3 is FACE CENTERED ************** !
-            ! ******* But it is ok for periodic condition ************ !
-            ! ******************************************************** !
+            ! _______________________________________________________________________________________________________________________
+            ! ***********************************************************************************************************************
+            ! ****************************** Derivative along the Z direction *******************************************************
+            ! ***********************************************************************************************************************
 
+            n1e=(min(n1m, zend(1))-zstart(1))+1
+            n2e=(min(n2m, zend(2))-zstart(2))+1
+
+            ! d²q3_z/d²x
+            call D2c_3Dz(q3_z, tmp3, zsize(1),n1e,zsize(2),n2e,n3, dx3, .false., NS_Q3_BC3)
+
+            do j = zstart(2), min(n2m, zend(2))!do j=1,n2m
+                do i=zstart(1), min(n1m, zend(1))!do i=1,n1m
+                    do k=1,n3m
+                        s3tot=s3tot+tmp3(i,j,k)*dx1*dx3*cell_size_Y(j)
+                    enddo
+                enddo
+            enddo
+
+            n1e=(min(n1m, yend(1))-ystart(1))+1
+            n3e=(min(n3m, yend(3))-ystart(3))+1
+
+            call D1c_MULT_3Dy(q3_y, tmp2, ysize(1),n1e,n2,ysize(3),n3e, dx2, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,1))
+            call D2c_MULTACC_3Dy(q3_y, tmp2, ysize(1),n1e,n2,ysize(3),n3e, dx2, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,2))
+
+            do k=ystart(3), min(n3m, yend(3))   !do k=1,n3m
+                do i=ystart(1), min(n1m, yend(1))   !do i=1,n1m
+
+                    tmp2(i,1,k)= ( q3_y(i,2,k)*a3_d + q3_y(i,1,k)*a2_d + q3_wall20(i,k)*a1_d )/dx2**2
+                    tmp2(i,n2m,k)= ( q3_y(i,n2m-1,k)*a1_u + q3_y(i,n2m,k) *a2_u + q3_wall21(i,k)*a3_u)/dx2**2
+                    do j = 1, n2m
+                        s3tot=s3tot+tmp2(i,j,k)*dx1*dx3*cell_size_Y(j)
+                    end do
+
+                enddo
+            enddo
+
+            ! X ------------------------------------------------------------------------
+
+            n2e=(min(n2m, xend(2))-xstart(2))+1
+            n3e=(min(n3m, xend(3))-xstart(3))+1
+
+            ! d²u/d²z
+            call D2c_3Dx(q3_x, tmp1, n1,xsize(2),n2e,xsize(3),n3e, dx1, .true., NS_Q3_BC1)
 
             do k=xstart(3), min(n3m, xend(3))   !do k=1,n3m
                 do j=xstart(2), min(n2m, xend(2))   !do j=1,n2m
 
+                    if ((BC1/=UNBOUNDED).and.(BC1/=FRINGE)) then
+                        tmp1(1,j,k)  =( q3_x(2,j,k)       /3.d0 - q3_x(1,j,k)      + q3_wall10(j,k)*2.d0/3.d0 ) /dx1**2
+                        tmp1(n1m,j,k)=( q3_x(n1m-1,j,k)   /3.d0 - q3_x(n1m,j,k)    + q3_wall11(j,k)*2.d0/3.d0)  /dx1**2
+                    endif
+
                     do i=1,n1m
-                        s3tot=s3tot + RHS3_x(i,j,k)*dx1*dx3*cell_size_Y(j)
+                        s3tot=s3tot+tmp1(i,j,k)*dx1*dx3*cell_size_Y(j)
                     enddo
 
                 enddo
             enddo
 
-            call MPI_ALLREDUCE (s3tot, mean_grad_P3, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+            call MPI_ALLREDUCE (s3tot, s3tot_glob, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
 
-            mean_grad_P3 = mean_grad_P3/(L1*L2*L3)
-            RHS3_x = RHS3_x - mean_grad_P3
+
+            mean_grad_P3=s3tot_glob/(2.d0*L1*L3*ren)
+
 
             return
         end subroutine
@@ -569,19 +640,12 @@ contains
             call transpose_y_to_x(gradP3_y, gradP3_x)
             call transpose_y_to_x(gradP2_y, gradP2_x)
 
-
             n1e=min(n1-1, xend(1))
             n2e=min(n2-1, xend(2))
             n3e=min(n3-1, xend(3))
 
-!           open(15, file="FEXT")
-!            write(15,*)'Fext1(12,12,12)=',Fext1(12,12,12)
-!            write(15,*)'Fext2(12,12,12)=',Fext2(12,12,12)
-!            write(15,*)'Fext3(12,12,12)=',Fext3(12,12,12)
-!           close(15)
-
-            if (BC1==UNBOUNDED) n1s=xstart(1)
-            if (BC1/=UNBOUNDED) n1s=max(2,xstart(1))
+            if ((BC1==UNBOUNDED).or.(BC1==FRINGE)) n1s=xstart(1)
+            if ((BC1/=UNBOUNDED).and.(BC1/=FRINGE)) n1s=max(2,xstart(1))
             if (BC1==OPEN) then
                 n1s=2
                 n1e=n1-2
@@ -592,7 +656,7 @@ contains
                 do j = n2s, n2e
                     do i = n1s, n1e
 !                     NSTERMS1(i,j,k)=(RHS1_x(i,j,k)*gam + previousRHS1_x(i,j,k)*rom - al*(gradP1_x(i,j,k) + mean_grad_P1) + al*(It_Factor_1*PreviousFext1(i,j,k) + It_Factor_2*Fext1(i,j,k)) )*dt
-                      NSTERMS1(i,j,k)=(RHS1_x(i,j,k)*gam + previousRHS1_x(i,j,k)*rom - al*gradP1_x(i,j,k) )*dt
+                      NSTERMS1(i,j,k)=(RHS1_x(i,j,k)*gam + previousRHS1_x(i,j,k)*rom - al*(gradP1_x(i,j,k) + mean_grad_P1) )*dt
                     end do
                 end do
             end do
@@ -618,8 +682,8 @@ contains
                 end do
             end do
 
-            if ((BC3==UNBOUNDED).or.(BC3==FRINGE)) n3s=xstart(3)
-            if ((BC3/=UNBOUNDED).and.(BC3/=FRINGE)) n3s=max(2,xstart(3))
+            if (BC3==UNBOUNDED) n3s=xstart(3)
+            if (BC3/=UNBOUNDED) n3s=max(2,xstart(3))
 
             ! On ne touche que q3[2..n1-2]
             if (BC1==OPEN) then
@@ -632,7 +696,7 @@ contains
             do k = n3s, n3e
                 do j = n2s, n2e
                     do i = n1s, n1e
-                        NSTERMS3(i,j,k)=(RHS3_x(i,j,k)*gam + previousRHS3_x(i,j,k)*rom - al*gradP3_x(i,j,k) )*dt
+                        NSTERMS3(i,j,k)=(RHS3_x(i,j,k)*gam + previousRHS3_x(i,j,k)*rom - al*(gradP3_x(i,j,k) + mean_grad_P3) )*dt
 !                       NSTERMS3(i,j,k)= (RHS3_x(i,j,k)*gam + previousRHS3_x(i,j,k)*rom + gradP3_x(i,j,k) + Fext3(i,j,k)*al)*dt
 
                     end do
@@ -673,6 +737,8 @@ contains
         OPEN_add_outflow=>add_outflow
 
         use FRINGE_data
+        use FRINGE_solver, only:    &
+        FRINGE_set_inflow=>set_inflow
 
         use IBM_data
         use IBM
@@ -685,8 +751,9 @@ contains
         real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: dpdy_old1
         real*8, dimension(zstart(1):zend(1), zstart(2):zend(2)) :: dpdy_old3
         real*8                                                  :: errorsum, errorsum_glob, divy_mean
-        integer                                                 :: mpi_err, s, j
+        integer                                                 :: mpi_err, s
         real*8, dimension(3)                                    :: fringe_error_velocity, fringe_error_velocity_glob
+        integer                                                 :: i,j,k
 
 
         ! ******************  CORRECT VELOCITY *********************
@@ -710,8 +777,21 @@ contains
             ! Vc=Vc+grad(p)[s] (Vc = desired value of velocity)
             ! after correction the velocity in body and BC will be : Vc+grad(p)[N-1]-grad(p)[N]
             ! where n is the number of iteration and will be near to u
-            if (BC1==OPEN) call perform_new_target_velocity_estimate1
-            if (BC3==OPEN) call perform_new_target_velocity_estimate3
+            call pressure_gradient_transpose_x_to_z(dphidx1_x, dphidx2_x, dphidx3_x)
+
+            if (BC1==OPEN) call apply_gradp_inoutflow_velocity_1
+            if (BC3==OPEN) call apply_gradp_inoutflow_velocity_3
+
+            if (BC1==FRINGE) call apply_gradp_fringe_velocity_1
+            !if (BC3==OPEN) call apply_gradp_inoutflow_velocity_3
+
+            if ((streamwise==1).and.(IBM_activated)) call apply_gradp_IBM_velocity_1
+            if ((streamwise==3).and.(IBM_activated)) then
+                call velocity_transpose_x_to_z(q1_x, q2_x, q3_x)
+                ! pressure correction
+                call apply_gradp_IBM_velocity_3
+                call velocity_transpose_z_to_x(q1_z, q2_z, q3_z)
+            endif                
 
             call transpose_x_to_y(q2_x, q2_y)
             call transpose_x_to_y(q3_x, q3_y)
@@ -761,16 +841,13 @@ contains
         endif
 
         if (use_fringe) then
-            if (streamwise==1) then
-                fringe_error_velocity(1) = sum(abs(q1_inflow-q1_x(n1-1,:,:)))
-                fringe_error_velocity(2) = sum(abs(q2_inflow-q2_x(n1-1,:,:)))
-                fringe_error_velocity(3) = sum(abs(q3_inflow-q3_x(n1-1,:,:)))
-            endif
-            if (streamwise==3) then
-                fringe_error_velocity(1) = sum(abs(q1_z(:,:,1)-q1_z(:,:,n3-1)))
-                fringe_error_velocity(2) = sum(abs(q2_z(:,:,1)-q2_z(:,:,n3-1)))
-                fringe_error_velocity(3) = sum(abs(q3_z(:,:,1)-q3_z(:,:,n3-1)))
-            endif
+            do j=xstart(2),min(xend(2),n2m)
+                do k=xstart(3),min(xend(3),n3m)
+                    fringe_error_velocity(1) = fringe_error_velocity(1) + (abs(q1_inflow(j,k))-abs(q1_x(n1-1,j,k))) / ((n2-1)*(n3-1))
+                    fringe_error_velocity(2) = fringe_error_velocity(1) + (abs(q2_inflow(j,k))-abs(q2_x(n1-1,j,k))) / ((n2-1)*(n3-1))
+                    fringe_error_velocity(3) = fringe_error_velocity(1) + (abs(q3_inflow(j,k))-abs(q3_x(n1-1,j,k))) / ((n2-1)*(n3-1))
+                enddo
+            enddo
 
             call MPI_ALLREDUCE(fringe_error_velocity,fringe_error_velocity_glob,1,MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
             if (nrank==0) write(*,*) 'ERROR VELOCITY IN/OUT:', fringe_error_velocity_glob
@@ -802,7 +879,7 @@ contains
                 ut=0.d0
                 do k=xstart(3),min(xend(3),n3-1)
                     do j=xstart(2),min(xend(2),n2-1)
-                        ut=ut+q1_x(n1-1,j,k)*(Y(j+1)-Y(j))*dx3
+                        ut=ut+q1_x(n1,j,k)*(Y(j+1)-Y(j))*dx3
                     enddo
                 enddo
 
@@ -814,7 +891,7 @@ contains
                 ! Adjusting the outflow rate to inflow rate
                 do k=xstart(3),min(xend(3),n3-1)
                     do j=xstart(2),min(xend(2),n2-1)
-                        q1_x(n1,j,k)=q1_x(n1-1,j,k)*ut11/utt
+                        q1_x(n1,j,k)=q1_x(n1,j,k)*ut11/utt
                     enddo
                 enddo
 
@@ -822,7 +899,7 @@ contains
                 ut=0.d0
                 do k=xstart(3),min(xend(3),n3-1)
                     do j=xstart(2),min(xend(2),n2-1)
-                        ut=ut+q1_x(n1-1,j,k)*(Y(j+1)-Y(j))*dx3
+                        ut=ut+q1_x(n1,j,k)*(Y(j+1)-Y(j))*dx3
                     enddo
                 enddo
                 call MPI_ALLREDUCE(ut, utt, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
@@ -835,136 +912,114 @@ contains
             ! When IBM or OPEN boundary condition are activated, a correct target velocity must be applied BEFORE
             ! the correction by the pressure gradient SO AS to obtain the correct desired velocity field AFTER correction
             ! The current estimation of the target velocity is stored in the "q" array
-            subroutine perform_new_target_velocity_estimate1
+            subroutine apply_gradp_inoutflow_velocity_1
+                implicit none
+                integer     :: i, j, k
+
+                do k=xstart(3),min(xend(3),n3-1)
+                    do j=xstart(2),min(xend(2),n2-1)
+
+                        q1_x(n1,j,k)=q1_save2(n1,j,k)+dphidx1_x(n1,j,k)*al*dt
+                        q1_x(1,j,k)=q1_save2(1,j,k)+dphidx1_x(1,j,k)*al*dt
+
+                        q2_x(n1,j,k)=q2_save2(n1,j,k)+dphidx2_x(n1,j,k)*al*dt
+                        q2_x(1,j,k)=q2_save2(1,j,k)+dphidx2_x(1,j,k)*al*dt
+
+                        q3_x(n1,j,k)=q3_save2(n1,j,k)+dphidx3_x(n1,j,k)*al*dt
+                        q3_x(1,j,k)=q3_save2(1,j,k)+dphidx3_x(1,j,k)*al*dt
+
+                    enddo
+                enddo
+
+            end subroutine apply_gradp_inoutflow_velocity_1
+
+            subroutine apply_gradp_inoutflow_velocity_3
+                implicit none
+                integer     :: i, j, k
+
+                do k=xstart(3),min(xend(3),n3-1)
+                    do j=xstart(2),min(xend(2),n2-1)
+
+                        q1_z(i,j,n3-1)=q1_save2(i,j,n3-1)+dphidx1_x(i,j,n3-1)*al*dt
+                        q1_z(i,j,1)=q1_save2(i,j,1)+dphidx1_x(i,j,1)*al*dt
+
+                        q2_z(i,j,n3-1)=q2_save2(i,j,n3-1)+dphidx2_x(i,j,n3-1)*al*dt
+                        q2_z(i,j,1)=q2_save2(i,j,1)+dphidx2_x(i,j,1)*al*dt
+
+                        q3_z(i,j,n3-1)=q3_save2(i,j,n3-1)+dphidx3_x(i,j,n3-1)*al*dt
+                        q3_z(i,j,1)=q3_save2(i,j,1)+dphidx3_x(i,j,1)*al*dt
+
+                    enddo
+                enddo
+
+            end subroutine apply_gradp_inoutflow_velocity_3
+
+            subroutine apply_gradp_fringe_velocity_1
+                use FRINGE_data
+
+                implicit none
+                integer     :: i, j, k
+
+                do k=xstart(3),min(xend(3),n3-1)
+                    do j=xstart(2),min(xend(2),n2-1)
+
+                        ! take the velocity after the inflow is set
+                        q1_x(1,j,k)=q1_save2(1,j,k)+dphidx1_x(1,j,k)*al*dt
+                        q2_x(1,j,k)=q2_save2(1,j,k)+dphidx2_x(1,j,k)*al*dt
+                        q3_x(1,j,k)=q3_save2(1,j,k)+dphidx3_x(1,j,k)*al*dt
+
+                        ! do i=n_fringe_start,n1-1
+
+                        !     q1_x(i,j,k)=q1_save(i,j,k)+dphidx1_x(i,j,k)*al*dt
+                        !     q2_x(i,j,k)=q2_save(i,j,k)+dphidx2_x(i,j,k)*al*dt
+                        !     q3_x(i,j,k)=q3_save(i,j,k)+dphidx3_x(i,j,k)*al*dt
+
+                        ! enddo
+
+                    enddo
+                enddo
+
+            end subroutine apply_gradp_fringe_velocity_1
+
+            subroutine apply_gradp_IBM_velocity_1
                 use IBM_settings
                 use IBM_data
                 implicit none
                 integer     :: i, j, k
 
+                do i = 1, n1-1
+                    do j = xstart(2),min(xend(2),n2-1)
+                        do k = xstart(3),min(xend(3),n3-1)
 
+                            q1_x(i,j,k)=q1_save(i,j,k)+IBM_mask1_x(i,j,k)*dphidx1_x(i,j,k)*al*dt
+                            q2_x(i,j,k)=q2_save(i,j,k)+IBM_mask2_x(i,j,k)*dphidx2_x(i,j,k)*al*dt
+                            q3_x(i,j,k)=q3_save(i,j,k)+IBM_mask3_x(i,j,k)*dphidx3_x(i,j,k)*al*dt
 
-                ! k: 1->n3-1 (periodique
-                ! j: 1->n2-1
-                do k=xstart(3),min(xend(3),n3-1)
-                    do j=xstart(2),min(xend(2),n2-1)
-
-                        q1_x(n1-1,j,k)=q1_save(n1-1,j,k)+dphidx1_x(n1-1,j,k)*al*dt
-                        q1_x(1,j,k)=q1_save(1,j,k)+dphidx1_x(1,j,k)*al*dt
-
-                        if (IBM_activated) then
-
-                            do i = 2, n1-2
-                                q1_x(i,j,k)=q1_save(i,j,k)+IBM_mask1(i,j,k)*dphidx1_x(i,j,k)*al*dt
-                            end do
-
-                        endif
+                        end do
                     enddo
                 enddo
 
-                ! k: 1->n3-1
-                ! j: 2->n2-1 (Dirichlet)
-                do k=xstart(3),min(xend(3),n3-1)
-                    do j=max(2,xstart(2)),min(xend(2),n2-1)
+            end subroutine apply_gradp_IBM_velocity_1
 
-                        q2_x(n1-1,j,k)=q2_save(n1-1,j,k)+dphidx2_x(n1-1,j,k)*al*dt
-                        q2_x(1,j,k)=q2_save(1,j,k)+dphidx2_x(1,j,k)*al*dt
-
-                        if (IBM_activated) then
-
-                            do i = 2, n1-2
-                                q2_x(i,j,k)=q2_save(i,j,k)+IBM_mask2(i,j,k)*dphidx2_x(i,j,k)*al*dt
-                            end do
-
-                        endif
-
-                    enddo
-                enddo
-
-                ! k: 1->n3-1 (periodique
-                ! j: 1->n2-1
-                do k=xstart(3),min(xend(3),n3-1)
-                    do j=xstart(2),min(xend(2),n2-1)
-
-                        q3_x(n1-1,j,k)=q3_save(n1-1,j,k)+dphidx3_x(n1-1,j,k)*al*dt
-                        q3_x(1,j,k)=q3_save(1,j,k)+dphidx3_x(1,j,k)*al*dt
-
-                        if (IBM_activated) then
-
-                            do i = 2, n1-2
-                                q3_x(i,j,k)=q3_save(i,j,k)+IBM_mask3(i,j,k)*dphidx3_x(i,j,k)*al*dt
-                            end do
-
-                        endif
-                    enddo
-                enddo
-
-            end subroutine perform_new_target_velocity_estimate1
-
-            subroutine perform_new_target_velocity_estimate3
+            subroutine apply_gradp_IBM_velocity_3
                 use IBM_settings
                 use IBM_data
                 implicit none
                 integer     :: i, j, k
 
+                do i = zstart(1),min(zend(1),n1-1)
+                    do j = zstart(2),min(zend(2),n2-1)
+                        do k = 1, n3-1
 
+                            q1_z(i,j,k)=q1_save(i,j,k)+IBM_mask1_z(i,j,k)*dphidx1_z(i,j,k)*al*dt
+                            q2_z(i,j,k)=q2_save(i,j,k)+IBM_mask2_z(i,j,k)*dphidx2_z(i,j,k)*al*dt
+                            q3_z(i,j,k)=q3_save(i,j,k)+IBM_mask3_z(i,j,k)*dphidx3_z(i,j,k)*al*dt
 
-                ! k: 1->n3-1 (periodique
-                ! j: 1->n2-1
-                do i=xstart(1),min(xend(1),n1-1)
-                    do j=xstart(2),min(xend(2),n2-1)
-
-                        q1_x(i,j,n3-1)=q1_save(i,j,n3-1)+dphidx1_x(i,j,n3-1)*al*dt
-                        q1_x(i,j,1)=q1_save(i,j,1)+dphidx1_x(i,j,1)*al*dt
-
-                        if (IBM_activated) then
-
-                            do k = 2, n3-2
-                                q1_x(i,j,k)=q1_save(i,j,k)+IBM_mask1(i,j,k)*dphidx1_x(i,j,k)*al*dt
-                            end do
-
-                        endif
+                        end do
                     enddo
                 enddo
 
-                ! k: 1->n3-1
-                ! j: 2->n2-1 (Dirichlet)
-                do i=xstart(1),min(xend(1),n1-1)
-                    do j=max(2,xstart(2)),min(xend(2),n2-1)
-
-                        q2_x(i,j,n3-1)=q2_save(i,j,n3-1)+dphidx2_x(i,j,n3-1)*al*dt
-                        q2_x(i,j,1)=q2_save(i,j,1)+dphidx2_x(i,j,1)*al*dt
-
-                        if (IBM_activated) then
-
-                            do k = 2, n3-2
-                                q2_x(i,j,k)=q2_save(i,j,k)+IBM_mask2(i,j,k)*dphidx2_x(i,j,k)*al*dt
-                            end do
-
-                        endif
-
-                    enddo
-                enddo
-
-                ! k: 1->n3-1 (periodique
-                ! j: 1->n2-1
-                do i=xstart(1),min(xend(1),n1-1)
-                    do j=xstart(2),min(xend(2),n2-1)
-
-                        q3_x(i,j,n3)=q3_save(i,j,n3)+dphidx3_x(i,j,n3)*al*dt
-                        q3_x(i,j,1)=q3_save(i,j,1)+dphidx3_x(i,j,1)*al*dt
-
-                        if (IBM_activated) then
-
-                            do k = 2, n3-1
-                                q3_x(i,j,k)=q3_save(i,j,k)+IBM_mask3(i,j,k)*dphidx3_x(i,j,k)*al*dt
-                            end do
-
-                        endif
-                    enddo
-                enddo
-
-            end subroutine perform_new_target_velocity_estimate3
-
+            end subroutine apply_gradp_IBM_velocity_3
 
 
             subroutine perform_gradp(dph_z)
@@ -1157,37 +1212,22 @@ contains
             cx3=cx1
         endif
 
-        if (outflow_type==2) then
-            q1min=1000.d0
-            q1max=-1000.d0
+        if (outflow_type==2) call perform_global_cx
+        if (outflow_type==3) call perform_local_cx
+        if (outflow_type==4) call perform_inlet_cx
 
-            do k=xstart(3),min(xend(3), n3-1)
-                do j=xstart(2),min(xend(2), n2-1)
-                    if(q1min>q1_x(n1-1, j,k)) q1min=q1_x(n1-1, j,k)
-                    if(q1max<q1_x(n1-1, j,k)) q1max=q1_x(n1-1, j,k)
-                enddo
-            enddo
-
-            call MPI_ALLREDUCE(q1min,q1min_g,1,MPI_DOUBLE_PRECISION, MPI_MIN, MPI_COMM_WORLD, mpi_err)
-            call MPI_ALLREDUCE(q1max,q1max_g,1,MPI_DOUBLE_PRECISION, MPI_MAX, MPI_COMM_WORLD, mpi_err)
-
-            cx1=0.5d0*(q1max_g+q1min_g)*dt/dx1
-            cx2=cx1
-            cx3=cx1
-
-        endif
-
-        if (outflow_type==3) call perform_cx
-        if (outflow_type==4) call perform_cx2
         if (outflow_type==5) then
-            call perform_cx2
-            if(nb>10) then
-                !call print_conv
-                call perform_diff !call check_diff
-            endif
+            call perform_global_cx
+            call perform_diff
         endif
+
         if (outflow_type==6) then
-            call perform_cx3
+            call perform_local_cx
+            call perform_diff
+        endif
+
+        if (outflow_type==6) then
+            call perform_inlet_cx
             call perform_diff
         endif
 
@@ -1200,14 +1240,12 @@ contains
 
         do k=n3s,n3e
             do j=n2s,n2e
-                q1_x(n1-1,j,k)=q1_x(n1-1,j,k)+conv1(j,k)+diff1(j,k)*dt
-                q1_wall11(j,k)=q1_x(n1-1,j,k)
-                q2_x(n1-1,j,k)=q2_x(n1-1,j,k)+conv2(j,k)+diff2(j,k)*dt
-                q3_x(n1-1,j,k)=q3_x(n1-1,j,k)+conv3(j,k)+diff3(j,k)*dt
+                q1_x(n1,j,k) = q1_x(n1,j,k) + conv1(j,k) + diff1(j,k)*dt
+                q1_wall11(j,k) = q1_x(n1,j,k)
+                q2_x(n1-1,j,k) = q2_x(n1-1,j,k) + conv2(j,k) + diff2(j,k)*dt
+                q3_x(n1-1,j,k) = q3_x(n1-1,j,k) + conv3(j,k) + diff3(j,k)*dt
             enddo
         enddo
-
-
 
         if (nrank==debugproc) then
             open(15, file="debugoutflow", position="append")
@@ -1280,18 +1318,17 @@ contains
             call transpose_y_to_x(diff22, diff22x)
             call transpose_y_to_x(diff32, diff32x)
 
+            outflow_diff1c = diff13x(n1,:,:) + diff12x(n1,:,:)
+            outflow_diff2c = diff23x(n1-1,:,:) + diff22x(n1-1,:,:)
+            outflow_diff3c = diff33x(n1-1,:,:) + diff32x(n1-1,:,:)
 
-            outflow_diff1c=diff13x(n1,:,:)+diff12x(n1,:,:)
-            outflow_diff2c=diff23x(n1-1,:,:)+diff22x(n1-1,:,:)
-            outflow_diff3c=diff33x(n1-1,:,:)+diff32x(n1-1,:,:)
+            diff1 = gam*outflow_diff1c + rom*outflow_diff1o
+            diff2 = gam*outflow_diff2c + rom*outflow_diff2o
+            diff3 = gam*outflow_diff3c + rom*outflow_diff3o
 
-            diff1=gam*outflow_diff1c+rom*outflow_diff1o
-            diff2=gam*outflow_diff2c+rom*outflow_diff2o
-            diff3=gam*outflow_diff3c+rom*outflow_diff3o
-
-            outflow_diff1o=outflow_diff1c
-            outflow_diff2o=outflow_diff2c
-            outflow_diff3o=outflow_diff3c
+            outflow_diff1o = outflow_diff1c
+            outflow_diff2o = outflow_diff2c
+            outflow_diff3o = outflow_diff3c
 
 
         end subroutine perform_diff
@@ -1301,103 +1338,75 @@ contains
             use snapshot_writer
             implicit none
 
-
             do k=xstart(3),min(xend(3), n3-1)
                 do j=xstart(2),min(xend(2), n2-1)
-                    outflow_conv1c(j,k)=-cx1(j,k)*(q1_x(n1-1,j,k)-q1_x(n1-2,j,k))
-                    outflow_conv2c(j,k)=-cx2(j,k)*(q2_x(n1-1,j,k)-q2_x(n1-2,j,k))
-                    outflow_conv3c(j,k)=-cx3(j,k)*(q3_x(n1-1,j,k)-q3_x(n1-2,j,k))
+                    outflow_conv1c(j,k) = -cx1(j,k)*( q1_x(n1,j,k) - q1_x(n1-1,j,k) )
+                    outflow_conv2c(j,k) = -cx2(j,k)*( q2_x(n1-1,j,k) - q2_x(n1-2,j,k) )
+                    outflow_conv3c(j,k) = -cx3(j,k)*( q3_x(n1-1,j,k) - q3_x(n1-2,j,k) )
                 enddo
             enddo
 
             ! Time advancement
-            conv1=gam*outflow_conv1c+rom*outflow_conv1o
-            conv2=gam*outflow_conv2c+rom*outflow_conv2o
-            conv3=gam*outflow_conv3c+rom*outflow_conv3o
+            conv1 = gam*outflow_conv1c + rom*outflow_conv1o
+            conv2 = gam*outflow_conv2c + rom*outflow_conv2o
+            conv3 = gam*outflow_conv3c + rom*outflow_conv3o
 
-            outflow_conv1o=outflow_conv1c
-            outflow_conv2o=outflow_conv2c
-            outflow_conv3o=outflow_conv3c
+            outflow_conv1o = outflow_conv1c
+            outflow_conv2o = outflow_conv2c
+            outflow_conv3o = outflow_conv3c
 
 
         end subroutine perform_conv
 
         ! Perform phase velocity by averaging the flow between 3:n1-4 (in order to avoid limit effects)
         ! cx2, cx3=cx1
-        subroutine perform_cx()
+        subroutine perform_global_cx()
+            use COMMON_fieldstools
+
             implicit none
-            real*8  :: num, den
+            real*8              :: cs1
 
-            do k=xstart(3),min(xend(3), n3-1)
-                do j=xstart(2),min(xend(2), n2-1)
+            call perform_checksum_x(q1_x(:,:,:), cs1)
 
-                    cx1(j,k)=sum(q1_x(3:n1-4, j,k))
-                    cx1(j,k)=cx1(j,k)/(n1-6)
-                    cx1(j,k)=cx1(j,k)*dt/dx1
-
-                enddo
-            enddo
-
-            cx2=cx1
-            cx3=cx1
+            cx1 = cs1*dt/dx1
+            cx2 = cx1
+            cx3 = cx1
 
         end subroutine
 
         ! Phase velocity is defined by the local veloctiy at the outflow
         ! cx2, cx3=cx1
-        subroutine perform_cx2()
+        subroutine perform_local_cx()
             implicit none
-            real*8  :: num, den
 
-            do k=xstart(3),min(xend(3), n3-1)
-                do j=xstart(2),min(xend(2), n2-1)
+            do j=xstart(2),min(xend(2), n2-1)
+                do k=xstart(3),min(xend(3), n3-1)
 
-                    cx1(j,k)=q1_x(n1-1, j,k)
-                    cx1(j,k)=cx1(j,k)*dt/dx1
+                    cx1(j,k) = q1_x(n1-1,j,k)
+                    cx1(j,k) = cx1(j,k)*dt/dx1
 
                 enddo
             enddo
 
-            cx2=cx1
-            cx3=cx1
+            cx2 = cx1
+            cx3 = cx1
 
         end subroutine
 
-
-        ! Phase velocity is defined by the local veloctiy at the outflow
-        ! Different from perform_cx3 : cx2 and cx3 and defined by interpolation of q1 on the q2 and q3 locations
-        subroutine perform_cx3()
+        subroutine perform_inlet_cx()
             implicit none
-            integer :: i
-            real*8  :: num, den
-            real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)) :: q1_13
-            real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: q1_12, q1_13y
-            real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: q1_12_x, q1_13_x
 
+            do j=xstart(2),min(xend(2), n2-1)
+                do k=xstart(3),min(xend(3), n3-1)
 
-            q1_12(:,1,:)=0.d0
-            q1_12(:,n2,:)=0.d0
-            call D0ssh_3Dy(q1_y, q1_12, ysize(1),ysize(1),n2,ysize(3),ysize(3), NS_Q1_BC2)
-            call D0ssh_3Dz(q1_z, q1_13, zsize(1),zsize(1),zsize(2),zsize(2),n3, NS_Q1_BC3)
-
-            call transpose_z_to_y(q1_13, q1_13y)
-            call transpose_y_to_x(q1_13y, q1_13_x)
-
-            call transpose_y_to_x(q1_12, q1_12_x)
-
-            do k=xstart(3),min(xend(3), n3-1)
-                do j=xstart(2),min(xend(2), n2-1)
-
-                    cx1(j,k)=q1_x(n1-1, j,k)
-                    cx2(j,k)=q1_12_x(n1-1, j,k)
-                    cx3(j,k)=q1_13_x(n1-1, j,k)
-
-                    cx1(j,k)=cx1(j,k)*dt/dx1
-                    cx2(j,k)=cx2(j,k)*dt/dx1
-                    cx3(j,k)=cx3(j,k)*dt/dx1
+                    cx1(j,k) = q1_x(1,j,k)
+                    cx1(j,k) = cx1(j,k)*dt/dx1
 
                 enddo
             enddo
+
+            cx2 = cx1
+            cx3 = cx1
 
         end subroutine
 
@@ -1613,13 +1622,6 @@ contains
         integer                                                                                 :: i,j,k
         integer                                                                                 :: n1s, n1e, n2s,n2e, n3s,n3e
 
-        !write(*,*)'A: RHS1', sum(RHS1_x)
-        !write(*,*)'A: RHS2', sum(RHS2_x)
-        !write(*,*)'A: RHS3', sum(RHS3_x)
-        !write(*,*)'A: GRADP1', sum(gradP1_x)
-        !write(*,*)'A: GRADP2', sum(gradP2_x)
-        !write(*,*)'A: GRADP3', sum(gradP3_x)
-
         n1e=min(n1-1, xend(1))
         n2e=min(n2-1, xend(2))
         n3e=min(n3-1, xend(3))
@@ -1628,16 +1630,16 @@ contains
 
             call force_velocity(q1_save2, q2_save2, q3_save2, xsize, vel_term1, vel_term2, vel_term3)
 
-            if (BC1==UNBOUNDED) n1s=xstart(1)
-            if (BC1/=UNBOUNDED) n1s=max(2,xstart(1))
+            if ((BC1==UNBOUNDED).or.(BC1==FRINGE)) n1s=xstart(1)
+            if ((BC1/=UNBOUNDED).and.(BC1/=FRINGE)) n1s=max(2,xstart(1))
             n2s=xstart(2)
             n3s=xstart(3)
 
             do k = n3s, n3e
                 do j = n2s, n2e
                     do i = n1s, n1e
-                        RHS1i = NSTERMS1(i,j,k) + 0.5d0*Fext1(i, j, k)*al*dt
-                        q1_x(i,j,k) = q1_save2(i,j,k) + RHS1i + IBM_mask1(i,j,k)*(-RHS1i + vel_term1(i,j,k))
+                        RHS1i = NSTERMS1(i,j,k) + Fext1(i, j, k)
+                        q1_x(i,j,k) = q1_save2(i,j,k) + RHS1i + IBM_mask1_x(i,j,k)*(-RHS1i + vel_term1(i,j,k))
                     end do
                 end do
             end do
@@ -1656,65 +1658,8 @@ contains
             do k = n3s, n3e
                 do j = n2s, n2e
                     do i = n1s, n1e
-                        RHS2i = NSTERMS2(i,j,k) + 0.5d0*Fext2(i, j, k)*al*dt
-                        q2_x(i,j,k) = q2_save2(i,j,k) + RHS2i + IBM_mask2(i,j,k)*(-RHS2i + vel_term2(i,j,k))
-                    end do
-                end do
-            end do
-
-            if (BC3==UNBOUNDED) n3s=xstart(3)
-            if (BC3/=UNBOUNDED) n3s=max(2,xstart(3))
-
-            ! On ne touche que q3[2..n1-2]
-            if (BC1==OPEN) then
-                n1s=2
-                n1e=n1-2
-            endif
-
-            n2s=xstart(2)
-
-            do k = n3s, n3e
-                do j = n2s, n2e
-                    do i = n1s, n1e
-                        RHS3i = NSTERMS3(i,j,k) + 0.5d0*Fext3(i, j, k)*al*dt
-                        q3_x(i,j,k) = q3_save2(i,j,k) + RHS3i + IBM_mask3(i,j,k)*(-RHS3i + vel_term3(i,j,k))
-                    end do
-                end do
-            end do
-
-        else
-
-            if (BC1==UNBOUNDED) n1s=xstart(1)
-            if (BC1/=UNBOUNDED) n1s=max(2,xstart(1))
-            if (BC1==OPEN) then
-                n1s=2
-                n1e=n1-2
-            endif
-            n2s=xstart(2)
-            n3s=xstart(3)
-            do k = n3s, n3e
-                do j = n2s, n2e
-                    do i = n1s, n1e
-                        q1_x(i,j,k) = q1_save2(i,j,k) + NSTERMS1(i,j,k)
-                    end do
-                end do
-            end do
-
-
-            if (BC2==UNBOUNDED) n2s=xstart(2)
-            if (BC2/=UNBOUNDED) n2s=max(2,xstart(2))
-            ! On ne touche que q2[2..n1-2]
-            if (BC1==OPEN) then
-                n1s=2
-                n1e=n1-2
-            endif
-
-            n3s=xstart(3)
-
-            do k = n3s, n3e
-                do j = n2s, n2e
-                    do i = n1s, n1e
-                        q2_x(i,j,k) = q2_save2(i,j,k) + NSTERMS2(i,j,k)
+                        RHS2i = NSTERMS2(i,j,k) + Fext2(i, j, k)
+                        q2_x(i,j,k) = q2_save2(i,j,k) + RHS2i + IBM_mask2_x(i,j,k)*(-RHS2i + vel_term2(i,j,k))
                     end do
                 end do
             end do
@@ -1733,20 +1678,70 @@ contains
             do k = n3s, n3e
                 do j = n2s, n2e
                     do i = n1s, n1e
-                        q3_x(i,j,k) = q3_save2(i,j,k) + NSTERMS3(i,j,k)
+                        RHS3i = NSTERMS3(i,j,k) + Fext3(i, j, k)
+                        q3_x(i,j,k) = q3_save2(i,j,k) + RHS3i + IBM_mask3_x(i,j,k)*(-RHS3i + vel_term3(i,j,k))
+                    end do
+                end do
+            end do
+
+        else
+
+            if ((BC1==UNBOUNDED).or.(BC1==FRINGE)) n1s=xstart(1)
+            if ((BC1/=UNBOUNDED).and.(BC1/=FRINGE)) n1s=max(2,xstart(1))
+            if (BC1==OPEN) then
+                n1s=2
+                n1e=n1-2
+            endif
+            n2s=xstart(2)
+            n3s=xstart(3)
+            do k = n3s, n3e
+                do j = n2s, n2e
+                    do i = n1s, n1e
+                        q1_x(i,j,k) = q1_save2(i,j,k) + NSTERMS1(i,j,k) + Fext1(i,j,k)
+                    end do
+                end do
+            end do
+
+
+            if (BC2==UNBOUNDED) n2s=xstart(2)
+            if (BC2/=UNBOUNDED) n2s=max(2,xstart(2))
+            ! On ne touche que q2[2..n1-2]
+            if (BC1==OPEN) then
+                n1s=2
+                n1e=n1-2
+            endif
+
+            n3s=xstart(3)
+
+            do k = n3s, n3e
+                do j = n2s, n2e
+                    do i = n1s, n1e
+                        q2_x(i,j,k) = q2_save2(i,j,k) + NSTERMS2(i,j,k) + Fext2(i,j,k)
+                    end do
+                end do
+            end do
+
+            if (BC3==UNBOUNDED) n3s=xstart(3)
+            if (BC3/=UNBOUNDED) n3s=max(2,xstart(3))
+
+            ! On ne touche que q3[2..n1-2]
+            if (BC1==OPEN) then
+                n1s=2
+                n1e=n1-2
+            endif
+
+            n2s=xstart(2)
+
+            do k = n3s, n3e
+                do j = n2s, n2e
+                    do i = n1s, n1e
+                        q3_x(i,j,k) = q3_save2(i,j,k) + NSTERMS3(i,j,k) + Fext3(i,j,k)
                     end do
                 end do
             end do
 
         end if
         ! q3_x, q2_x and w_c contains u*,v* and w*
-
-
-    !write(*,*)'B: Q1', sum(q1_x)
-    !write(*,*)'B: Q2', sum(q2_x)
-    !write(*,*)'B: Q3', sum(q3_x)
-
-
 
     end subroutine perform_intermediate_velocity
 
