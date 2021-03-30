@@ -210,8 +210,10 @@ contains
 
             do j=1,n2/2
                 if (Yc(j)<delta_BL) then
-                    f1(j) = 1.5d0 * (Yc(j)/delta_BL) - 0.5d0 * (Yc(j)/delta_BL)**2
-                    f1(n2-j) = 1.5d0 * (Yc(j)/delta_BL) - 0.5d0 * (Yc(j)/delta_BL)**2
+                    !f1(j) = 1.5d0 * (Yc(j)/delta_BL) - 0.5d0 * (Yc(j)/delta_BL)**2
+                    !f1(n2-j) = 1.5d0 * (Yc(j)/delta_BL) - 0.5d0 * (Yc(j)/delta_BL)**2
+                    f1(j) = 2.d0 * (Yc(j)/delta_BL) - 2.d0 * (Yc(j)/delta_BL)**3 + 1.d0 * (Yc(j)/delta_BL)**4
+                    f1(n2-j) = 2.d0 * (Yc(j)/delta_BL) - 2.d0 * (Yc(j)/delta_BL)**3 + 1.d0 * (Yc(j)/delta_BL)**4
                 else
                     f1(j) = 1.d0
                     f1(n2-j) = 1.d0
@@ -242,8 +244,10 @@ contains
 
             do j=1,n2/2
                 if (Yc(j)<delta_BL) then
-                    f3(j) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
-                    f3(n2-j) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
+                    !f3(j) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
+                    !f3(n2-j) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
+                    f3(j) = 2.d0 * (Yc(j)/delta_BL) - 2.d0 * (Yc(j)/delta_BL)**3 + 1.d0 * (Yc(j)/delta_BL)**4
+                    f3(n2-j) = 2.d0 * (Yc(j)/delta_BL) - 2.d0 * (Yc(j)/delta_BL)**3 + 1.d0 * (Yc(j)/delta_BL)**4
                 else
                     f3(j) = 1.d0
                     f3(n2-j) = 1.d0

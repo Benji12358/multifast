@@ -399,8 +399,10 @@ contains
 
             do j=ystart(2),n2/2
                 if (Yc(j)<delta_BL) then
-                    stream1(j,:) = 1.5d0 * (Yc(j)/delta_BL) - 0.5d0 * (Yc(j)/delta_BL)**2
-                    stream1(n2-j,:) = 1.5d0 * (Yc(j)/delta_BL) - 0.5d0 * (Yc(j)/delta_BL)**2
+                    !stream1(j,:) = 1.5d0 * (Yc(j)/delta_BL) - 0.5d0 * (Yc(j)/delta_BL)**2
+                    !stream1(n2-j,:) = 1.5d0 * (Yc(j)/delta_BL) - 0.5d0 * (Yc(j)/delta_BL)**2
+                    stream1(j,:) = 2.d0 * (Yc(j)/delta_BL) - 2.d0 * (Yc(j)/delta_BL)**3 + 1.d0 * (Yc(j)/delta_BL)**4
+                    stream1(n2-j,:) = 2.d0 * (Yc(j)/delta_BL) - 2.d0 * (Yc(j)/delta_BL)**3 + 1.d0 * (Yc(j)/delta_BL)**4
                 else
                     stream1(j,:) = 1.d0
                     stream1(n2-j,:) = 1.d0
@@ -427,8 +429,10 @@ contains
 
             do j=ystart(2),n2/2
                 if (Yc(j)<delta_BL) then
-                    stream3(:,j) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
-                    stream3(:,n2-j) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
+                    !stream3(:,j) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
+                    !stream3(:,n2-j) = (3/2) * (Yc(j)/delta_BL) - (1/2) * (Yc(j)/delta_BL)**2
+                    stream3(j,:) = 2.d0 * (Yc(j)/delta_BL) - 2.d0 * (Yc(j)/delta_BL)**3 + 1.d0 * (Yc(j)/delta_BL)**4
+                    stream3(n2-j,:) = 2.d0 * (Yc(j)/delta_BL) - 2.d0 * (Yc(j)/delta_BL)**3 + 1.d0 * (Yc(j)/delta_BL)**4
                 else
                     stream3(:,j) = 1.d0
                     stream3(:,n2-j) = 1.d0
