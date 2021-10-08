@@ -105,6 +105,7 @@ contains
         use snapshot_writer
         use mpi
         use schemes_interface
+        use IBM
 
         use COMMON_workspace_view, only: COMMON_snapshot_path
         use snapshot_writer
@@ -135,6 +136,10 @@ contains
         n2e=(min(n2m, xend(2))-xstart(2))+1
         n3e=(min(n3m, xend(3))-xstart(3))+1
 
+        ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
+        !     call set_antisymmetric_velocity_in_object(Z,Yc,Xc,q1_x,'X')
+        ! endif
+
         call D1s_3Dx(q1_x, div1_x, n1,xsize(2),n2e,xsize(3),n3e, dx1, .false., POISSON_VEL_BC1)
 
         ! Y orientation ---------------------------------------------------------
@@ -142,6 +147,10 @@ contains
         div2_y=0.d0
         n1e=(min(n1m, yend(1))-ystart(1))+1
         n3e=(min(n3m, yend(3))-ystart(3))+1
+
+        ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
+        !     call set_antisymmetric_velocity_in_object(Zc,Y,Xc,q2_y,'Y')
+        ! endif
 
         if (use_generic_poisson) then
 
@@ -164,8 +173,13 @@ contains
         div3_z=0.d0
         n1e=(min(n1m, zend(1))-zstart(1))+1
         n2e=(min(n2m, zend(2))-zstart(2))+1
+        ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
+        !     call set_antisymmetric_velocity_in_object(Zc,Yc,X,q3_z,'Z')
+        ! endif
 
         call D1s_ACC_3Dz(q3_z, div3_z, zsize(1),n1e,zsize(2),n2e,n3, dx3, .false., POISSON_VEL_BC3)
+
+        ! if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) call correct_divergence_IBM()
 
         call transpose_x_to_y(div1_x, div1_y)
         call transpose_y_to_z(div1_y, div1_z)
@@ -174,22 +188,26 @@ contains
 
         div_z=div1_z+div2_z+div3_z
 
-
         if (present(divy_mean)) then
 
             divy_mean=0.d0
             divy_sum=sum(div2_z)
-
-
 
             call MPI_ALLREDUCE (divy_sum, divy_mean, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
             divy_mean=divy_mean/((n1-1)*(n2-1)*(n3-1))
 
         endif
 
+        ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
+        !     call reset_velocity(Z,Yc,Xc,q1_x,'X')
+        !     call reset_velocity(Zc,Y,Xc,q2_y,'Y')
+        !     call reset_velocity(Zc,Yc,X,q3_z,'Z')
+        ! endif
+
         return
 
-    end subroutine
+    end subroutine perform_divergence
+
 
 
     subroutine perform_velocity_at_center(q3_z, q2_y, q1_x, q3c_z, q2c_y, q1c_x)
@@ -204,11 +222,64 @@ contains
         real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent(out)     :: q2c_y
         real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)), intent(out)     :: q3c_z
 
+
+        ! VALGRIND
+        q1c_x=0.d0
+        q2c_y=0.d0
+        q3c_z=0.d0
+
         call D0s_3Dx(q1_x, q1c_x, n1,xsize(2),xsize(2),xsize(3),xsize(3), NS_DEF_BC1)
         call D0s_3Dy(q2_y, q2c_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), NS_DEF_BC2)
         call D0s_3Dz(q3_z, q3c_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, NS_DEF_BC3)
 
     end subroutine perform_velocity_at_center
+
+
+    subroutine perform_passive_scalar_at_center(sca_y, scaC_y, delta_T)
+
+        implicit none
+
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent(in)    :: sca_y
+
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent(out)     :: scaC_y
+
+        real*8, intent(in)  :: delta_T
+        integer :: i,k
+        real(kind=8) A(5)
+
+        A(1) =  1.234102595369109d0     /2.d0
+        A(2) =  -0.3184044667712d0     /2.d0
+        A(3) =  0.11029870162898d0      /2.d0
+        A(4) =  -0.030619166038291d0    /2.d0
+        A(5) =  0.0046223358114003d0    /2.d0
+
+        ! be carefull
+        call D0s_3Dy(sca_y, scaC_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), NS_DEF_BC2)
+        do i=ystart(1),min(yend(1),n1m)
+            do k=ystart(3),min(yend(3),n3m)
+
+                scaC_y(i,1,k) = 0.5d0*(sca_y(i,2,k)-delta_T)
+
+                scaC_y(i,n2-1,k) = 0.5d0*(delta_T+sca_y(i,n2-1,k))
+
+                scaC_y(i,n2-2,k)  =   9.0d0/16.d0 * (sca_y(i,n2-1,k)+sca_y(i,n2-2,k))     &
+                    -   0.0625d0    * (delta_T+sca_y(i,n2-3,k))
+
+                scaC_y(i,n2-3,k)  =   0.59395104312381d0  *   (sca_y(i,n2-2,k)+sca_y(i,n2-3,k))       &
+                    -   0.10967656468571d0  *   (sca_y(i,n2-1,k)+sca_y(i,n2-4,k))             &
+                    +   0.015725521561903d0 *   (delta_T + sca_y(i,n2-5,k))
+
+
+                scaC_y(i,n2-5,k)  =   A(1)  *   (sca_y(i,n2-4,k)+sca_y(i,n2-5,k))       &
+                    +   A(2)  *   (sca_y(i,n2-3,k)+sca_y(i,n2-6,k))             &
+                    +   A(3) *   (sca_y(i,n2-2,k) + sca_y(i,n2-7,k))           &
+                    +   A(4) *   (sca_y(i,n2-1,k) + sca_y(i,n2-8,k))           &
+                    +   A(5)*   (delta_T + sca_y(i,n2-9,k))
+
+            enddo
+        enddo
+
+    end subroutine perform_passive_scalar_at_center
 
 
 

@@ -6,6 +6,7 @@ module FRINGE_initializer
     use HDF5_IO
     use DNS_settings
     use boundaries
+    use physical_fields
 
 !
     implicit none
@@ -18,7 +19,7 @@ contains
         implicit none
 
         if (inflow_type==2) then
-            ! call inflow_from_file
+            call inflow_from_file
         else
             call default_inflow
         endif
@@ -38,8 +39,10 @@ contains
                       q1_inflow = 0.d0
                       q2_inflow = 0.d0
                       q3_inflow = 0.d0
-                      if (streamwise==1) call perform_stream1(q1_inflow, BC2, BC3)
-                      if (streamwise==3) call perform_stream3(q3_inflow, BC1, BC2)
+                      !if (streamwise==1) call perform_stream1(q1_inflow, BC2, BC3)
+                      !if (streamwise==3) call perform_stream3(q3_inflow, BC1, BC2)
+
+                      q1_inflow = q1_x(1,:,:)
 
                     case (SQUARE_INFLOW)
 
@@ -66,30 +69,40 @@ contains
             end subroutine default_inflow
 
             ! TO CHECK
-            ! subroutine inflow_from_file()
-            !     use run_ctxt_data
-            !     use flow_buffer_handler
-            !     use COMMON_fieldstools
+            subroutine inflow_from_file()
+                use HDF5_IO
+                use start_settings, only:start_it
+                use COMMON_workspace_view, only: COMMON_inflow_path
 
-            !     implicit none
-            !     real*8  :: cs1, cs2, cs3
+                implicit none
+                integer   :: i
+                character(200)       :: current_inflow_path
 
-            !     call get_2dfield(id_q1, q1_x(1, :,:))
-            !     call get_2dfield(id_q2, q2_x(1, :,:))
-            !     call get_2dfield(id_q3, q3_x(1, :,:))
+                real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))      :: ts11_global
+                real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))      :: ts11_tmp_x
+                real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))      :: ts11_tmp_y
 
-            !     call perform_checksum2D_x(q1_x(1, :,:), cs1)
-            !     call perform_checksum2D_x(q2_x(1, :,:), cs2)
-            !     call perform_checksum2D_x(q3_x(1, :,:), cs3)
+                character*10 tmp_str
 
-            !     if (nrank==0) then
-            !         open(15, file="debugoutflow", position="append")
-            !         write(15,*) ntime, cs1, cs2, cs3
-            !         close(15)
-            !     endif
+                ! current_inflow_path=trim(COMMON_inflow_path)//'outflow_'//trim(adjustl(tmp_str))
+                ! Read the streamwise velocity
+                current_inflow_path=trim(COMMON_inflow_path)//'W'
 
+                if (nrank==0) write(*,*)
+                if (nrank==0) write(*,*) "Reading inflow from file:", trim(current_inflow_path)//".h5"
+                if (nrank==0) write(*,*) "The inflow is get from nx =", nx_start
 
-            ! end subroutine inflow_from_file
+                call hdf_read_3Dfield(current_inflow_path, ts11_global, "W", nx_global, ny_global, nz_global, xstart(1), xend(1), xstart(2),xend(2), xstart(3),xend(3))
+                !call hdf_read_3Dfield(current_inflow_path, ts12_tmp, "q2_out", 1, ny_global, nz_global, 1,1, xstart(2),xend(2), xstart(3),xend(3))
+                !call hdf_read_3Dfield(current_inflow_path, ts13_tmp, "q3_out", 1, ny_global, nz_global, 1,1, xstart(2),xend(2), xstart(3),xend(3))
+
+                q1_inflow = 0.d0
+                q2_inflow = 0.d0
+                q3_inflow = 0.d0
+
+                q1_inflow(:,:)=ts11_global(nx_start,:,:)
+
+            end subroutine inflow_from_file
 
             subroutine perform_stream1(stream1, BC2, BC3)
               implicit none
@@ -225,7 +238,7 @@ contains
             endif
 
             do j = xstart(2),xend(2)
-                stream1(j,1:min(xend(3),n3-1))=f1(j)
+                stream1(j,xstart(3):min(xend(3),n3-1))=f1(j)
             end do
 
         end subroutine perform_boundary_layer_1

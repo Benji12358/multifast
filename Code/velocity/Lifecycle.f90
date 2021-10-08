@@ -18,6 +18,7 @@ contains
         use Turbulence_generator
 
         use run_ctxt_data
+        use COMMON_workspace_view, only: COMMON_snapshot_path
 
         implicit none
         logical             :: fexist(4)
@@ -65,7 +66,27 @@ contains
 
         end if
 
-!        call spread_to_all_pencil(q3_z, q2_y, q1_x, dp_z)
+        ! Generation of counterrotating vortices
+        if (use_counterrotating_vortices) then
+            call perform_counterrotating_vortices
+        end if
+
+        ! call spread_to_all_pencil(q3_z, q2_y, q1_x, dp_z)
+
+        call transpose_y_to_x(q1_y, q1_x)
+        call transpose_y_to_z(q1_y, q1_z)
+
+        call transpose_y_to_x(q2_y, q2_x)
+        call transpose_y_to_z(q2_y, q2_z)
+
+        call transpose_y_to_x(q3_y, q3_x)
+        call transpose_y_to_z(q3_y, q3_z)
+
+        
+        ! The final 3D field are exported for checking purposes
+        ! call create_snapshot(COMMON_snapshot_path, "INITIALIZATION", q1_y, "W", 2)
+        ! call create_snapshot(COMMON_snapshot_path, "INITIALIZATION", q2_y, "V", 2)
+        ! call create_snapshot(COMMON_snapshot_path, "INITIALIZATION", q3_y, "U", 2)
 
 
     end subroutine load_initial_state

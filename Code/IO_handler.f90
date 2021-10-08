@@ -20,6 +20,9 @@ contains
             open(15,file=trim(COMMON_settings_path)//'start.d')
 
             read(15,*) start_source_type
+            read(15,*) half_length
+            read(15,*) half_length_inflow
+            read(15,*) previous_fringe_start
             read(15,*) start_from_coarse_file_int, n1c, n2c, n3c !
             read(15,*)
             read(15,'(a)') external_fields_path  ! path of the read field  file (cha.rea)
@@ -113,6 +116,7 @@ contains
             read(15,*) inflow_buff
             read(15,*) inflow_mode
             read(15,'(a)')COMMON_inflow_path  ! path for inflow
+            read(15,*) nx_start ! x for inflow
             read(15,*) divro
             read(15,*) d ! with physical unity (mm)
             read(15,*) g ! with physical unity (mm/s/s)
@@ -186,6 +190,7 @@ contains
         subroutine read_IBM_settings()
 
             use IBM_settings
+            use mesh
 
             implicit none
             integer :: IBM_activated_int
@@ -194,10 +199,14 @@ contains
             open(15,file=trim(COMMON_settings_path)//'IBM.d')
 
             read(15,*) IBM_activated_int
-            read(15,'(a)')obj_file_path  ! path of the read field  file (cha.rea)
+            read(15,*) interpol_type
+            read(15,'(a)') obj_file_path  ! path of the read field  file (cha.rea)
             read(15,*) body_x1, body_x2, body_x3
             read(15,*) body_scale_x1, body_scale_x2, body_scale_x3
             close(15)
+
+            ! body_scale_x3 = L3/2.d0
+            ! body_x3 = L3/2.d0
 
             IBM_activated=(IBM_activated_int==1)
 
@@ -1737,6 +1746,7 @@ contains
         integer                 :: i,j
 
         real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))  :: IBM_mask1_y, IBM_mask2_y, IBM_mask3_y
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))  :: IBM_mask1_z, IBM_mask2_z, IBM_mask3_z
 
         integer         :: k,s, xdmf_id, ierr, anim_id
 

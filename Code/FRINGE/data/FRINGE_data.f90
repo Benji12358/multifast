@@ -5,7 +5,7 @@ module fringe_data
 
     logical                                   :: use_fringe=.false.
     real*8                                    :: max_strength_damping, delta_rise, delta_fall, fringe_length
-    integer                                   :: n_fringe_start, n_fringe_end, n_delta_fringe, n_fringe_region
+    integer                                   :: n_fringe_start, n_fringe_end, n_delta_fringe, n_fringe_region, n_interest_region
     integer                                   :: inflow_buff, inflow_type
     integer                                   :: n_delta_rise, n_delta_fall, delta_activation
 

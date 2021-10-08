@@ -49,6 +49,8 @@ contains
       integer, intent(in)   :: ntime
       logical, intent(in)   :: last_substep
       integer :: i,j,k
+      integer :: shift_i
+      real*8  :: u,v,w
       real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: q1_x, q2_x, q3_x
       real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(inout) :: f1_fringe_x, f2_fringe_x, f3_fringe_x
 
@@ -61,13 +63,29 @@ contains
         lambda_x(i) = max_strength_damping * ( fringe_smooth_step_function( real(i-n_fringe_start,8)/real(n_delta_rise, 8) ) - fringe_smooth_step_function( real(i-n_fringe_end,8)/real(n_delta_fall,8) + 1) )
       enddo
 
-      do i=xstart(1),min(xend(1),n1-1)
+      ! do i=xstart(1),min(xend(1),n1-1)
+      !   lambda_x(i) = max_strength_damping * fringe_linear_function( real(i-n_fringe_start,8) )
+      ! enddo
+
+      do i=n_fringe_start,min(xend(1),n1-1)
         do j=xstart(2),min(xend(2),n2-1)
           do k=xstart(3),min(xend(3),n3-1)
 
-              f1_fringe_x(i,j,k) = lambda_x(i) * ( q1_inflow(j,k) - q1_x(i,j,k) )
-              f2_fringe_x(i,j,k) = lambda_x(i) * ( q2_inflow(j,k) - q2_x(i,j,k) )
-              f3_fringe_x(i,j,k) = lambda_x(i) * ( q3_inflow(j,k) - q3_x(i,j,k) )
+              ! f1_fringe_x(i,j,k) = lambda_x(i) * ( q1_inflow(j,k) - q1_x(i,j,k) )
+              ! f2_fringe_x(i,j,k) = lambda_x(i) * ( q2_inflow(j,k) - q2_x(i,j,k) )
+              ! f3_fringe_x(i,j,k) = lambda_x(i) * ( q3_inflow(j,k) - q3_x(i,j,k) )
+
+              shift_i = n_fringe_start - (real(i-n_fringe_start)/real(n_fringe_region))*n_fringe_start
+
+              if (shift_i==0) shift_i=1
+
+              u = ( q1_inflow(j,k) - q1_x(i,j,k) ) * fringe_smooth_step_function( real(i-n_fringe_start,8)/real(n_delta_rise, 8))
+              v = ( q2_inflow(j,k) - q2_x(i,j,k) ) * fringe_smooth_step_function( real(i-n_fringe_start,8)/real(n_delta_rise, 8))
+              w = ( q3_inflow(j,k) - q3_x(i,j,k) ) * fringe_smooth_step_function( real(i-n_fringe_start,8)/real(n_delta_rise, 8))
+
+              f1_fringe_x(i,j,k) = lambda_x(i) * ( u )
+              f2_fringe_x(i,j,k) = lambda_x(i) * ( v )
+              f3_fringe_x(i,j,k) = lambda_x(i) * ( w )
 
           enddo
         enddo
@@ -97,6 +115,30 @@ contains
         endif
 
     end function fringe_smooth_step_function
+
+
+    function fringe_linear_function(x) result(y)
+
+        implicit  none
+
+        real*8, intent(in) :: x
+        real*8 :: y
+
+        if (x<=0) then
+
+          y = 0.d0
+
+        elseif (x>=n_fringe_end) then
+
+          y = 1.d0
+
+        else ! 0 < x < 1
+
+          y = x * 1.d0/(n_fringe_region-1)
+
+        endif
+
+    end function fringe_linear_function
 
   end subroutine compute_fringe_force_x
 

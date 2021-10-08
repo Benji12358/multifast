@@ -494,10 +494,10 @@ contains
 
             open(YMESH_UNIT,file=trim(mesh_generator_path_y)//'ymesh.out')
 
-            write(YMESH_UNIT,*) 'j, y, dy, yc, a, b, c'
+            write(YMESH_UNIT,*) 'j, y, dy, yc, a, b, c, a_c, b_c, c_c'
             do j=1,n2m
                 dy=Y(j+1)-Y(j)
-                write(YMESH_UNIT,*) j, Y(j), dy, Yc(j), Y_to_YTr_for_D1(j), Y_to_YTr_for_D2(j,2), Y_to_YTr_for_D2(j,1)
+                write(YMESH_UNIT,*) j, Y(j), dy, Yc(j), Y_to_YTr_for_D1(j), Y_to_YTr_for_D2(j,2), Y_to_YTr_for_D2(j,1), Yc_to_YcTr_for_D1(j), Yc_to_YcTr_for_D2(j,2), Yc_to_YcTr_for_D2(j,1)
             end do
 
             close(YMESH_UNIT)

@@ -11,7 +11,7 @@ module DNS_settings
     integer         :: save_gradP_frequency ! mean_gradP export frequency
     integer         :: first_it=0
     integer         :: last_it
-    integer         :: flow_type
+    integer         :: flow_type, nx_start
     real*8          :: inflow_int=0.4d0, delta_BL
     integer         :: streamwise
     integer         :: outflow_type
@@ -32,7 +32,7 @@ end module DNS_settings
 module inflow_settings
     implicit none
 
-    integer, parameter   :: INFLOW_NONE=0, INFLOW_SQUARE=1
+    integer, parameter   :: INFLOW_NONE=0, INFLOW_SQUARE=1, INFLOW_POISEUILLE=2, INFLOW_BOUNDARY_LAYER=4
 
     integer         :: inflow_mode
 
@@ -48,6 +48,7 @@ module start_settings
 
     integer, parameter  :: NO_SOURCE=0, HDF5_FILE=1
     integer             :: start_it
+    integer             :: half_length, half_length_inflow, previous_fringe_start
 
     character*200       :: external_fields_path
     integer             :: start_source_type
