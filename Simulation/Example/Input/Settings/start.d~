@@ -1,0 +1,7 @@
+0                            		  			begin_from 
+0 	129		129		257							from_coarse, n1c, n2c, n3c ! nc = ((nf+1)/2) for any direction
+0 												input_field_type
+/scratch/doche/WORKSPACE/Start_Fields_Lib/TURBULENT_Orlandi_Re4200_it100000/Results
+100000     										start_it
+0.20                            				vper
+0  												reading_format
