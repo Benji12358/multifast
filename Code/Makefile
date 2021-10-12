@@ -8,8 +8,6 @@ SCALAR				= $(CORE)/passive_scalar
 SCALAR_LIB			=-L $(SCALAR)/.lib -lscalar
 MHD					= $(CORE)/MHD
 MHD_LIB				=-L $(MHD)/.lib -lmhd
-FRINGE				= $(CORE)/FRINGE
-FRINGE_LIB			=-L $(FRINGE)/.lib -lfringe
 BUBBLE				= $(CORE)/bubble
 BUBBLE_LIB			=-L $(BUBBLE)/.lib -lbubble
 VELOCITY			= $(CORE)/velocity
@@ -36,9 +34,9 @@ DATA		= $(CORE)//common/data
 
 MESH		= $(CORE)/common/mesh
 
-INCS 		= $(FLAG_FFT) $(HDF5_INC) $(IO_INC) $(SOLVERS_INC) $(MISCELLANEOUS_INC) $(SCHEMES_INC) -I $(COMMON) -I $(SCALAR) -I $(MHD) -I $(FRINGE) -I $(BUBBLE) -I $(VELOCITY)
+INCS 		= $(FLAG_FFT) $(HDF5_INC) $(IO_INC) $(SOLVERS_INC) $(MISCELLANEOUS_INC) $(SCHEMES_INC) -I $(COMMON) -I $(SCALAR) -I $(MHD) -I $(BUBBLE) -I $(VELOCITY)
 
-OBJ		= main.o diagnostic.o multiphysics.o IO_handler.o \
+OBJ		= main.o IBM.o diagnostic.o multiphysics.o IO_handler.o \
 		   
 
 
@@ -47,13 +45,13 @@ OBJ		= main.o diagnostic.o multiphysics.o IO_handler.o \
 #$(SCALAR)/scalar_data.o 	: $(COMMON)/mesh_settings.o 
 
 
-main.o			: build_common build_scalar build_mhd build_fringe build_bubble build_velocity build_core   
+main.o			: build_common build_scalar build_mhd build_bubble IBM.o build_velocity build_core   
 
 # Rules _________________________________________________________________
 $(EXEC_NAME): subsection_text=Linking objects files
 $(EXEC_NAME):	main.o    
 	@$(print_subsection);
-	$(FF) $(LDFLAG) $(EXEC_NAME) $(OBJ)  $(BUBBLE_LIB) $(SCALAR_LIB) $(MHD_LIB) $(FRINGE_LIB) $(VELOCITY_LIB) $(COMMON_LIB) $(LIBS);
+	$(FF) $(LDFLAG) $(EXEC_NAME) $(OBJ)  $(BUBBLE_LIB) $(SCALAR_LIB) $(MHD_LIB) $(VELOCITY_LIB) $(COMMON_LIB) $(LIBS);
 	@echo; echo;
 	
 build: $(EXEC_NAME)
@@ -64,7 +62,6 @@ clean:
 	make -C $(COMMON) clean ;					\
 	make -C $(SCALAR) clean ;					\
 	make -C $(MHD) clean ;					\
-	make -C $(FRINGE) clean ;					\
 	make -C $(VELOCITY) clean ;					\
 	make -C $(BUBBLE) clean ;
 	
@@ -93,11 +90,6 @@ build_mhd :	subsection_text=Building MHD module
 build_mhd :	
 	@$(print_subsection);
 	$(MUTE)make -C $(MHD) ENVIRONMENT_FILE=$(ENVIRONMENT_FILE) COMMON=$(COMMON) ;
-	
-build_fringe :	subsection_text=Building FRINGE module
-build_fringe :	
-	@$(print_subsection);
-	$(MUTE)make -C $(FRINGE) ENVIRONMENT_FILE=$(ENVIRONMENT_FILE) COMMON=$(COMMON) ;
 	
 build_velocity :	subsection_text=Building velocity module
 build_velocity:

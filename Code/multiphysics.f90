@@ -45,11 +45,9 @@ contains
 
         use VELOCITY_solver
         use MHD_solver
-        use FRINGE_solver
         use SCALAR_solver
         use time_schemes
         use MHD_data, only:MHD_state
-        use FRINGE_data, only:use_fringe
 
         implicit  none
 
@@ -65,7 +63,7 @@ contains
           if (MHD_state.eq.2) then
 
             call solve_MHD(q1_x, q2_y, q3_z, fb1_MHD_x, fb2_MHD_x, fb3_MHD_x,ntime,.true.) !=> Get F(n)
-            call add_action_x(fb1_MHD_x, fb2_MHD_x, fb3_MHD_x)
+            call add_action(fb1_MHD_x, fb2_MHD_x, fb3_MHD_x)
           endif
 
           do ns=1,nb_substep
@@ -75,23 +73,12 @@ contains
               if (MHD_state.eq.1) then
 
                 call solve_MHD(q1_x, q2_y, q3_z, fb1_MHD_x, fb2_MHD_x, fb3_MHD_x,ntime,(ns.eq.nb_substep)) !=> Get F(n)
-                call add_action_x(fb1_MHD_x, fb2_MHD_x, fb3_MHD_x)
-              endif
-
-              if (use_fringe) then
-                if (streamwise==1) then
-                  call compute_fringe_force_x(q1_x, q2_x, q3_x, f1_fringe_x, f2_fringe_x, f3_fringe_x,ntime,(ns.eq.nb_substep)) !=> Get F(n)
-                  call add_action_x(f1_fringe_x, f2_fringe_x, f3_fringe_x)
-                elseif (streamwise==3) then
-                  call compute_fringe_force_z(q1_z, q2_z, q3_z, f1_fringe_z, f2_fringe_z, f3_fringe_z,ntime,(ns.eq.nb_substep)) !=> Get F(n)
-                  call add_action_z(f1_fringe_z, f2_fringe_z, f3_fringe_z)
-                endif
+                call add_action(fb1_MHD_x, fb2_MHD_x, fb3_MHD_x)
               endif
 
             call update_velocity(ntime, ns)
-            if(SCA_state==1) call solve_scalar(q1_x, q2_y, q3_z, ns)
 
-            ! exit
+            if(SCA_state==1) call solve_scalar(q1_x, q2_y, q3_z, ns)
 
          enddo
 

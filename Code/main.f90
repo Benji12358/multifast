@@ -24,13 +24,11 @@ contains
         use numerical_methods_settings
         use boundaries
         use start_settings, only: n1c, n2c, n3c, start_from_coarse_file
-        use fringe_data
 
         use COMMON_workspace_view
 
         use ISCALAR_IO_settings
         use IMHD_IO_settings
-        use IFRINGE_IO_settings
         use IVELOCITY_IO_settings
 
         use CORE_IO_settings
@@ -53,12 +51,10 @@ contains
 
         call SCALAR_IO_read_settings
         call MHD_IO_read_settings
-        call FRINGE_IO_read_settings
         call VELOCITY_IO_read_blowing_settings
         call read_bubble_settings
 
         call read_vortices_settings
-        call read_counterrotating_vortices_settings
 
         !! nrank not yet defined, equals 0 for every process. Will be in decomp_2d_init
         if (start_from_coarse_file) then
@@ -78,8 +74,8 @@ contains
             call exit
         endif
 
-        if ((.not. use_generic_poisson).and.((BC1/=UNBOUNDED).or.(BC2/=NOSLIP).or.(BC3/=UNBOUNDED)).and.((BC1/=FRINGE))) then
-            if (nrank==0) write(*,*)'ERROR: The physial solver is only suited for (BC1-BC2-BC3)=0-2-0 or with the use of the Fringe function'
+        if ((.not. use_generic_poisson).and.((BC1/=UNBOUNDED).or.(BC2/=NOSLIP).or.(BC3/=UNBOUNDED))) then
+            if (nrank==0) write(*,*)'ERROR: The physial solver is only suited for (BC1-BC2-BC3)=0-2-0'
             if (nrank==0) write(*,*)'Choose the Lamballais purely spectral solver or change the set of boundary conditions'
             call exit
         endif
@@ -143,7 +139,6 @@ contains
     subroutine allocate_data()
 
         use decomp_2d
-        use DNS_settings
 
         use IBM_data
         use IBM_settings
@@ -154,64 +149,48 @@ contains
 
         implicit none
 
+        allocate(IBM_mask1(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+        IBM_mask1=0.d0
+        allocate(flow_rate_IBM(n1))
+        flow_rate_IBM=0.d0
+        allocate(kin1_IBM(n1))
+        kin1_IBM=0.d0
+        allocate(kin2_IBM(n1))
+        kin2_IBM=0.d0
+        allocate(kin3_IBM(n1))
+        kin3_IBM=0.d0
+        allocate(q1max_IBM(n1))
+        q1max_IBM=0.d0
+        allocate(q2max_IBM(n1))
+        q2max_IBM=0.d0
+        allocate(q3max_IBM(n1))
+        q3max_IBM=0.d0
+        allocate(prmax_IBM(n1))
+        prmax_IBM=0.d0
+        allocate(q1min_IBM(n1))
+        q1min_IBM=0.d0
+        allocate(q2min_IBM(n1))
+        q2min_IBM=0.d0
+        allocate(q3min_IBM(n1))
+        q3min_IBM=0.d0
+        allocate(prmin_IBM(n1))
+        prmin_IBM=0.d0
+
+        ! IBM_mask1 is used even when IBM is not activated and is always allocated
         if (IBM_activated) then
+            allocate(IBM_mask2(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+            IBM_mask2=0.d0
+            allocate(IBM_mask3(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+            IBM_mask3=0.d0
+
             allocate(vel_term1(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
             vel_term1=0.d0
             allocate(vel_term2(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
             vel_term2=0.d0
             allocate(vel_term3(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
             vel_term3=0.d0
-        endif
 
-        if (streamwise==1) then
-
-            allocate(IBM_mask1_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-            IBM_mask1_x=0.d0
-            allocate(flow_rate_IBM(n1))
-            flow_rate_IBM=0.d0
-            allocate(kin1_IBM(n1))
-            kin1_IBM=0.d0
-            allocate(kin2_IBM(n1))
-            kin2_IBM=0.d0
-            allocate(kin3_IBM(n1))
-            kin3_IBM=0.d0
-            allocate(q1max_IBM(n1))
-            q1max_IBM=0.d0
-            allocate(q2max_IBM(n1))
-            q2max_IBM=0.d0
-            allocate(q3max_IBM(n1))
-            q3max_IBM=0.d0
-            allocate(prmax_IBM(n1))
-            prmax_IBM=0.d0
-            allocate(q1min_IBM(n1))
-            q1min_IBM=0.d0
-            allocate(q2min_IBM(n1))
-            q2min_IBM=0.d0
-            allocate(q3min_IBM(n1))
-            q3min_IBM=0.d0
-            allocate(prmin_IBM(n1))
-            prmin_IBM=0.d0
-
-            ! IBM_mask1_x is used even when IBM is not activated and is always allocated
-            if (IBM_activated) then
-                allocate(IBM_mask2_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-                IBM_mask2_x=0.d0
-                allocate(IBM_mask3_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-                IBM_mask3_x=0.d0
-
-                if (interpol_type==ANTISYMMETRIC_INTERPOL) then
-
-                    allocate(IBM_modulation_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-                    IBM_modulation_x = 0.d0
-                    allocate(IBM_modulation_y(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-                    IBM_modulation_y = 0.d0
-                    allocate(IBM_modulation_z(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-                    IBM_modulation_z = 0.d0
-                endif
-
-            end if
-
-        endif
+        end if
 
 
         ! Bubble_parallel_data
@@ -297,6 +276,8 @@ contains
 
         call MPI_BARRIER(MPI_COMM_WORLD , mpi_err)
 
+
+
         call init_workspace
 
         call read_settings
@@ -367,7 +348,6 @@ contains
                 COMMON_snapshot_path=trim(COMMON_results_path)//"Snapshots/"
                 COMMON_anim2D_path          =trim(COMMON_results_path)//"Animation/Anim2D/"
                 COMMON_anim2D_bubble_path   =trim(COMMON_results_path)//"Animation/Bubbles/"
-
 
 
             end subroutine init_workspace
@@ -447,7 +427,7 @@ contains
 
         implicit none
 
-        deallocate(IBM_mask1_x)
+        deallocate(IBM_mask1)
         deallocate(flow_rate_IBM)
         deallocate(kin1_IBM)
         deallocate(kin2_IBM)
@@ -461,10 +441,10 @@ contains
         deallocate(q3min_IBM)
         deallocate(prmin_IBM)
 
-        ! IBM_mask1_x is used even when IBM is not activated and is always allocated
+        ! IBM_mask1 is used even when IBM is not activated and is always allocated
         if (IBM_activated) then
-            deallocate(IBM_mask2_x)
-            deallocate(IBM_mask3_x)
+            deallocate(IBM_mask2)
+            deallocate(IBM_mask3)
 
             deallocate(vel_term1)
             deallocate(vel_term2)
@@ -502,7 +482,6 @@ contains
         use VELOCITY_final, VELOCITY_finalize=>finalize
         use SCALAR_final, SCALAR_finalize=>finalize
         use MHD_final, MHD_finalize=>finalize
-        use FRINGE_final, FRINGE_finalize=>finalize
 
         use CORE_data
         use MHD_data, only: MHD_state
@@ -565,9 +544,6 @@ program main
     use IMHD_IO
     use IMHD_LIFE
 
-    use IFRINGE_IO
-    use IFRINGE_LIFE
-
     use IBM
     use CORE_IO_settings
     use CORE_data
@@ -586,7 +562,6 @@ program main
     use Bubble_generator
 
     use MHD_data, only: MHD_state, MHD_export_3D
-    use FRINGE_data, only: use_fringe
 
     use flow_buffer_handler_test
 
@@ -608,12 +583,12 @@ program main
 
     t0 = MPI_WTIME()
 
+
     call CORE_initialize
 
     call VELOCITY_initialize
     if (SCA_state/=0) call SCALAR_initialize
     if (MHD_state/=0) call MHD_initialize
-    if (use_fringe) call FRINGE_initialize
 
 
     first_it=first_it+1
@@ -638,7 +613,7 @@ program main
     if (IBM_activated) then
         call IBM_setup
     else
-        IBM_mask1_x=0.d0
+        IBM_mask1=0.d0
     endif
 
 
@@ -686,8 +661,6 @@ program main
             call VELOCITY_IO_write_fields(ntime)
             if (SCA_state==1) call SCALAR_IO_write_fields(ntime)
             if ((MHD_state/=0).and.(MHD_export_3D.eq.1)) call MHD_IO_write_fields(ntime)
-            if (use_fringe) call FRINGE_IO_write_fields(ntime)
-            call CELL_CENTERED_IO_WRITE_FIELDS(ntime,t)
         endif
 
         ! Animation2D -----------------------------------------------------------------------------
