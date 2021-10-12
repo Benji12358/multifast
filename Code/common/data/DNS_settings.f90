@@ -64,6 +64,15 @@ module blow_settings
 
 end module blow_settings
 
+module twave_settings
+    implicit none
+    integer :: twave_on
+    integer :: inner_units
+    real*8  :: tstart
+    real*8  :: Re_tau
+
+end module twave_settings
+
 module numerical_methods_settings
     implicit none
     integer         :: schemes_configuration

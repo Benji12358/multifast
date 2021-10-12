@@ -26,6 +26,28 @@ contains
 
     end subroutine read_blowing_settings
 
+    subroutine read_twave_settings()
+
+        use COMMON_workspace_view
+        use boundaries
+        use twave_settings
+
+        implicit none
+
+        open(15,file=trim(COMMON_settings_path)//'travelling_wave.d')
+
+        read(15,*) twave_on
+        !read(15,*) tstart
+        read(15,*) inner_units
+        read(15,*) Re_tau
+        read(15,*) twave%Amp
+        read(15,*) twave%kappa
+        read(15,*) twave%omega
+
+        close(15)
+
+    end subroutine read_twave_settings
+
 
 end module VELOCITY_settings
 

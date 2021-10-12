@@ -98,7 +98,7 @@ PCOL=1
 NPROCS=1
 
 
-DNS_CODE=/home/users/arrondea7b/WORKSPACE/Codes/DNS/MULTIFAST_MHD_v2
+DNS_CODE=/home/users/arrondea7b/WORKSPACE/Codes/DNS/MULTIFAST_MHD_v2_IBM
 TMPDIR=/data/$DNS_NAME
 SIMULATION_DIR=/home/users/arrondea7b/WORKSPACE/Codes/DNS/Simulations/$DNS_NAME
 IT1=$2

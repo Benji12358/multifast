@@ -248,13 +248,17 @@ contains
         use boundaries
         use decomp_2d
 
-        use run_ctxt_data, only: ntime
+        use run_ctxt_data, only: ntime, t
         use blow_settings
+        use twave_settings
+        use DNS_settings
 
         implicit none
 
         integer :: k,i, s
         integer :: s_xst, s_xen, s_zst, s_zen
+        real*8  :: amp,kappa,omega
+        real*8  :: cf_amp,cf_kappa,cf_omega
 
 
         if (BC2==NOSLIP) then
@@ -301,18 +305,108 @@ contains
 
         end if
 
-        ! ATTENTION
-        if (BC2==FREESLIP) then
+        !Travelling wave Boundary condition for spanwise wall velocity
+        if(twave_on==1) then
 
-            q3_wall20(ystart(1):yend(1), ystart(3):yend(3))=q3_y(ystart(1):yend(1), 1, ystart(3):yend(3))       ! Neumann
-            q2_wall20(ystart(1):yend(1), ystart(3):yend(3))=0.d0                                                ! No penetration
-            q1_wall20(ystart(1):yend(1), ystart(3):yend(3))=q1_y(ystart(1):yend(1), 1, ystart(3):yend(3))       ! Neumann
+            ! To convert from inner to outer units in case travelling
+            ! wave parameters are given in inner units
+            if(inner_units==1) then
+                cf_amp   = Re_tau/ren
+                cf_omega = Re_tau**2/ren    
+                cf_kappa = Re_tau
+            else if(inner_units==0) then
+                cf_amp   = 1.0d0
+                cf_omega = 1.0d0    
+                cf_kappa = 1.0d0
+            end if
+                
+            amp   = Twave%Amp  *cf_amp
+            kappa = Twave%kappa*cf_kappa
+            omega = Twave%omega*cf_omega
 
-            q3_wall21(ystart(1):yend(1), ystart(3):yend(3))=q3_y(ystart(1):yend(1), n2-1, ystart(3):yend(3))    ! Neumann
-            q2_wall21(ystart(1):yend(1), ystart(3):yend(3))=0.d0                                                ! No penetration
-            q1_wall21(ystart(1):yend(1), ystart(3):yend(3))=q1_y(ystart(1):yend(1), n2-1, ystart(3):yend(3))    ! Neumann
+            if(tstart .gt. t) then
+                write(*,*) "****************ERROR*****************"
+                write(*,*) "      tstart is greater than t        "
+                write(*,*) " check the travelling wave input file "
+                write(*,*) "            ABORTING CODE             "
+                write(*,*) "**************************************"
+                STOP
+            end if
+
+            ! Homogoneous spanwise wall oscillations W=A*sin(omega*t)
+            if(kappa==0.0d0 .and. omega/=0.0d0) then    
+
+                if(streamwise==1) then
+                    do k=ystart(3),yend(3)
+                        do i=ystart(1),yend(1)
+                            q3_wall20(i,k) = amp*dsin(omega*(t-tstart)) !tstart is subtracted to start the oscillations from W=0
+                        end do
+                    end do
+                            q3_wall21 = q3_wall20
+                elseif(streamwise==3) then
+                    do k=ystart(3),yend(3)
+                        do i=ystart(1),yend(1)
+                            q1_wall20(i,k) = amp*dsin(omega*(t-tstart)) !tstart is subtracted to start the oscillations from W=0
+                        end do
+                    end do
+                            q1_wall21 = q1_wall20
+                end if
+
+            ! Homogeneous spanwise steady oscillations W=A*sin(kappa*x)
+            elseif(kappa/=0.0d0 .and. omega==0.0d0) then    
+
+                if(streamwise==1) then
+                    do k=ystart(3),yend(3)
+                        do i=ystart(1),yend(1)
+                            q3_wall20(i,k) = amp*dsin(kappa*z(i))
+                        end do
+                    end do
+                            q3_wall21 = q3_wall20
+                elseif(streamwise==3) then
+                    do k=ystart(3),yend(3)
+                        do i=ystart(1),yend(1)
+                            q1_wall20(i,k) = amp*dsin(kappa*x(k))
+                        end do
+                    end do
+                            q1_wall21 = q1_wall20
+                end if
+
+            ! Travelling wave of spanwise wall velocity modulated in streamwise direction
+            ! W=A*sin(kappa*x-omega*t)
+            elseif(kappa/=0.0d0 .and. omega/=0.0d0) then    
+
+                if(streamwise==1) then
+                    do k=ystart(3),yend(3)
+                        do i=ystart(1),yend(1)
+                            q3_wall20(i,k) = amp*dsin(kappa*z(i)-omega*(t)) !tstart is subtracted to start the oscillations from W=0
+                        end do
+                    end do
+                            q3_wall21 = q3_wall20
+                elseif(streamwise==3) then
+                    do k=ystart(3),yend(3)
+                        do i=ystart(1),yend(1)
+                            q1_wall20(i,k) = amp*dsin(kappa*x(k)-omega*(t)) !tstart is subtracted to start the oscillations from W=0
+                        end do
+                    end do
+                            q1_wall21 = q1_wall20
+                end if
+
+            end if
 
         end if
+
+    ! ATTENTION
+    if (BC2==FREESLIP) then
+
+      q3_wall20(ystart(1):yend(1), ystart(3):yend(3))=q3_y(ystart(1):yend(1), 1, ystart(3):yend(3))       ! Neumann
+      q2_wall20(ystart(1):yend(1), ystart(3):yend(3))=0.d0                                                ! No penetration
+      q1_wall20(ystart(1):yend(1), ystart(3):yend(3))=q1_y(ystart(1):yend(1), 1, ystart(3):yend(3))       ! Neumann
+
+      q3_wall21(ystart(1):yend(1), ystart(3):yend(3))=q3_y(ystart(1):yend(1), n2-1, ystart(3):yend(3))    ! Neumann
+      q2_wall21(ystart(1):yend(1), ystart(3):yend(3))=0.d0                                                ! No penetration
+      q1_wall21(ystart(1):yend(1), ystart(3):yend(3))=q1_y(ystart(1):yend(1), n2-1, ystart(3):yend(3))    ! Neumann
+
+     end if
 
 
         return

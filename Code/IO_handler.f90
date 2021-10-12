@@ -396,6 +396,7 @@ contains
             use anim2D
 
             use schemes_loader
+            use twave_settings
 
             implicit none
             integer :: s
@@ -589,6 +590,27 @@ contains
                     write(*,*)'    -->end at   : ', slows(s)%xen, ', ', slows(s)%zen
                     write(*,*)'    -->blowing  : ', slows(s)%blowing
                 end do
+
+                if(twave_on==1) then
+
+                    if (inner_units==1) then
+                        write(*,*)
+                        write(*,*)'Travelling Wave Parameters--------------------------------'
+                        write(*,*)'Travelling wave control started from t=',tstart
+                        write(*,*)'Fricton Reynolds number of steady case =', Re_tau
+                        write(*,*)'Travelling wave Amplitude (inner units) =', Twave%Amp
+                        write(*,*)'Travelling wave wavenumber (inner units) =', Twave%kappa
+                        write(*,*)'Travelling wave angular frequency (inner units) =', Twave%omega
+                    else if (inner_units==0) then
+                        write(*,*)
+                        write(*,*)'Travelling Wave Parameters--------------------------------'
+                        write(*,*)'Travelling wave control started from t=',tstart
+                        write(*,*)'Travelling wave Amplitude (outer units) =', Twave%Amp
+                        write(*,*)'Travelling wave wavenumber (outer units) =', Twave%kappa
+                        write(*,*)'Travelling wave angular frequency (outer units) =', Twave%omega
+                    end if
+
+                end if
 
                 write(*,*)
                 write(*,*)'Poisson equation resolution ----------------------------------'

@@ -55,6 +55,7 @@ contains
         call MHD_IO_read_settings
         call FRINGE_IO_read_settings
         call VELOCITY_IO_read_blowing_settings
+        call VELOCITY_IO_read_twave_settings
         call read_bubble_settings
 
         call read_vortices_settings

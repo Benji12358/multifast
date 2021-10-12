@@ -12,7 +12,8 @@
 module IVELOCITY_IO_settings
 
     use VELOCITY_settings, only:       &
-    VELOCITY_IO_read_blowing_settings => read_blowing_settings
+    VELOCITY_IO_read_blowing_settings => read_blowing_settings, &
+    VELOCITY_IO_read_twave_settings => read_twave_settings
 
 end module IVELOCITY_IO_settings
 

@@ -16,9 +16,9 @@
 # In most case, you only have to edit this section
 
 
-ROOT				    =/home/benj/WORKSPACE
+ROOT				    =/home/users/arrondea7b/WORKSPACE
 CODES_PATH			    =$(ROOT)/Codes
-MULTIFAST_PATH			=$(CODES_PATH)/DNS/MULTIFAST_MHD_v2
+MULTIFAST_PATH			=$(CODES_PATH)/DNS/MULTIFAST_MHD_v2_IBM
 ENVIRONMENT_FILE		=$(MULTIFAST_PATH)/Makefile.inc
 
 

@@ -4,7 +4,7 @@ launch_simulation(){
 	cd $TMPDIR
 	
 	echo $TEXT_LEVEL1 Running simulation...
-	mpirun -np $NPROCS -x LD_LIBRARY_PATH $TMPDIR/DNS_EXEC $DNS_NAME $DNS_TIME $PROW $PCOL 0 > $DNS_OUTPUT 2>temp_arrays.log
+	mpirun -np $NPROCS -x LD_LIBRARY_PATH $TMPDIR/DNS_EXEC $DNS_NAME $DNS_TIME $PROW $PCOL 0 > $DNS_OUTPUT 2 > temp_arrays.log
 
 	cd -
 }
@@ -89,7 +89,7 @@ TEXT_LEVEL2="-------------"
 #DNS_NAME=TEST_Laminar_Olivier
 DNS_NAME=$1
 DNS_OUTPUT=OUT_DNS
-DNS_TIME=345000
+DNS_TIME=700000
 #JOB_NAME=job
 #DNS_PROCS=4
 #PROC_BY_NODE=16
@@ -98,7 +98,7 @@ PCOL=0
 NPROCS=4
 
 
-DNS_CODE=/home/users/arrondea7b/WORKSPACE/Codes/DNS/MULTIFAST_MHD_v2
+DNS_CODE=/home/users/arrondea7b/WORKSPACE/Codes/DNS/MULTIFAST_MHD_v2_IBM
 TMPDIR=/data/$DNS_NAME
 SIMULATION_DIR=/home/users/arrondea7b/WORKSPACE/Codes/DNS/Simulations/$DNS_NAME
 IT1=$2
