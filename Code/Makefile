@@ -8,16 +8,16 @@ SCALAR				= $(CORE)/passive_scalar
 SCALAR_LIB			=-L $(SCALAR)/.lib -lscalar
 MHD					= $(CORE)/MHD
 MHD_LIB				=-L $(MHD)/.lib -lmhd
-FRINGE				= $(CORE)/FRINGE
-FRINGE_LIB			=-L $(FRINGE)/.lib -lfringe
 BUBBLE				= $(CORE)/bubble
 BUBBLE_LIB			=-L $(BUBBLE)/.lib -lbubble
 VELOCITY			= $(CORE)/velocity
 VELOCITY_LIB		=-L $(VELOCITY)/.lib -lvelocity
+PHASE_AVG           = $(CORE)/phase_average
+PHASE_AVG_LIB       =-L $(PHASE_AVG)/.lib -lphaseaverage
 
 # Flags _________________________________________________________________
 ifeq ($(COMPILER), mpixlf95_r)
-	LIBS =  $(IO_LIB) $(HDF5_LIB) $(SCHEMES_LIB) $(SOLVERS_LIB) $(MISCELLANEOUS_LIB) $(LIBS_FFT) $(DECOMP2D_LIB) $(LAPACK_LIB) 
+	LIBS =  $(IO_LIB) $(HDF5_LIB)  $(SCHEMES_LIB) $(SOLVERS_LIB) $(MISCELLANEOUS_LIB) $(LIBS_FFT) $(DECOMP2D_LIB) $(LAPACK_LIB) 
 endif
 
 ifeq ($(COMPILER),ifort)
@@ -25,7 +25,7 @@ ifeq ($(COMPILER),ifort)
 endif
 
 ifeq ($(COMPILER),gfortran)
-	LIBS 		= $(SCHEMES_LIB) $(SOLVERS_LIB) $(MISCELLANEOUS_LIB) $(IO_LIB) $(HDF5_LIB) $(LIBS_FFT) $(DECOMP2D_LIB) $(LAPACK_LIB)
+	LIBS 		=  $(SCHEMES_LIB) $(SOLVERS_LIB) $(MISCELLANEOUS_LIB) $(IO_LIB) $(HDF5_LIB) $(LIBS_FFT) $(DECOMP2D_LIB) $(LAPACK_LIB)
 endif
 
 
@@ -36,9 +36,10 @@ DATA		= $(CORE)//common/data
 
 MESH		= $(CORE)/common/mesh
 
-INCS 		= $(FLAG_FFT) $(HDF5_INC) $(IO_INC) $(SOLVERS_INC) $(MISCELLANEOUS_INC) $(SCHEMES_INC) -I $(COMMON) -I $(SCALAR) -I $(MHD) -I $(FRINGE) -I $(BUBBLE) -I $(VELOCITY)
+INCS 		= $(FLAG_FFT) $(HDF5_INC) $(IO_INC) $(SOLVERS_INC) $(MISCELLANEOUS_INC) $(SCHEMES_INC) -I $(COMMON) -I $(SCALAR) -I $(MHD) -I $(BUBBLE) -I $(VELOCITY) -I $(PHASE_AVG)
 
-OBJ		= main.o diagnostic.o multiphysics.o IO_handler.o \
+OBJ		= main.o IBM.o diagnostic.o multiphysics.o IO_handler.o \
+#OBJ		= main.o IBM.o diagnostic.o phase_average.o multiphysics.o IO_handler.o \
 		   
 
 
@@ -47,13 +48,13 @@ OBJ		= main.o diagnostic.o multiphysics.o IO_handler.o \
 #$(SCALAR)/scalar_data.o 	: $(COMMON)/mesh_settings.o 
 
 
-main.o			: build_common build_scalar build_mhd build_fringe build_bubble build_velocity build_core   
+main.o			: build_common build_scalar build_mhd build_bubble IBM.o build_velocity build_phaseaverage build_core   
 
 # Rules _________________________________________________________________
 $(EXEC_NAME): subsection_text=Linking objects files
 $(EXEC_NAME):	main.o    
 	@$(print_subsection);
-	$(FF) $(LDFLAG) $(EXEC_NAME) $(OBJ)  $(BUBBLE_LIB) $(SCALAR_LIB) $(MHD_LIB) $(FRINGE_LIB) $(VELOCITY_LIB) $(COMMON_LIB) $(LIBS);
+	$(FF) $(LDFLAG) $(EXEC_NAME) $(OBJ)  $(BUBBLE_LIB) $(SCALAR_LIB) $(MHD_LIB) $(VELOCITY_LIB) $(PHASE_AVG_LIB) $(COMMON_LIB) $(LIBS);
 	@echo; echo;
 	
 build: $(EXEC_NAME)
@@ -64,7 +65,7 @@ clean:
 	make -C $(COMMON) clean ;					\
 	make -C $(SCALAR) clean ;					\
 	make -C $(MHD) clean ;					\
-	make -C $(FRINGE) clean ;					\
+	make -C $(PHASE_AVG) clean ; \
 	make -C $(VELOCITY) clean ;					\
 	make -C $(BUBBLE) clean ;
 	
@@ -94,15 +95,15 @@ build_mhd :
 	@$(print_subsection);
 	$(MUTE)make -C $(MHD) ENVIRONMENT_FILE=$(ENVIRONMENT_FILE) COMMON=$(COMMON) ;
 	
-build_fringe :	subsection_text=Building FRINGE module
-build_fringe :	
-	@$(print_subsection);
-	$(MUTE)make -C $(FRINGE) ENVIRONMENT_FILE=$(ENVIRONMENT_FILE) COMMON=$(COMMON) ;
-	
 build_velocity :	subsection_text=Building velocity module
 build_velocity:
 	@$(print_subsection);
 	$(MUTE)make -C $(VELOCITY) ENVIRONMENT_FILE=$(ENVIRONMENT_FILE) COMMON=$(COMMON) CORE=$(CORE) ;
+
+build_phaseaverage :	subsection_text=Building phase average module
+build_phaseaverage :	
+	@$(print_subsection);
+	$(MUTE)make -C $(PHASE_AVG) ENVIRONMENT_FILE=$(ENVIRONMENT_FILE) COMMON=$(COMMON) CORE=$(CORE);
 
 	
 %.o:	%.f90

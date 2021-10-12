@@ -18,7 +18,6 @@ contains
         use Turbulence_generator
 
         use run_ctxt_data
-        use COMMON_workspace_view, only: COMMON_snapshot_path
 
         implicit none
         logical             :: fexist(4)
@@ -66,27 +65,7 @@ contains
 
         end if
 
-        ! Generation of counterrotating vortices
-        if (use_counterrotating_vortices) then
-            call perform_counterrotating_vortices
-        end if
-
-        ! call spread_to_all_pencil(q3_z, q2_y, q1_x, dp_z)
-
-        call transpose_y_to_x(q1_y, q1_x)
-        call transpose_y_to_z(q1_y, q1_z)
-
-        call transpose_y_to_x(q2_y, q2_x)
-        call transpose_y_to_z(q2_y, q2_z)
-
-        call transpose_y_to_x(q3_y, q3_x)
-        call transpose_y_to_z(q3_y, q3_z)
-
-        
-        ! The final 3D field are exported for checking purposes
-        ! call create_snapshot(COMMON_snapshot_path, "INITIALIZATION", q1_y, "W", 2)
-        ! call create_snapshot(COMMON_snapshot_path, "INITIALIZATION", q2_y, "V", 2)
-        ! call create_snapshot(COMMON_snapshot_path, "INITIALIZATION", q3_y, "U", 2)
+!        call spread_to_all_pencil(q3_z, q2_y, q1_x, dp_z)
 
 
     end subroutine load_initial_state
@@ -128,12 +107,12 @@ contains
         allocate(q1_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
         q1_z=0.d0
 
-       ! allocate(pr_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
-       ! pr_x=0.d0
-       ! allocate(pr_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
-       ! pr_y=0.d0
-       ! allocate(pr_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
-       ! pr_z=0.d0
+!        allocate(pr_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+!        pr_x=0.d0
+!        allocate(pr_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+!        pr_y=0.d0
+!        allocate(pr_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+!        pr_z=0.d0
         allocate(divu_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
         divu_z=0.d0
         allocate(dp_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
@@ -141,24 +120,14 @@ contains
 
         allocate(dphidx1_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
         dphidx1_x=0.d0
-        allocate(dphidx2_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
-        dphidx2_x=0.d0
-        allocate(dphidx3_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
-        dphidx3_x=0.d0
-
-        allocate(dphidx1_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
-        dphidx1_y=0.d0
         allocate(dphidx2_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
         dphidx2_y=0.d0
-        allocate(dphidx3_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
-        dphidx3_y=0.d0
-
-        allocate(dphidx1_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
-        dphidx1_z=0.d0
-        allocate(dphidx2_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
-        dphidx2_z=0.d0
+        allocate(dphidx2_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        dphidx2_x=0.d0
         allocate(dphidx3_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
         dphidx3_z=0.d0
+        allocate(dphidx3_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        dphidx3_x=0.d0
 
         ! Wall values allocation ---------------------------------------------
         !ATTENTION
@@ -361,7 +330,6 @@ contains
         deallocate(dphidx1_x)
         deallocate(dphidx2_y)
         deallocate(dphidx2_x)
-        deallocate(dphidx2_z)
         deallocate(dphidx3_z)
         deallocate(dphidx3_x)
 

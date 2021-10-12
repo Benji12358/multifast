@@ -52,10 +52,12 @@ contains
         call SCALAR_IO_read_settings
         call MHD_IO_read_settings
         call VELOCITY_IO_read_blowing_settings
+		call VELOCITY_IO_read_twave_settings
         call read_bubble_settings
 
-        !! nrank not yet defined, equals 0 for every process. Will be in decomp_2d_init
+        call read_vortices_settings
 
+        !! nrank not yet defined, equals 0 for every process. Will be in decomp_2d_init
         if (start_from_coarse_file) then
             if( ((n1/=n1c).and.(n1/=2*n1c-1)).or. &
                 ((n2/=n2c).and.(n2/=2*n2c-1)).or. &
@@ -281,8 +283,6 @@ contains
 
         call read_settings
         call decomp_2d_init(n1, n2, n3, prow, pcol)
-
-		write(*,*)nrank
 
         call resume_settings
 
@@ -565,11 +565,12 @@ program main
     use MHD_data, only: MHD_state, MHD_export_3D
 
     use flow_buffer_handler_test
-
+	  use phase_avg
+	  use boundaries_types
     implicit none
 
     integer ::i
-    integer :: mpi_err
+    integer :: mpi_err,mpi_id
 
     character*10 tmp_str
     character*80 time_filename
@@ -617,6 +618,22 @@ program main
         IBM_mask1=0.d0
     endif
 
+
+	call init_phase_avg()
+
+  call mpi_comm_rank(mpi_comm_world,mpi_id,mpi_err)
+
+
+  if(mpi_id==0) then
+	  if (phase_averaging==1) then
+      print '(A)'
+		  print '(A)', ' Phase averaging is ON'
+		  print '(2(A,F12.7),2(A,I2))', ' kappa(OUTER UNITS)=',kappa,', omega(OUTER UNITS)=',omega,', xbins=',xbins,', tbins=',tbins	
+	  else
+		  print '(A)'
+		  print '(A)', ' Phase averaging is OFF'
+		end if
+	end if 
 
 ! ***********************************************************************************
 ! ***************************   CORE OF THE DNS *************************************

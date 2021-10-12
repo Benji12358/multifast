@@ -12,68 +12,6 @@ module VELOCITY_operations
     implicit none 
 contains 
 
-    subroutine velocity_transpose_x_to_z(q1x, q2x, q3x)
-
-        use physical_fields
-        implicit none
-
-        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in)    :: q3x
-        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in)    :: q2x
-        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in)    :: q1x
-
-
-        call transpose_x_to_y(q1x, q1_y)
-        call transpose_y_to_z(q1_y, q1_z)
-        ! q2
-        call transpose_x_to_y(q2x, q2_y)
-        call transpose_y_to_z(q2_y, q2_z)
-        ! q3
-        call transpose_x_to_y(q3x, q3_y)
-        call transpose_y_to_z(q3_y, q3_z)
-
-    end subroutine velocity_transpose_x_to_z
-
-    subroutine velocity_transpose_z_to_x(q1z, q2z, q3z)
-
-        use physical_fields
-        implicit none
-
-        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)), intent(in)    :: q3z
-        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)), intent(in)    :: q2z
-        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)), intent(in)    :: q1z
-
-
-        call transpose_z_to_y(q1z, q1_y)
-        call transpose_y_to_x(q1_y, q1_x)
-        ! q2
-        call transpose_z_to_y(q2z, q2_y)
-        call transpose_y_to_x(q2_y, q2_x)
-        ! q3
-        call transpose_z_to_y(q3z, q3_y)
-        call transpose_y_to_x(q3_y, q3_x)
-
-    end subroutine velocity_transpose_z_to_x
-
-    subroutine pressure_gradient_transpose_x_to_z(dphidx1x, dphidx2x, dphidx3x)
-
-        use physical_fields
-        implicit none
-
-        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in)    :: dphidx3x
-        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in)    :: dphidx2x
-        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in)    :: dphidx1x
-
-
-        call transpose_x_to_y(dphidx1x, dphidx1_y)
-        call transpose_y_to_z(dphidx1_y, dphidx1_z)
-        ! q2
-        call transpose_x_to_y(dphidx2x, dphidx2_y)
-        call transpose_y_to_z(dphidx2_y, dphidx2_z)
-        ! q3
-        call transpose_x_to_y(dphidx3x, dphidx3_y)
-        call transpose_y_to_z(dphidx3_y, dphidx3_z)
-
-    end subroutine pressure_gradient_transpose_x_to_z
 
     subroutine spread_to_all_pencil(q3z, q2y, q1x, dpz)
 
@@ -105,10 +43,6 @@ contains
         use snapshot_writer
         use mpi
         use schemes_interface
-        use IBM
-
-        use COMMON_workspace_view, only: COMMON_snapshot_path
-        use snapshot_writer
 
         implicit none
         real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)), intent(in)    :: q3_z
@@ -136,10 +70,6 @@ contains
         n2e=(min(n2m, xend(2))-xstart(2))+1
         n3e=(min(n3m, xend(3))-xstart(3))+1
 
-        ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
-        !     call set_antisymmetric_velocity_in_object(Z,Yc,Xc,q1_x,'X')
-        ! endif
-
         call D1s_3Dx(q1_x, div1_x, n1,xsize(2),n2e,xsize(3),n3e, dx1, .false., POISSON_VEL_BC1)
 
         ! Y orientation ---------------------------------------------------------
@@ -147,10 +77,6 @@ contains
         div2_y=0.d0
         n1e=(min(n1m, yend(1))-ystart(1))+1
         n3e=(min(n3m, yend(3))-ystart(3))+1
-
-        ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
-        !     call set_antisymmetric_velocity_in_object(Zc,Y,Xc,q2_y,'Y')
-        ! endif
 
         if (use_generic_poisson) then
 
@@ -168,18 +94,14 @@ contains
 
         end if
 
+
         ! Z orientation ---------------------------------------------------------
 
         div3_z=0.d0
         n1e=(min(n1m, zend(1))-zstart(1))+1
         n2e=(min(n2m, zend(2))-zstart(2))+1
-        ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
-        !     call set_antisymmetric_velocity_in_object(Zc,Yc,X,q3_z,'Z')
-        ! endif
 
         call D1s_ACC_3Dz(q3_z, div3_z, zsize(1),n1e,zsize(2),n2e,n3, dx3, .false., POISSON_VEL_BC3)
-
-        ! if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) call correct_divergence_IBM()
 
         call transpose_x_to_y(div1_x, div1_y)
         call transpose_y_to_z(div1_y, div1_z)
@@ -188,26 +110,22 @@ contains
 
         div_z=div1_z+div2_z+div3_z
 
+
         if (present(divy_mean)) then
 
             divy_mean=0.d0
             divy_sum=sum(div2_z)
+
+
 
             call MPI_ALLREDUCE (divy_sum, divy_mean, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
             divy_mean=divy_mean/((n1-1)*(n2-1)*(n3-1))
 
         endif
 
-        ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
-        !     call reset_velocity(Z,Yc,Xc,q1_x,'X')
-        !     call reset_velocity(Zc,Y,Xc,q2_y,'Y')
-        !     call reset_velocity(Zc,Yc,X,q3_z,'Z')
-        ! endif
-
         return
 
-    end subroutine perform_divergence
-
+    end subroutine
 
 
     subroutine perform_velocity_at_center(q3_z, q2_y, q1_x, q3c_z, q2c_y, q1c_x)
@@ -222,64 +140,11 @@ contains
         real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent(out)     :: q2c_y
         real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)), intent(out)     :: q3c_z
 
-
-        ! VALGRIND
-        q1c_x=0.d0
-        q2c_y=0.d0
-        q3c_z=0.d0
-
         call D0s_3Dx(q1_x, q1c_x, n1,xsize(2),xsize(2),xsize(3),xsize(3), NS_DEF_BC1)
         call D0s_3Dy(q2_y, q2c_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), NS_DEF_BC2)
         call D0s_3Dz(q3_z, q3c_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, NS_DEF_BC3)
 
     end subroutine perform_velocity_at_center
-
-
-    subroutine perform_passive_scalar_at_center(sca_y, scaC_y, delta_T)
-
-        implicit none
-
-        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent(in)    :: sca_y
-
-        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent(out)     :: scaC_y
-
-        real*8, intent(in)  :: delta_T
-        integer :: i,k
-        real(kind=8) A(5)
-
-        A(1) =  1.234102595369109d0     /2.d0
-        A(2) =  -0.3184044667712d0     /2.d0
-        A(3) =  0.11029870162898d0      /2.d0
-        A(4) =  -0.030619166038291d0    /2.d0
-        A(5) =  0.0046223358114003d0    /2.d0
-
-        ! be carefull
-        call D0s_3Dy(sca_y, scaC_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), NS_DEF_BC2)
-        do i=ystart(1),min(yend(1),n1m)
-            do k=ystart(3),min(yend(3),n3m)
-
-                scaC_y(i,1,k) = 0.5d0*(sca_y(i,2,k)-delta_T)
-
-                scaC_y(i,n2-1,k) = 0.5d0*(delta_T+sca_y(i,n2-1,k))
-
-                scaC_y(i,n2-2,k)  =   9.0d0/16.d0 * (sca_y(i,n2-1,k)+sca_y(i,n2-2,k))     &
-                    -   0.0625d0    * (delta_T+sca_y(i,n2-3,k))
-
-                scaC_y(i,n2-3,k)  =   0.59395104312381d0  *   (sca_y(i,n2-2,k)+sca_y(i,n2-3,k))       &
-                    -   0.10967656468571d0  *   (sca_y(i,n2-1,k)+sca_y(i,n2-4,k))             &
-                    +   0.015725521561903d0 *   (delta_T + sca_y(i,n2-5,k))
-
-
-                scaC_y(i,n2-5,k)  =   A(1)  *   (sca_y(i,n2-4,k)+sca_y(i,n2-5,k))       &
-                    +   A(2)  *   (sca_y(i,n2-3,k)+sca_y(i,n2-6,k))             &
-                    +   A(3) *   (sca_y(i,n2-2,k) + sca_y(i,n2-7,k))           &
-                    +   A(4) *   (sca_y(i,n2-1,k) + sca_y(i,n2-8,k))           &
-                    +   A(5)*   (delta_T + sca_y(i,n2-9,k))
-
-            enddo
-        enddo
-
-    end subroutine perform_passive_scalar_at_center
 
 
 
@@ -298,7 +163,32 @@ contains
 
         real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))      :: u1_x, u2_x, u3_x
         real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))      :: u3_z, u2_z, u1_z
+        
+        !-----------------Higher-Order-Derivative-Coeffs
+        double precision :: f1d2c0,f1d2c1,f1d2c2  
+        double precision :: b1d2c0,b1d2c1,b1d2c2
+        
+        double precision :: tmpR1,alpha,dz1,dzN 
+        double precision :: df21,df31,df41,df32,df42,df43
+        double precision :: db12,db13,db14,db23,db24,db34
+        
+        double precision :: one, two
+        double precision :: c1,c2,c3,c4,c5,c6,c7
+        
+        one=1.0d0; two=2.0d0  
+        
+        c1=-49.0d0/20.0d0
+        c2= 6.0d0
+        c3=-15.0d0/2.0d0
+        c4= 20.0d0/3.0d0
+        c5= 15.0d0/4.0d0
+        c6= 6.0d0/5.0d0
+        c7= 1.0d0/6.0d0
 
+
+        vort3_x=0.0d0; vort2_x=0.0d0
+        vort1_z=0.0d0; vort2_z=0.0d0
+        vort3_y=0.0d0; vort2_y=0.0d0; vort1_y=0.0d0
 
         call transpose_y_to_z(u2_y, u2_z)
         call transpose_y_to_z(u1_y, u1_z)
@@ -313,8 +203,36 @@ contains
         call transpose_x_to_y(vort3_x, vort3_y)
 
         call D1c_MULTACC_3Dy(u1_y, vort3_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), -dx2, .true., NS_DEF_BC2, Yc_to_YcTr_for_D1(:))
-        vort3_y(:,1,:)=vort3_y(:,1,:) - (u1_y(:,2,:)-u1_y(:,1,:))  *Yc_to_YcTr_for_D1(1) /dx2
-        vort3_y(:,n2m,:)=vort3_y(:,n2m,:) - (u1_y(:,n2m,:)-u1_y(:,n2m-1,:))*Yc_to_YcTr_for_D1(n2m) /dx2
+        !vort3_y(:,1,:)   = vort3_y(:,1,:)   - (u1_y(:,2,:)-u1_y(:,1,:))  *Yc_to_YcTr_for_D1(1) /dx2
+        !vort3_y(:,n2m,:) = vort3_y(:,n2m,:) - (u1_y(:,n2m,:)-u1_y(:,n2m-1,:))*Yc_to_YcTr_for_D1(n2m) /dx2
+
+        vort3_y(:,1,:)   = vort3_y(:,1,  :) - ((c1*u1_y(:,1,:)   + c2*u1_y(:,2,:)     + c3*u1_y(:,3,:)     + c4*u1_y(:,4,:)     - c5*u1_y(:,5,:)     + c6*u1_y(:,6,:)     - c7*u1_y(:,7,:))    /dx2)*Yc_to_YcTr_for_D1(1)
+        vort3_y(:,n2m,:) = vort3_y(:,n2m,:) - ((c1*u1_y(:,n2m,:) + c2*u1_y(:,n2m-1,:) + c3*u1_y(:,n2m-2,:) + c4*u1_y(:,n2m-3,:) - c5*u1_y(:,n2m-4,:) + c6*u1_y(:,n2m-5,:) - c7*u1_y(:,n2m-6,:))/dx2)*Yc_to_YcTr_for_D1(n2m)
+
+
+        ! Forward Derivatives    
+        !dz1 = yc(2)-yc(1)
+        !alpha = (yc(3)-yc(2))/dz1
+
+        ! Forward first derivative second-order accurate
+        !tmpR1 = dz1*alpha*(alpha + one)
+        !f1d2c0 = (one - (alpha + one)**two)/tmpR1
+        !f1d2c1 = ((alpha + one)**two)/tmpR1
+        !f1d2c2 = -one / tmpR1
+
+        !vort3_y(:,1,:)   =  vort3_y(:,1,:)    -  (f1d2c0*u1_y(:,1,:)   + f1d2c1*u1_y(:,2,:)     + f1d2c2*u1_y(:,3,:))
+
+        ! Backward Derivative
+        !dzN = yc(n2m)-yc(n2m-1)
+        !alpha = (yc(n2m-1)-yc(n2m-2))/dzN
+
+        ! Backward first derivative second-order accurate
+        !tmpR1 = dzN*alpha*(alpha + one)
+        !b1d2c0 = ((alpha + one)**two - one)/tmpR1
+        !b1d2c1 = -((alpha + one)**two)/tmpR1  
+        !b1d2c2 = one / tmpR1
+
+        !vort3_y(:,n2m,:) =  vort3_y(:,n2m,:)  -  (b1d2c0*u1_y(:,n2m,:) + b1d2c1*u1_y(:,n2m-1,:) + b1d2c2*u1_y(:,n2m-2,:))
 
         call D1c_3Dx(u3_x, vort2_x, n1,xsize(2),xsize(2),xsize(3),xsize(3), -dx1, .true., NS_DEF_BC1)
         vort2_x(1,:,:)=-(u3_x(2,:,:)-u3_x(1,:,:))/dx1  ! CL
@@ -337,10 +255,380 @@ contains
         call transpose_z_to_y(vort1_z, vort1_y)
 
         call D1c_MULTACC_3Dy(u3_y, vort1_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), dx2, .true., NS_DEF_BC2, Yc_to_YcTr_for_D1(:))
-        vort1_y(:,1,:)=vort1_y(:,1,:) + (u3_y(:,2,:)-u3_y(:,1,:))*Yc_to_YcTr_for_D1(1) /dx2
-        vort1_y(:,n2m,:)=vort1_y(:,n2m,:) + (u3_y(:,n2m,:)-u3_y(:,n2m-1,:))*Yc_to_YcTr_for_D1(n2m) /dx2
+        !vort1_y(:,1,:)=vort1_y(:,1,:) + (u3_y(:,2,:)-u3_y(:,1,:))*Yc_to_YcTr_for_D1(1) /dx2
+        !vort1_y(:,n2m,:)=vort1_y(:,n2m,:) + (u3_y(:,n2m,:)-u3_y(:,n2m-1,:))*Yc_to_YcTr_for_D1(n2m) /dx2
+        
+        vort1_y(:,1,:)   = vort1_y(:,1,  :) + ((c1*u3_y(:,1,:)   + c2*u3_y(:,2,:)     + c3*u3_y(:,3,:)     + c4*u3_y(:,4,:)     - c5*u3_y(:,5,:)     + c6*u3_y(:,6,:)     - c7*u3_y(:,7,:))    /dx2)*Yc_to_YcTr_for_D1(1)
+        vort1_y(:,n2m,:) = vort1_y(:,n2m,:) + ((c1*u3_y(:,n2m,:) + c2*u3_y(:,n2m-1,:) + c3*u3_y(:,n2m-2,:) + c4*u3_y(:,n2m-3,:) - c5*u3_y(:,n2m-4,:) + c6*u3_y(:,n2m-5,:) - c7*u3_y(:,n2m-6,:))/dx2)*Yc_to_YcTr_for_D1(n2m)
+
+        
+
+        ! Forward Derivatives    
+        !dz1 = yc(2)-yc(1)
+        !alpha = (yc(3)-yc(2))/dz1
+
+        ! Forward first derivative second-order accurate
+        !tmpR1 = dz1*alpha*(alpha + one)
+        !f1d2c0 = (one - (alpha + one)**two)/tmpR1
+        !f1d2c1 = ((alpha + one)**two)/tmpR1
+        !f1d2c2 = -one / tmpR1
+
+        !vort1_y(:,1,:) = vort1_y(:,1,:) + (f1d2c0*u3_y(:,1,:) + f1d2c1*u3_y(:,2,:) + f1d2c2*u3_y(:,3,:))
+
+        ! Backward Derivative
+        !dzN = yc(n2m)-yc(n2m-1)
+        !alpha = (yc(n2m-1)-yc(n2m-2))/dzN
+
+        ! Backward first derivative second-order accurate
+        !tmpR1 = dzN*alpha*(alpha + one)
+        !b1d2c0 = ((alpha + one)**two - one)/tmpR1
+        !b1d2c1 = -((alpha + one)**two)/tmpR1  
+        !b1d2c2 = one / tmpR1
+
+        !vort1_y(:,n2m,:) = vort1_y(:,n2m,:) + (b1d2c0*u3_y(:,n2m,:) + b1d2c1*u3_y(:,n2m-1,:) + b1d2c2*u3_y(:,n2m-2,:))
+
+
+
 
     end subroutine perform_vorticity
+
+
+    subroutine y_derivative(array_in,array_out,value_at_wall)
+        implicit none
+
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent(in)  :: array_in
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent(out) :: array_out
+        real*8, dimension(ystart(1):yend(1), ystart(3):yend(3)), intent(in) :: value_at_wall
+
+        !-----------------Higher-Order-Derivative-Coeffs
+        double precision :: f1d2c0,f1d2c1,f1d2c2  
+        double precision :: b1d2c0,b1d2c1,b1d2c2
+        
+        double precision :: tmpR1,alpha,dz1,dzN 
+        double precision :: df21,df31,df41,df32,df42,df43
+        double precision :: db12,db13,db14,db23,db24,db34
+        
+        double precision :: one, two
+        double precision :: c1,c2,c3,c4,c5,c6,c7
+        double precision :: al_up,al_down,a1,a2,a3,y10,y20,y21,b1,b2,b3        
+        
+        integer :: i
+        
+        one=1.0d0; two=2.0d0
+        
+        c1=-49.0d0/20.0d0
+        c2= 6.0d0
+        c3=-15.0d0/2.0d0
+        c4= 20.0d0/3.0d0
+        c5= 15.0d0/4.0d0
+        c6= 6.0d0/5.0d0
+        c7= 1.0d0/6.0d0
+
+               
+        array_out=0.0d0
+        call D1c_MULTACC_3Dy(array_in, array_out, ysize(1),ysize(1),n2,ysize(3),ysize(3), dx2, .true., NS_DEF_BC2, Yc_to_YcTr_for_D1(:))
+        
+        y10=yc(1)
+        y20=yc(2)
+        y21=yc(2)-yc(1)
+
+        al_down=y21/y10
+        a1=-al_down/(al_down+1)
+        a2=(al_down-1)/al_down
+        a3=1/(al_down**2+al_down)
+        
+        a1=a1/y10
+        a2=a2/y10
+        a3=a3/y10
+        
+        al_up=(2.0d0-yc(n2m))/(yc(n2m)-yc(n2m-1))
+        b1=-al_up/(al_up+1)
+        b2=(al_up-1)/al_up
+        b3=1/(al_up**2+al_up)
+
+        b1=b1/(y(n2m)-y(n2m-1))
+        b2=b2/(y(n2m)-y(n2m-1))
+        b3=b3/(y(n2m)-y(n2m-1))
+
+        !array_out(:,1  ,:) = (array_in(:,2,:)   - array_in(:,1,:))     * Yc_to_YcTr_for_D1(1)   /dx2
+        !array_out(:,n2m,:) = (array_in(:,n2m,:) - array_in(:,n2m-1,:)) * Yc_to_YcTr_for_D1(n2m) /dx2
+        
+        !array_out(:,1,:)   = ((c1*array_in(:,1,:)   + c2*array_in(:,2,:)     + c3*array_in(:,3,:)     + c4*array_in(:,4,:)     - c5*array_in(:,5,:)     + c6*array_in(:,6,:)     - c7*array_in(:,7,:))/dx2)    *Yc_to_YcTr_for_D1(1)
+        !array_out(:,n2m,:) = ((c1*array_in(:,n2m,:) + c2*array_in(:,n2m-1,:) + c3*array_in(:,n2m-2,:) + c4*array_in(:,n2m-3,:) - c5*array_in(:,n2m-4,:) + c6*array_in(:,n2m-5,:) - c7*array_in(:,n2m-6,:))/dx2)*Yc_to_YcTr_for_D1(n2m)
+
+        do i=ystart(3),yend(3)
+          array_out(:,1,i)   =  a1*value_at_wall(:,i) + a2*array_in(:,1,i)   + a3*array_in(:,2,i)
+          array_out(:,n2m,i) =  b3*value_at_wall(:,i) + b2*array_in(:,n2m,i) + b1*array_in(:,n2m-1,i)
+        end do
+                
+        ! Forward Derivatives    
+        !dz1 = yc(2)-yc(1)
+        !alpha = (yc(3)-yc(2))/dz1
+
+        ! Forward first derivative second-order accurate
+        !tmpR1 = dz1*alpha*(alpha + one)
+        !f1d2c0 = (one - (alpha + one)**two)/tmpR1
+        !f1d2c1 = ((alpha + one)**two)/tmpR1
+        !f1d2c2 = -one / tmpR1
+
+        !array_out(:,1,:) = f1d2c0*array_in(:,1,:) + f1d2c1*array_in(:,2,:) + f1d2c2*array_in(:,3,:)
+
+        ! Forward Derivatives    
+        !dz1 = yc(3)-yc(2)
+        !alpha = (yc(4)-yc(3))/dz1
+
+        ! Forward first derivative second-order accurate
+        !tmpR1 = dz1*alpha*(alpha + one)
+        !f1d2c0 = (one - (alpha + one)**two)/tmpR1
+        !f1d2c1 = ((alpha + one)**two)/tmpR1
+        !f1d2c2 = -one / tmpR1
+
+        !array_out(:,2,:) = f1d2c0*array_in(:,2,:) + f1d2c1*array_in(:,3,:) + f1d2c2*array_in(:,4,:)
+
+
+        ! Forward Derivatives    
+        !dz1 = yc(4)-yc(3)
+        !alpha = (yc(5)-yc(4))/dz1
+
+        ! Forward first derivative second-order accurate
+        !tmpR1 = dz1*alpha*(alpha + one)
+        !f1d2c0 = (one - (alpha + one)**two)/tmpR1
+        !f1d2c1 = ((alpha + one)**two)/tmpR1
+        !f1d2c2 = -one / tmpR1
+
+        !array_out(:,3,:) = f1d2c0*array_in(:,3,:) + f1d2c1*array_in(:,4,:) + f1d2c2*array_in(:,5,:)
+
+
+        ! Backward Derivative
+        !dzN = yc(n2m)-yc(n2m-1)
+        !alpha = (yc(n2m-1)-yc(n2m-2))/dzN
+
+        ! Backward first derivative second-order accurate
+        !tmpR1 = dzN*alpha*(alpha + one)
+        !b1d2c0 = ((alpha + one)**two - one)/tmpR1
+        !b1d2c1 = -((alpha + one)**two)/tmpR1  
+        !b1d2c2 = one / tmpR1
+
+        !array_out(:,n2m,:) = b1d2c0*array_in(:,n2m,:) + b1d2c1*array_in(:,n2m-1,:) + b1d2c2*array_in(:,n2m-2,:)
+
+        ! Backward Derivative
+        !dzN = yc(n2m-1)-yc(n2m-2)
+        !alpha = (yc(n2m-2)-yc(n2m-3))/dzN
+
+        ! Backward first derivative second-order accurate
+        !tmpR1 = dzN*alpha*(alpha + one)
+        !b1d2c0 = ((alpha + one)**two - one)/tmpR1
+        !b1d2c1 = -((alpha + one)**two)/tmpR1  
+        !b1d2c2 = one / tmpR1
+
+        !array_out(:,n2m-1,:) = b1d2c0*array_in(:,n2m-1,:) + b1d2c1*array_in(:,n2m-2,:) + b1d2c2*array_in(:,n2m-3,:)
+
+
+        ! Backward Derivative
+        !dzN = yc(n2m-2)-yc(n2m-3)
+        !alpha = (yc(n2m-3)-yc(n2m-4))/dzN
+
+        ! Backward first derivative second-order accurate
+        !tmpR1 = dzN*alpha*(alpha + one)
+        !b1d2c0 = ((alpha + one)**two - one)/tmpR1
+        !b1d2c1 = -((alpha + one)**two)/tmpR1  
+        !b1d2c2 = one / tmpR1
+
+        !array_out(:,n2m-2,:) = b1d2c0*array_in(:,n2m-2,:) + b1d2c1*array_in(:,n2m-3,:) + b1d2c2*array_in(:,n2m-4,:)
+
+
+    end subroutine y_derivative
+
+
+    subroutine x_derivative(array_in,array_out)
+        implicit none
+
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent(in)  :: array_in
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent(out) :: array_out
+
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))  :: tmp1
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))  :: tmp2
+
+        array_out=0.0d0
+        tmp1=0.0d0
+        tmp2=0.0d0
+
+        call transpose_y_to_z(array_in,tmp1)
+        call D1c_3Dz(tmp1, tmp2, zsize(1),zsize(1),zsize(2),zsize(2),n3, dx3, .true., NS_DEF_BC3)
+        call transpose_z_to_y(tmp2,array_out)
+
+     end subroutine x_derivative
+
+
+     subroutine z_derivative(array_in,array_out)
+        implicit none
+
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent(in)  :: array_in
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent(out) :: array_out
+
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))  :: tmp1
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))  :: tmp2
+
+        array_out=0.0d0
+        tmp1=0.0d0
+        tmp2=0.0d0
+
+        call transpose_y_to_x(array_in,tmp1)
+        call D1c_3Dx(tmp1, tmp2, n1,xsize(2),xsize(2),xsize(3),xsize(3), dx1, .true., NS_DEF_BC1)
+        call transpose_x_to_y(tmp2,array_out)
+
+     end subroutine z_derivative    
+     
+     subroutine compute_P_wall(v_3D_y,P_3D_y,p_wall)
+        implicit none
+        
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent(in)  :: v_3D_y, P_3D_y
+        real*8, dimension(ystart(1):yend(1), ystart(3):yend(3)), intent(out) :: p_wall
+        
+        double precision :: f1d2c0,f1d2c1,f1d2c2  
+        double precision :: b1d2c0,b1d2c1,b1d2c2
+        
+        double precision :: f2d2c0,f2d2c1,f2d2c2,f2d2c3
+        double precision :: b2d2c0,b2d2c1,b2d2c2,b2d2c3
+        
+        double precision :: tmpR1,alpha,dz1,dzN 
+        double precision :: df21,df31,df41,df32,df42,df43
+        double precision :: db12,db13,db14,db23,db24,db34        
+        double precision :: one, two
+        
+        real*8, dimension(ystart(1):yend(1), ystart(3):yend(3)) :: tmp1
+     
+        one=1.0d0
+        two=2.0d0
+        
+        
+        ! Forward Derivatives    
+        dz1 = Yc(1)
+        alpha = (Yc(2)-Yc(1))/dz1
+
+        ! Forward first derivative second-order accurate
+        tmpR1 = dz1*alpha*(alpha + one)
+        f1d2c0 = (one - (alpha + one)**two)/tmpR1
+        f1d2c1 = ((alpha + one)**two)/tmpR1
+        f1d2c2 = -one / tmpR1
+        
+         
+        ! Forward second derivative second-order accurate
+        df21 = Yc(1); df32 = Yc(2)-Yc(1)   
+        df31 = Yc(2); df42 = Yc(3)-Yc(1)
+        df41 = Yc(3); df43 = Yc(3)-Yc(2)
+
+        f2d2c0 = (two*(-df21-df31-df41))/((-df21)*(-df31)*(-df41))         
+        f2d2c1 = (two*(-df31-df41)     )/(  df21 *(-df32)*(-df42)) 
+        f2d2c2 = (two*(-df21-df41)     )/(  df31 *  df32 *(-df43))
+        f2d2c3 = (two*(-df21-df31)     )/(  df41 *  df42 *  df43 )
+        
+
+        
+        tmp1(:,:) = (f2d2c1*v_3D_y(:,1,:) + f2d2c2*v_3D_y(:,2,:) + f2d2c3*v_3D_y(:,3,:))/ren
+        p_wall(:,:) = (tmp1(:,:) - f1d2c2*P_3D_y(:,2,:) - f1d2c1*P_3D_y(:,1,:))/f1d2c0
+     
+     end subroutine compute_P_wall
+     
+     
+     subroutine compute_OMG_wall(u_3D_y,v_3D_y,w_3D_y,w_wall,ampt,kap,omg,time,OMGX_wall,OMGY_wall,OMGZ_wall)
+        implicit none
+        
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent(in)  :: u_3D_y,v_3D_y,w_3D_y
+        real*8, dimension(ystart(1):yend(1), ystart(3):yend(3)), intent(in)  :: w_wall
+        real*8, dimension(ystart(1):yend(1), ystart(3):yend(3)), intent(out) :: OMGX_wall,OMGY_wall,OMGZ_wall
+        
+        
+        double precision :: f1d2c0,f1d2c1,f1d2c2  
+        double precision :: b1d2c0,b1d2c1,b1d2c2
+        
+        double precision :: f2d2c0,f2d2c1,f2d2c2,f2d2c3
+        double precision :: b2d2c0,b2d2c1,b2d2c2,b2d2c3
+        
+        double precision :: tmpR1,alpha,dz1,dzN 
+        double precision :: df21,df31,df41,df32,df42,df43
+        double precision :: db12,db13,db14,db23,db24,db34        
+        double precision :: one, two
+        
+        double precision, intent(in) :: ampt, kap, omg, time
+        integer :: i
+        
+        one=1.0d0
+        two=2.0d0
+                
+        ! Forward Derivatives    
+        dz1 = Yc(1)
+        alpha = (Yc(2)-Yc(1))/dz1
+
+        ! Forward first derivative second-order accurate
+        tmpR1 = dz1*alpha*(alpha + one)
+        f1d2c0 = (one - (alpha + one)**two)/tmpR1
+        f1d2c1 = ((alpha + one)**two)/tmpR1
+        f1d2c2 = -one / tmpR1
+        
+        OMGX_wall(:,:) = f1d2c0*w_wall(:,:) + f1d2c1*w_3D_y(:,1,:) + f1d2c2*w_3D_y(:,2,:)
+        
+        do i=ystart(3),min(yend(3),n3m)
+          OMGY_wall(:,i) = -ampt*kap*dcos(kap*Xc(i)-omg*time)
+        end do
+        
+        OMGZ_wall(:,:) = (f1d2c1*u_3D_y(:,1,:) + f1d2c2*u_3D_y(:,2,:)) - OMGY_wall(:,:)
+        
+     end subroutine compute_OMG_wall
+     
+     
+!     subroutine x_derivative_2D_at_wall(f,d1f)
+
+!        implicit none
+
+!        real*8,  dimension(xstart(1):xend(1),xstart(3),xend(3)), intent(in) :: f
+!        real*8,  dimension(xstart(1):xend(1),xstart(3),xend(3)), intent(out):: d1f
+
+!        integer :: i,j,k
+!        real(kind=8) A(7)
+
+!        A(1) =  0.91567612963343d0   /h
+!        A(2) = -0.34876133244745d0   /h
+!        A(3) =  0.14348458980167d0   /h
+!        A(4) = -0.050850207601385d0  /h
+!        A(5) =  0.013051374066223d0  /h
+!        A(6) = -0.0017438790115182d0 /h
+
+
+
+!        do k=7,n3-7
+!            d1f(:,k)  =   A(6)*(f(:,k+6) - f(:,k-6))     &
+!                      +   A(5)*(f(:,k+5) - f(:,k-5))     &
+!                      +   A(4)*(f(:,k+4) - f(:,k-4))     &
+!                      +   A(3)*(f(:,k+3) - f(:,k-3))     &
+!                      +   A(2)*(f(:,k+2) - f(:,k-2))     &
+!                      +   A(1)*(f(:,k+1) - f(:,k-1))
+!        enddo
+
+
+!        do k=1, 6
+!            d1f(:,k)  =   A(6)*(f(:,k+6) - f(:,mod(n3+k-8,n3-1)+1))  &
+!                      +   A(5)*(f(:,k+5) - f(:,mod(n3+k-7,n3-1)+1))  &
+!                      +   A(4)*(f(:,k+4) - f(:,mod(n3+k-6,n3-1)+1))  &
+!                      +   A(3)*(f(:,k+3) - f(:,mod(n3+k-5,n3-1)+1))  &
+!                      +   A(2)*(f(:,k+2) - f(:,mod(n3+k-4,n3-1)+1))  &
+!                      +   A(1)*(f(:,k+1) - f(:,mod(n3+k-3,n3-1)+1))
+!        enddo
+
+!        do k=n3-6, n3-1
+!            d1f(:,k)  =   A(6)*(f(:,mod(k+5,n3-1)+1) - f(:,k-6))     &
+!                      +   A(5)*(f(:,mod(k+4,n3-1)+1) - f(:,k-5))     &
+!                      +   A(4)*(f(:,mod(k+3,n3-1)+1) - f(:,k-4))     &
+!                      +   A(3)*(f(:,mod(k+2,n3-1)+1) - f(:,k-3))     &
+!                      +   A(2)*(f(:,mod(k+1,n3-1)+1) - f(:,k-2))     &
+!                      +   A(1)*(f(:,mod(k  ,n3-1)+1) - f(:,k-1))
+!        enddo
+
+
+
+!        return
+
+!    end subroutine x_derivative_2D_at_wall
 
 
 end module VELOCITY_operations

@@ -7,7 +7,7 @@ module DNS_settings
     ! inflow and inner field and avoid divergence of code
     integer, parameter  :: CONSTANT_FLOW=0, CHANNEL_FLOW=1, FLOW_FROM_INFLOW=2
 
-    real*8         :: dt,ren, Uc, g, h_height, fringe_length
+    real*8         :: dt,ren, Uc, g, h_height
     integer         :: save_gradP_frequency ! mean_gradP export frequency
     integer         :: first_it=0
     integer         :: last_it
@@ -51,6 +51,14 @@ module blow_settings
     integer :: blow_end
 
 end module blow_settings
+
+module twave_settings
+    implicit none
+    integer :: twave_on
+	integer :: inner_units
+	real*8	:: Re_tau
+
+end module twave_settings
 
 module numerical_methods_settings
     implicit none

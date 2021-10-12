@@ -111,7 +111,6 @@ contains
             read(15,*) inflow_buff
             read(15,*) inflow_mode
             read(15,'(a)')COMMON_inflow_path  ! path for inflow
-            read(15,*) fringe_length
             read(15,*) divro
             read(15,*) d ! with physical unity (mm)
             read(15,*) g ! with physical unity (mm/s/s)
@@ -339,6 +338,7 @@ contains
             use anim2D
 
             use schemes_loader
+            use twave_settings
 
             implicit none
             integer :: s
@@ -491,7 +491,23 @@ contains
                     case (FREESLIP)
                         write(*,*)'BC2: Freeslip'
                     case (NOSLIP)
-                        write(*,*)'BC2: Noslip'
+
+                        if(twave_on==1) then
+							            if(Twave%kappa==0 .and. Twave%omega/=0) then
+								            write(*,*)'BC2: Homogeneous spanwise wall oscillations: w=A*sin(omega*t)'
+								            write(*,*)'   : NoSlip for other velocity components'
+							            end if
+							            if(Twave%kappa/=0 .and. Twave%omega==0) then
+								            write(*,*)'BC2: Streamwise modulated spanwise steady oscillations: w=A*sin(kappa*x)'
+								            write(*,*)'   : NoSlip for other velocity components'
+							            end if
+							            if(Twave%kappa/=0 .and. Twave%omega/=0) then 
+								            write(*,*)'BC2: Streamwise travelling Wave of spanwise wall velocity: w=A*sin(kappa*x-omega*t)'
+								            write(*,*)'   : NoSlip for other velocity components'
+							            end if
+							            if(Twave%Amp==0 .or. (Twave%kappa==0 .and. Twave%omega==0)) write(*,*)'BC2: NoSlip (WARNING: Please put twave_on=0 in travelling_wave.d)'
+						            end if
+                        if(twave_on==0) write(*,*)'BC2: Noslip'
                     case (OPEN)
                         write(*,*)'BC2: In/Outflow'
 
@@ -528,6 +544,25 @@ contains
                     write(*,*)'    -->end at   : ', slows(s)%xen, ', ', slows(s)%zen
                     write(*,*)'    -->blowing  : ', slows(s)%blowing
                 end do
+
+                if(twave_on==1) then
+
+					        if (inner_units==1) then
+                        write(*,*)
+                        write(*,*)'Travelling Wave Parameters--------------------------------'
+                        write(*,*)'Fricton Reynolds number of steady case =', Re_tau
+                        write(*,*)'Travelling wave Amplitude (inner units) =', Twave%Amp
+                        write(*,*)'Travelling wave wavenumber (inner units) =', Twave%kappa
+                        write(*,*)'Travelling wave angular frequency (inner units) =', Twave%omega
+					        else if (inner_units==0) then
+                        write(*,*)
+                        write(*,*)'Travelling Wave Parameters--------------------------------'
+                        write(*,*)'Travelling wave Amplitude (outer units) =', Twave%Amp
+                        write(*,*)'Travelling wave wavenumber (outer units) =', Twave%kappa
+                        write(*,*)'Travelling wave angular frequency (outer units) =', Twave%omega
+					        end if
+
+                end if
 
                 write(*,*)
                 write(*,*)'Poisson equation resolution ----------------------------------'
@@ -1418,19 +1453,19 @@ contains
             character(200)  :: xdmf_path, attribute_path
             character(20)   :: frame_label, attribute_name
             character(80)   :: tmp_str, tmp_str2, tmp_str3, tmp_str4
-            integer,save    :: nline_model=12, nline_frame=32
+            integer,save    :: nline_file
 
             write(tmp_str, "(i10)")file_nb
             xdmf_path=trim(anim_dir)//'X1/anim'//trim(adjustl(tmp_str))//".xdmf"
 
             if ((nbsteps==1).and.(nrank==0)) call copy_ascii_file(file_dest=trim(xdmf_path), &
-                                                                  file_src=trim(anim_dir)//"X1/modele2.xdmf")
+                                                                  file_src=trim(anim_dir)//"X1/modele2.xdmf",nline=nline_file)
 
             if(nrank==0)  open(xdmf_id, file=trim(xdmf_path), position="rewind")
 
             if (nbsteps==1) then
                 !!!! SKIPPING the already existing text !!!!
-                do i=1,nline_model
+                do i=1,nline_file
                     if(nrank==0) read(xdmf_id,*)
                 enddo
 
@@ -1439,10 +1474,10 @@ contains
                 if(nrank==0)  write(xdmf_id,*)"</Time>"
                 if(nrank==0)  write(xdmf_id,*)
 
-                nline_model=nline_model+4
+                nline_file=nline_file+4
             else
                 !!!! SKIPPING the already existing text, excepting the last 2 lines (Domain and Xdmf) !!!!
-                do i=1,nline_model+(nbsteps-1)*nline_frame
+                do i=1,nline_file
                     if(nrank==0) read(xdmf_id,*)
                 enddo
             endif
@@ -1471,6 +1506,8 @@ contains
 
                 if(nrank==0)  write(xdmf_id,*)
 
+                nline_file=nline_file+12
+
                 do s = 1, param_anim2D_1%nb_slices
 
                     i=param_anim2D_1%slices(s)
@@ -1478,6 +1515,8 @@ contains
                     slice_name='slice_'//trim(adjustl(tmp_str))
 
                     if(nrank==0)  write(xdmf_id,*)
+
+                    nline_file=nline_file+1
 
                     if (param_anim2D_1%export_q1) then
                         attribute_name='q1_'//trim(adjustl(tmp_str))
@@ -1489,6 +1528,8 @@ contains
                         if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
                         if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2), n3,n2, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
                         if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+
+                        nline_file=nline_file+3
                     end if
 
                     if (param_anim2D_1%export_q2) then
@@ -1502,6 +1543,8 @@ contains
                         if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2), n3,n2, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
                         if(nrank==0)  write(xdmf_id,*)"</Attribute>"
 
+                        nline_file=nline_file+3
+
                     end if
 
                     if (param_anim2D_1%export_q3) then
@@ -1514,6 +1557,8 @@ contains
                         if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
                         if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2), n3,n2, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
                         if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+
+                        nline_file=nline_file+3
                     end if
 
                     if (param_anim2D_1%export_pr) then
@@ -1526,6 +1571,8 @@ contains
                         if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
                         if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2), n3,n2, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
                         if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+
+                        nline_file=nline_file+3
                     end if
 
                     if ((param_anim2D_1%export_sca).and.(SCA_state/=0)) then
@@ -1538,6 +1585,8 @@ contains
                         if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
                         if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2), n3,n2, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
                         if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+
+                        nline_file=nline_file+3
                     end if
 
 
@@ -1548,6 +1597,8 @@ contains
                 if(nrank==0)  write(xdmf_id,*)
                 if(nrank==0)  write(xdmf_id,*)"</Grid>"
                 if(nrank==0)  write(xdmf_id,*)
+
+                nline_file=nline_file+4
 !            end do
 
 
@@ -2102,18 +2153,18 @@ contains
             character(200)  :: xdmf_path, attribute_path
             character(20)   :: frame_label, attribute_name
             character(80)   :: tmp_str, tmp_str2, tmp_str3, tmp_str4
-            integer,save    :: nline_model=12, nline_frame=32
+            integer,save    :: nline_file
 
             write(tmp_str, "(i10)")file_nb
             xdmf_path=trim(anim_dir)//'X3/anim'//trim(adjustl(tmp_str))//".xdmf"
 
             if ((nbsteps==1).and.(nrank==0))  call copy_ascii_file(file_dest=trim(xdmf_path), &
-                                                                   file_src=trim(anim_dir)//"X3/modele2.xdmf")
+                                                                   file_src=trim(anim_dir)//"X3/modele2.xdmf",nline=nline_file)
             if(nrank==0)  open(xdmf_id, file=trim(xdmf_path), position="rewind")
 
             if (nbsteps==1) then
                 !!!! SKIPPING the already existing text !!!!
-                do i=1,nline_model
+                do i=1,nline_file
                     if(nrank==0) read(xdmf_id,*)
                 enddo
 
@@ -2122,10 +2173,10 @@ contains
                 if(nrank==0)  write(xdmf_id,*)"</Time>"
                 if(nrank==0)  write(xdmf_id,*)
 
-                nline_model=nline_model+4
+                nline_file=nline_file+4
             else
                 !!!! SKIPPING the already existing text, excepting the last lines (Grid, Domain and Xdmf) !!!!
-                do i=1,nline_model+(nbsteps-1)*nline_frame
+                do i=1,nline_file
                     if(nrank==0) read(xdmf_id,*)
                 enddo
             endif
@@ -2153,6 +2204,8 @@ contains
 
                 if(nrank==0)  write(xdmf_id,*)
 
+                nline_file=nline_file+12
+
                 do s = 1, param_anim2D_3%nb_slices
 
                     k=param_anim2D_3%slices(s)
@@ -2160,6 +2213,8 @@ contains
                     slice_name='slice_'//trim(adjustl(tmp_str))
 
                     if(nrank==0)  write(xdmf_id,*)
+
+                    nline_file=nline_file+1
 
                     if (param_anim2D_3%export_q1) then
                         attribute_name='q1_'//trim(adjustl(tmp_str))
@@ -2171,6 +2226,8 @@ contains
                         if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
                         if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2), n2,n1, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
                         if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+
+                        nline_file=nline_file+3
                     end if
 
                     if (param_anim2D_3%export_q2) then
@@ -2184,6 +2241,7 @@ contains
                         if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2), n2,n1, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
                         if(nrank==0)  write(xdmf_id,*)"</Attribute>"
 
+                        nline_file=nline_file+3
                     end if
 
                     if (param_anim2D_3%export_q3) then
@@ -2196,6 +2254,8 @@ contains
                         if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
                         if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2),n2,n1, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
                         if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+
+                        nline_file=nline_file+3
                     end if
 
                     if (param_anim2D_3%export_pr) then
@@ -2208,6 +2268,8 @@ contains
                         if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
                         if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2),n2,n1, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
                         if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+
+                        nline_file=nline_file+3
                     end if
 
                     if ((param_anim2D_3%export_sca).and.(SCA_state/=0)) then
@@ -2220,6 +2282,8 @@ contains
                         if(nrank==0)  write(xdmf_id,'(a,a,a)')'<Attribute Name="', trim(attribute_name), '" AttributeType="Scalar" Center="Node">'
                         if(nrank==0)  write(xdmf_id,'(a,I4,I4,a,a,a)')trim(tmp_str2),n2,n1, trim(tmp_str3), trim(attribute_path), trim(tmp_str4)
                         if(nrank==0)  write(xdmf_id,*)"</Attribute>"
+
+                        nline_file=nline_file+3
                     end if
 
 
@@ -2230,6 +2294,8 @@ contains
                 if(nrank==0)  write(xdmf_id,*)
                 if(nrank==0)  write(xdmf_id,*)"</Grid>"
                 if(nrank==0)  write(xdmf_id,*)
+
+                nline_file=nline_file+4
 !            end do
 
 

@@ -12,21 +12,17 @@ contains
         use SCALAR_data
 
         implicit none
-        integer :: reset_int
 
 
         ! Scalar *********************************************************************************
         open(15,file=trim(COMMON_settings_path)//'scalar.d')
 
         read(15,*) SCA_state
-        read(15,*) reset_int
-        read(15,*) init_type ! CLASSIC_INIT=0, INIT_FROM_FILE=1
         read(15,*) SCA_BC1, SCA_BC2, SCA_BC3
         read(15,*) renprandtl
         read(15,*) delta_T
         read(15,*) heat_flux
         heat_flux = heat_flux*h_height
-        reset_scalar_field = (reset_int==1)
 
         close(15)
 
@@ -146,7 +142,6 @@ contains
         use SCALAR_data
         use mesh
         use DNS_settings
-        use start_settings, only:half_length, previous_fringe_start
 
         use SCALAR_dao, only: DAO_read_fields=>read_fields
 
@@ -159,7 +154,6 @@ contains
         type(DECOMP_INFO)   :: decomp_XYZ
         integer             :: n1c, n2c, n3c        ! Coarse mesh resolution
         real*8, dimension(:,:,:), allocatable   :: sca_x_XYZ
-        integer             :: i
 
 
         if (fill_from_coarse) then
@@ -176,22 +170,10 @@ contains
 
         else
 
+            call decomp_info_init(n1, n2, n3, decomp_XYZ)
 
-            if (half_length.eq.1) then
+            call DAO_read_fields(file, sca_x(:,:,:), decomp_XYZ, fexist)
 
-                call decomp_info_init(previous_fringe_start, n2, n3, decomp_XYZ)
-                call DAO_read_fields(file, sca_x(:previous_fringe_start,:,:), decomp_XYZ, fexist)
-
-                do i=previous_fringe_start,n1
-                    sca_x(i,:,:) = sca_x(previous_fringe_start,:,:)
-                enddo
-
-            else 
-
-                call decomp_info_init(n1, n2, n3, decomp_XYZ)
-                call DAO_read_fields(file, sca_x(:,:,:), decomp_XYZ, fexist)
-
-            endif
             ! Spread to all transpositions
 
             call transpose_x_to_y(sca_x(:,:,:), sca_y(:,:,:))

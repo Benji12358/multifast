@@ -1,6 +1,7 @@
 module multiphysics
 !
 ! MASTER MODULE
+use mod_phase_average
 !
 contains
 
@@ -45,55 +46,66 @@ contains
 
         use VELOCITY_solver
         use MHD_solver
-        use FRINGE_solver
         use SCALAR_solver
         use time_schemes
         use MHD_data, only:MHD_state
-        use FRINGE_data, only:use_fringe
 
         implicit  none
 
         integer, intent(in) :: ntime
         integer             :: ns, sub_cpt, n_iter, iter,test
+        real*8 :: ta,tb,tc,td,te,tf
 
         n_iter = 1
 
-!**************************************************
+        call myMPI()
+
+        ta=mpi_wtime()
+
+        !**************************************************
+
+        !*********** Active MHD: Lorentz forces in NS equations ********
+        !*********** Use first order Euler scheme for MHD ******
+        if (MHD_state.eq.2) then
+
+          call solve_MHD(q1_x, q2_y, q3_z, fb1_MHD_x, fb2_MHD_x, fb3_MHD_x,ntime,.true.) !=> Get F(n)
+          call add_action(fb1_MHD_x, fb2_MHD_x, fb3_MHD_x)
+
+        endif
+
+        do ns=1,nb_substep
 
           !*********** Active MHD: Lorentz forces in NS equations ********
-          !*********** Use first order Euler scheme for MHD ******
-          if (MHD_state.eq.2) then
+          !*********** Use the same time advancement scheme (RK3 or AB2) for MHD as for NS ******
+          if (MHD_state.eq.1) then
 
-            call solve_MHD(q1_x, q2_y, q3_z, fb1_MHD_x, fb2_MHD_x, fb3_MHD_x,ntime,.true.) !=> Get F(n)
-            call add_action_x(fb1_MHD_x, fb2_MHD_x, fb3_MHD_x)
+            call solve_MHD(q1_x, q2_y, q3_z, fb1_MHD_x, fb2_MHD_x, fb3_MHD_x,ntime,(ns.eq.nb_substep)) !=> Get F(n)
+            call add_action(fb1_MHD_x, fb2_MHD_x, fb3_MHD_x)
+
           endif
 
-          do ns=1,nb_substep
+          call update_velocity(ntime, ns)
 
-              !*********** Active MHD: Lorentz forces in NS equations ********
-              !*********** Use the same time advancement scheme (RK3 or AB2) for MHD as for NS ******
-              if (MHD_state.eq.1) then
+          if(SCA_state==1) call solve_scalar(q1_x, q2_y, q3_z, ns)
 
-                call solve_MHD(q1_x, q2_y, q3_z, fb1_MHD_x, fb2_MHD_x, fb3_MHD_x,ntime,(ns.eq.nb_substep)) !=> Get F(n)
-                call add_action_x(fb1_MHD_x, fb2_MHD_x, fb3_MHD_x)
-              endif
+        enddo
 
-              if (use_fringe) then
-                if (streamwise==1) then
-                  call compute_fringe_force_x(q1_x, q2_x, q3_x, f1_fringe_x, f2_fringe_x, f3_fringe_x,ntime,(ns.eq.nb_substep)) !=> Get F(n)
-                  call add_action_x(f1_fringe_x, f2_fringe_x, f3_fringe_x)
-                elseif (streamwise==3) then
-                  call compute_fringe_force_z(q1_z, q2_z, q3_z, f1_fringe_z, f2_fringe_z, f3_fringe_z,ntime,(ns.eq.nb_substep)) !=> Get F(n)
-                  call add_action_z(f1_fringe_z, f2_fringe_z, f3_fringe_z)
-                endif
-              endif
+        tb=mpi_wtime()
 
-            call update_velocity(ntime, ns)
-            if(SCA_state==1) call solve_scalar(q1_x, q2_y, q3_z, ns)
+        if (phase_averaging==1) then
+          if (SCA_state==1) then
+    				call perform_phase_averaging(q1_x, q2_y, q3_z, dp_x, q1_wall20, q2_wall20, q3_wall20)
+            call perform_phase_averaging_vort(q1_x, q2_y, q3_z, q1_wall20, q2_wall20, q3_wall20)
+          else
+				    call perform_phase_averaging(q1_x, q2_y, q3_z, dp_x, q1_wall20, q2_wall20, q3_wall20)
+            call perform_phase_averaging_vort(q1_x, q2_y, q3_z, q1_wall20, q2_wall20, q3_wall20)
+          end if
+		    endif
 
-            ! exit
+        tc=mpi_wtime()
 
-         enddo
+        if(myid==0) write(*,*)'Time to compute velocity: ', tb-ta
+        if(myid==0) write(*,*)'Time to compute phase_average: ', tc-tb
 
 !********************Procédure d'iteration **********************
 !******************* nbre d'iter n_iter gt 1 ********************

@@ -1,6 +1,7 @@
 module multiphysics
 !
 ! MASTER MODULE
+use phase_avg
 !
 contains
 
@@ -45,41 +46,72 @@ contains
 
         use VELOCITY_solver
         use MHD_solver
+        use SCALAR_solver
         use time_schemes
+        use MHD_data, only:MHD_state
 
         implicit  none
 
         integer, intent(in) :: ntime
         integer             :: ns, sub_cpt, n_iter, iter,test
 
-        n_iter = 5
+        n_iter = 1
 
-!****************Deactivate MHD*****************
-        call solve_MHD(q1_x, q2_y, q3_z) !=> Get F(n)
-!        fb1_MHD_x = -1.d0
-         fb2_MHD_x = 0.d0
-         fb3_MHD_x = 0.d0
-        call add_action(fb1_MHD_x, fb2_MHD_x, fb3_MHD_x)
 !**************************************************
+
+          !*********** Active MHD: Lorentz forces in NS equations ********
+          !*********** Use first order Euler scheme for MHD ******
+          if (MHD_state.eq.2) then
+
+            call solve_MHD(q1_x, q2_y, q3_z, fb1_MHD_x, fb2_MHD_x, fb3_MHD_x,ntime,.true.) !=> Get F(n)
+            call add_action(fb1_MHD_x, fb2_MHD_x, fb3_MHD_x)
+          endif
 
           do ns=1,nb_substep
 
-           call update_velocity(ntime, ns)
+              !*********** Active MHD: Lorentz forces in NS equations ********
+              !*********** Use the same time advancement scheme (RK3 or AB2) for MHD as for NS ******
+              if (MHD_state.eq.1) then
+
+                call solve_MHD(q1_x, q2_y, q3_z, fb1_MHD_x, fb2_MHD_x, fb3_MHD_x,ntime,(ns.eq.nb_substep)) !=> Get F(n)
+                call add_action(fb1_MHD_x, fb2_MHD_x, fb3_MHD_x)
+              endif
+
+            call update_velocity(ntime, ns)
+
+            if(SCA_state==1) call solve_scalar(q1_x, q2_y, q3_z, ns)
 
          enddo
 
+		if (phase_averaging==1) then
+			if (SCA_state==1) then
+				call perform_phase_averaging(q1_x, q2_y, q3_z, dp_x)
+			else
+				call perform_phase_averaging(q1_x, q2_y, q3_z, dp_x)
+			end if
+		endif
+
 !********************Procédure d'iteration **********************
 !******************* nbre d'iter n_iter gt 1 ********************
+!
+!       do iter = 2,n_iter
+!          call solve_MHD(q1_x, q2_y, q3_z, fb1_MHD_x, fb2_MHD_x, fb3_MHD_x)  !=> F_(n+1)
+!          call add_action(fb1_MHD_x, fb2_MHD_x, fb3_MHD_x)
+! !
+!
+!          do ns=1,nb_substep
+!            call update_multiphysics_velocity(ntime, ns) !=> Take into account Fn and Fn+1
+!            call solve_scalar(q1_x, q2_y, q3_z, ns)
+!          enddo
+!
+!       enddo
 
-       do iter = 2,n_iter
-          call solve_MHD(q1_x, q2_y, q3_z)  !=> F_(n+1)
-          call add_action(fb1_MHD_x, fb2_MHD_x, fb3_MHD_x)
- !         call correct_mean_gradP1,3 ????? here
-          do ns=1,nb_substep
-            call update_multiphysics_velocity(ntime, ns) !=> Take into account Fn and Fn+1
-          enddo
-!         call correct_mean_gradP1,3   ??????? or here
-       enddo
+
+    !*********Passive MHD: solve MHD fields without coupling with NS (Lorentz Forces = 0)********
+      if (MHD_state.eq.3) then
+        call solve_MHD(q1_x, q2_y, q3_z, fb1_MHD_x, fb2_MHD_x, fb3_MHD_x,ntime,.true.) !=> Get F(n)
+      endif
+    !**************************************************
 
     end subroutine perform_multiphysics_MHD
 

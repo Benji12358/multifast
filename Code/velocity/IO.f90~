@@ -26,6 +26,28 @@ contains
 
     end subroutine read_blowing_settings
 
+    subroutine read_twave_settings()
+
+        use COMMON_workspace_view
+        use boundaries
+        use twave_settings
+
+        implicit none
+
+        open(15,file=trim(COMMON_settings_path)//'travelling_wave.d')
+
+        read(15,*) twave_on
+		read(15,*) inner_units
+		read(15,*) Re_tau
+        read(15,*) twave%Amp
+		read(15,*) twave%kappa
+		read(15,*) twave%omega
+
+        close(15)
+
+
+    end subroutine read_twave_settings
+
 
 end module VELOCITY_settings
 
@@ -66,8 +88,8 @@ contains
         file_path=trim(fields_dir)//"/P"
         call hdf_write_3Dfield(file_path, dp_x(:,:,:), "P", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
 
-        file_path=trim(fields_dir)//"/void"
-        call hdf_write_3Dfield(file_path, void_x(:,:,:), "void", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+!        file_path=trim(fields_dir)//"/void"
+!        call hdf_write_3Dfield(file_path, void_x(:,:,:), "void", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
 
         ! Save boundary conditions
         file_path=trim(fields_dir)//"/Wall"
@@ -103,7 +125,7 @@ contains
 
 
     ! Read all velocity fields in HDF5 format in individual files
-    subroutine read_fields(fields_dir, u_x_XYZ, v_x_XYZ, w_x_XYZ, pr_x_XYZ, decomp_XYZ, files_exist)
+    subroutine read_fields(fields_dir, u_x_XYZ, v_x_XYZ, w_x_XYZ, dp_x_XYZ, decomp_XYZ, files_exist)
 
         use HDF5_IO
         use physical_fields
@@ -115,7 +137,7 @@ contains
 
         type(DECOMP_INFO)   :: decomp_XYZ
         real(mytype), dimension(decomp_XYZ%xst(1):decomp_XYZ%xen(1), decomp_XYZ%xst(2):decomp_XYZ%xen(2),     &
-        decomp_XYZ%xst(3):decomp_XYZ%xen(3))   :: u_x_XYZ, v_x_XYZ, w_x_XYZ, pr_x_XYZ
+        decomp_XYZ%xst(3):decomp_XYZ%xen(3))   :: u_x_XYZ, v_x_XYZ, w_x_XYZ, dp_x_XYZ
 
         ! WARNING : NOT VALIDATED FOR COARSE FIELDS
         file_path=trim(fields_dir)//"/U"
@@ -128,7 +150,7 @@ contains
         call hdf_read_3Dfield(file_path, w_x_XYZ, "W", decomp_XYZ%xsz(1),decomp_XYZ%ysz(2),decomp_XYZ%zsz(3), decomp_XYZ%xst(1),decomp_XYZ%xen(1),  decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
 
         file_path=trim(fields_dir)//"/P"
-        call hdf_read_3Dfield(file_path, pr_x_XYZ, "P", decomp_XYZ%xsz(1),decomp_XYZ%ysz(2),decomp_XYZ%zsz(3), decomp_XYZ%xst(1),decomp_XYZ%xen(1),  decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
+        call hdf_read_3Dfield(file_path, dp_x_XYZ, "P", decomp_XYZ%xsz(1),decomp_XYZ%ysz(2),decomp_XYZ%zsz(3), decomp_XYZ%xst(1),decomp_XYZ%xen(1),  decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
 
 
         file_path=trim(fields_dir)//"/Wall"
@@ -181,6 +203,7 @@ contains
         use boundaries
 
         use mesh
+!        use HDF5_IO
 
         implicit none
 
@@ -194,14 +217,18 @@ contains
         real*8, dimension(:,:,:), allocatable   :: q1_y_YZ, q2_y_YZ, q3_y_YZ, press_3D_y_YZ
         real*8, dimension(:,:,:), allocatable   :: q1_y_Z, q2_y_Z, q3_y_Z, press_3D_y_Z
         real*8, dimension(:,:,:), allocatable   :: q1_z_Z, q2_z_Z, q3_z_Z, press_3D_z_Z
-        real*8, dimension(:,:,:), allocatable   :: q1_y
+        !real*8, dimension(:,:,:), allocatable   :: q1_y
 
         real*8, dimension(4, decomp_XYZ%xsz(1))    :: tmp_x_c
+        real*8, dimension(4, 2*decomp_XYZ%xsz(1)-1)    :: tmp_x_f
         real*8, dimension(4, decomp_XYZ%ysz(2))    :: tmp_y_c
         real*8, dimension(4, 2*decomp_XYZ%ysz(2)-1)    :: tmp_y_f
         real*8, dimension(4, decomp_XYZ%zsz(3))    :: tmp_z_c
+        real*8, dimension(4, 2*decomp_XYZ%zsz(3)-1)    :: tmp_z_f
 
         integer :: i, j, k
+
+!        integer :: n1s, n1e, n2s, n2e, n3s, n3e
 
         n1c=decomp_XYZ%xsz(1)
         n2c=decomp_XYZ%ysz(2)
@@ -217,28 +244,40 @@ contains
         allocate(q3_x_YZ(decomp_YZ%xst(1):decomp_YZ%xen(1), decomp_YZ%xst(2):decomp_YZ%xen(2), decomp_YZ%xst(3):decomp_YZ%xen(3)))
         allocate(press_3D_x_YZ(decomp_YZ%xst(1):decomp_YZ%xen(1), decomp_YZ%xst(2):decomp_YZ%xen(2), decomp_YZ%xst(3):decomp_YZ%xen(3)))
 
-        do k=decomp_XYZ%xst(3), min(n3m, decomp_XYZ%xen(3))
-            do j=decomp_XYZ%xst(2), min(n2, decomp_XYZ%xen(2))
-                call D0s(q1_x_XYZ(:,j,k), tmp_x_c(1, :), n1c, 0.d0, .false., NS_DEF_BC3)
-                call D0s(q2_x_XYZ(:,j,k), tmp_x_c(2, :), n1c, 0.d0, .true., NS_DEF_BC3)
-                call D0s(q3_x_XYZ(:,j,k), tmp_x_c(3, :), n1c, 0.d0, .true., NS_DEF_BC3)
-                call D0s(press_3D_x_XYZ(:,j,k), tmp_x_c(4, :), n1c, 0.d0, .true., NS_DEF_BC3)
+        if (n1c/=n1) then
+            do k=decomp_XYZ%xst(3), decomp_XYZ%xen(3)! min(n3m, decomp_XYZ%xen(3))
+                do j=decomp_XYZ%xst(2), decomp_XYZ%xen(2)! min(n2, decomp_XYZ%xen(2))
+                    call D0s(q1_x_XYZ(:,j,k), tmp_x_c(1, :), n1c, 0.d0, .false., NS_DEF_BC3)
+                    call D0s(q2_x_XYZ(:,j,k), tmp_x_c(2, :), n1c, 0.d0, .true., NS_DEF_BC3)
+                    call D0s(q3_x_XYZ(:,j,k), tmp_x_c(3, :), n1c, 0.d0, .true., NS_DEF_BC3)
+                    call D0s(press_3D_x_XYZ(:,j,k), tmp_x_c(4, :), n1c, 0.d0, .true., NS_DEF_BC3)
 
-                do i = 1, n1c-1
-                    q1_x_YZ(2*i, j, k)=tmp_x_c(1, i)
-                    q1_x_YZ(2*i-1, j, k)=q1_x_XYZ(i, j, k)
+                    do i = 1, n1c
+                        if(i/=n1c) q1_x_YZ(2*i, j, k)=tmp_x_c(1, i)
+                        q1_x_YZ(2*i-1, j, k)=q1_x_XYZ(i, j, k)
 
-                    q2_x_YZ(2*i, j, k)=q2_x_XYZ(i, j, k)
-                    q2_x_YZ(2*i-1, j, k)=tmp_x_c(2, i)
+                        if(i/=n1c) tmp_x_f(2, 2*i)=q2_x_XYZ(i, j, k)
+                        tmp_x_f(2,2*i-1)=tmp_x_c(2, i)
 
-                    q3_x_YZ(2*i, j, k)=q3_x_XYZ(i, j, k)
-                    q3_x_YZ(2*i-1, j, k)=tmp_x_c(3, i)
+                        if(i/=n1c) tmp_x_f(3, 2*i)=q3_x_XYZ(i, j, k)
+                        tmp_x_f(3, 2*i-1)=tmp_x_c(3, i)
 
-                    press_3D_x_YZ(2*i, j, k)=press_3D_x_XYZ(i, j, k)
-                    press_3D_x_YZ(2*i-1, j, k)=tmp_x_c(4, i)
-                end do
+                        if(i/=n1c) tmp_x_f(4, 2*i)=press_3D_x_XYZ(i, j, k)
+                        tmp_x_f(4, 2*i-1)=tmp_x_c(4, i)
+                    end do
+
+                    call D0s(tmp_x_f(2, :), q2_x_YZ(:,j,k), n1, 0.d0, .false., NS_DEF_BC3)
+                    call D0s(tmp_x_f(3, :), q3_x_YZ(:,j,k), n1, 0.d0, .false., NS_DEF_BC3)
+                    call D0s(tmp_x_f(4, :), press_3D_x_YZ(:,j,k), n1, 0.d0, .false., NS_DEF_BC3)
+
+                enddo
             enddo
-        enddo
+        else
+            q1_x_YZ=q1_x_XYZ
+            q2_x_YZ=q2_x_XYZ
+            q3_x_YZ=q3_x_XYZ
+            press_3D_x_YZ=press_3D_x_XYZ
+        endif
 
         allocate(q1_y_YZ(decomp_YZ%yst(1):decomp_YZ%yen(1), decomp_YZ%yst(2):decomp_YZ%yen(2), decomp_YZ%yst(3):decomp_YZ%yen(3)))
         allocate(q2_y_YZ(decomp_YZ%yst(1):decomp_YZ%yen(1), decomp_YZ%yst(2):decomp_YZ%yen(2), decomp_YZ%yst(3):decomp_YZ%yen(3)))
@@ -252,65 +291,64 @@ contains
 
         deallocate(q1_x_YZ, q2_x_YZ, q3_x_YZ, press_3D_x_YZ)
 
-
         ! Y INTERPOLATION
         allocate(q1_y_Z(decomp_Z%yst(1):decomp_Z%yen(1), decomp_Z%yst(2):decomp_Z%yen(2), decomp_Z%yst(3):decomp_Z%yen(3)))
         allocate(q2_y_Z(decomp_Z%yst(1):decomp_Z%yen(1), decomp_Z%yst(2):decomp_Z%yen(2), decomp_Z%yst(3):decomp_Z%yen(3)))
         allocate(q3_y_Z(decomp_Z%yst(1):decomp_Z%yen(1), decomp_Z%yst(2):decomp_Z%yen(2), decomp_Z%yst(3):decomp_Z%yen(3)))
         allocate(press_3D_y_Z(decomp_Z%yst(1):decomp_Z%yen(1), decomp_Z%yst(2):decomp_Z%yen(2), decomp_Z%yst(3):decomp_Z%yen(3)))
 
+        if (n2c/=n2) then
+            do k=decomp_YZ%yst(3), decomp_YZ%yen(3) !min(n3m, decomp_YZ%yen(3))
+                do i=ystart(1), yend(1) !min(n1m, yend(1))
 
+                    call D0s(q3_y_YZ(i,:,k), tmp_y_c(3, :), n2c, 0.d0, .true., NS_DEF_BC2)
+                    call D0s(q1_y_YZ(i,:,k), tmp_y_c(1, :), n2c, 0.d0, .true., NS_DEF_BC2)
+                    call D0s(press_3D_y_YZ(i,:,k), tmp_y_c(4, :), n2c, 0.d0, .true., NS_DEF_BC2)
 
+                    tmp_y_c(:, 1)=0.d0
+                    tmp_y_c(:, n2c)=0.d0
+                    do j = 1, n2c-1
+                        tmp_y_f(3, 2*j)=q3_y_YZ(i, j, k)
+                        tmp_y_f(3, 2*j-1)=tmp_y_c(3, j)
 
+                        tmp_y_f(1, 2*j)=q1_y_YZ(i, j, k)
+                        tmp_y_f(1, 2*j-1)=tmp_y_c(1, j)
 
+                        tmp_y_f(4, 2*j)=press_3D_y_YZ(i, j, k)
+                        tmp_y_f(4, 2*j-1)=tmp_y_c(4, j)
+                    end do
 
+                    tmp_y_f(3, 2*n2c-1)=tmp_y_c(3, n2c)
+                    tmp_y_f(1, 2*n2c-1)=tmp_y_c(1, n2c)
+                    tmp_y_f(4, 2*n2c-1)=tmp_y_c(4, n2c)
 
-        do k=decomp_YZ%yst(3), min(n3m, decomp_YZ%yen(3))
-            do i=ystart(1), min(n1m, yend(1))
+                    call D0s(tmp_y_f(3, :), q3_y_Z(i,:,k), n2, 0.d0, .false., NS_DEF_BC2)
+                    call D0s(tmp_y_f(1, :), q1_y_Z(i,:,k), n2, 0.d0, .false., NS_DEF_BC2)
+                    call D0s(tmp_y_f(4, :), press_3D_y_Z(i,:,k), n2, 0.d0, .false., NS_DEF_BC2)
 
-                call D0s(q3_y_YZ(i,:,k), tmp_y_c(3, :), n2c, 0.d0, .true., NS_DEF_BC2)
-                call D0s(q1_y_YZ(i,:,k), tmp_y_c(1, :), n2c, 0.d0, .true., NS_DEF_BC2)
-                call D0s(press_3D_y_YZ(i,:,k), tmp_y_c(4, :), n2c, 0.d0, .true., NS_DEF_BC2)
-
-                tmp_y_c(:, 1)=0.d0
-                tmp_y_c(:, n2c)=0.d0
-                do j = 1, n2c-1
-                    tmp_y_f(3, 2*j)=q3_y_YZ(i, j, k)
-                    tmp_y_f(3, 2*j-1)=tmp_y_c(3, j)
-
-                    tmp_y_f(1, 2*j)=q1_y_YZ(i, j, k)
-                    tmp_y_f(1, 2*j-1)=tmp_y_c(1, j)
-
-                    tmp_y_f(4, 2*j)=press_3D_y_YZ(i, j, k)
-                    tmp_y_f(4, 2*j-1)=tmp_y_c(4, j)
                 end do
-
-                tmp_y_f(3, 2*n2c-1)=tmp_y_c(3, n2c)
-                tmp_y_f(1, 2*n2c-1)=tmp_y_c(1, n2c)
-                tmp_y_f(4, 2*n2c-1)=tmp_y_c(4, n2c)
-
-                call D0s(tmp_y_f(3, :), q3_y_Z(i,:,k), n2, 0.d0, .false., NS_DEF_BC2)
-                call D0s(tmp_y_f(1, :), q1_y_Z(i,:,k), n2, 0.d0, .false., NS_DEF_BC2)
-                call D0s(tmp_y_f(4, :), press_3D_y_Z(i,:,k), n2, 0.d0, .false., NS_DEF_BC2)
-
             end do
-        end do
 
+            do k=decomp_YZ%yst(3), decomp_YZ%yen(3) !min(n3m, decomp_YZ%yen(3))
+                do i=ystart(1), yend(1) !min(n1m, yend(1))
 
-        do k=decomp_YZ%yst(3), min(n3m, decomp_YZ%yen(3))
-            do i=ystart(1), min(n1m, yend(1))
+                    call D0s(q2_y_YZ(i,:,k), tmp_y_c(2, :), n2c, 0.d0, .false., NS_DEF_BC2)
 
-                call D0s(q2_y_YZ(i,:,k), tmp_y_c(2, :), n2c, 0.d0, .false., NS_DEF_BC2)
+                    do j = 1, n2c-1
+                        q2_y_Z(i, 2*j-1, k)=q2_y_YZ(i, j, k)
+                        q2_y_Z(i, 2*j, k)=tmp_y_c(2, j)
+                    end do
 
-                do j = 1, n2c-1
-                    q2_y_Z(i, 2*j-1, k)=q2_y_YZ(i, j, k)
-                    q2_y_Z(i, 2*j, k)=tmp_y_c(2, j)
+                    q2_y_Z(i, 2*n2c-1, k)=q2_y_YZ(i, n2c, k)
+
                 end do
-
-                q2_y_Z(i, 2*n2c-1, k)=q2_y_YZ(i, n2c, k)
-
             end do
-        end do
+        else
+            q1_y_Z=q1_y_YZ
+            q2_y_Z=q2_y_YZ
+            q3_y_Z=q3_y_YZ
+            press_3D_y_Z=press_3D_y_YZ
+        endif
 
         allocate(q1_z_Z(decomp_Z%zst(1):decomp_Z%zen(1), decomp_Z%zst(2):decomp_Z%zen(2), decomp_Z%zst(3):decomp_Z%zen(3)))
         allocate(q2_z_Z(decomp_Z%zst(1):decomp_Z%zen(1), decomp_Z%zst(2):decomp_Z%zen(2), decomp_Z%zst(3):decomp_Z%zen(3)))
@@ -327,30 +365,58 @@ contains
 
         ! Z INTERPOLATION ______________________________________________________
 
-        do j = decomp_Z%zst(2), min(n2, decomp_Z%zen(2))
-            do i = decomp_Z%zst(1), min(n1-1, decomp_Z%zen(1))
-                call D0s(q1_z_Z(i,j,:), tmp_z_c(1, :), n3c, 0.d0, .true., NS_DEF_BC1)
-                call D0s(q2_z_Z(i,j,:), tmp_z_c(2, :), n3c, 0.d0, .true., NS_DEF_BC1)
-                call D0s(q3_z_Z(i,j,:), tmp_z_c(3, :), n3c, 0.d0, .false., NS_DEF_BC1)
-                call D0s(press_3D_z_Z(i,j,:), tmp_z_c(4, :), n3c, 0.d0, .true., NS_DEF_BC1)
+        if(n3c/=n3) then
+            do j = decomp_Z%zst(2), decomp_Z%zen(2) ! min(n2, decomp_Z%zen(2))
+                do i = decomp_Z%zst(1), decomp_Z%zen(1) ! min(n1-1, decomp_Z%zen(1))
+                    call D0s(q1_z_Z(i,j,:), tmp_z_c(1, :), n3c, 0.d0, .true., NS_DEF_BC1)
+                    call D0s(q2_z_Z(i,j,:), tmp_z_c(2, :), n3c, 0.d0, .true., NS_DEF_BC1)
+                    call D0s(q3_z_Z(i,j,:), tmp_z_c(3, :), n3c, 0.d0, .false., NS_DEF_BC1)
+                    call D0s(press_3D_z_Z(i,j,:), tmp_z_c(4, :), n3c, 0.d0, .true., NS_DEF_BC1)
 
-                do k = 1, n3c-1
+                    do k = 1, n3c
 
-                    q1_z(i, j, 2*k)=q1_z_Z(i, j, k)
-                    q1_z(i, j, 2*k-1)=tmp_z_c(1, k)
+                        if(k/=n3c) tmp_z_f(1, 2*k)=q1_z_Z(i, j, k)
+                        tmp_z_f(1, 2*k-1)=tmp_z_c(1, k)
 
-                    q2_z(i, j, 2*k)=q2_z_Z(i, j, k)
-                    q2_z(i, j, 2*k-1)=tmp_z_c(2, k)
+                        if(k/=n3c) tmp_z_f(2, 2*k)=q2_z_Z(i, j, k)
+                        tmp_z_f(2, 2*k-1)=tmp_z_c(2, k)
 
-                    q3_z(i, j, 2*k)=tmp_z_c(3, k)
-                    q3_z(i, j, 2*k-1)=q3_z_Z(i, j, k)
+                        if(k/=n3c) q3_z(i, j, 2*k)=tmp_z_c(3, k)
+                        q3_z(i, j, 2*k-1)=q3_z_Z(i, j, k)
 
-                    press_3D_z(i, j, 2*k)=press_3D_z_Z(i, j, k)
-                    press_3D_z(i, j, 2*k-1)=tmp_z_c(4, k)
+                        if(k/=n3c) tmp_z_f(4, 2*k)=press_3D_z_Z(i, j, k)
+                        tmp_z_f(4, 2*k-1)=tmp_z_c(4, k)
+
+                    end do
+
+                    call D0s(tmp_z_f(1, :), q1_z(i,j,:), n3, 0.d0, .false., NS_DEF_BC1)
+                    call D0s(tmp_z_f(2, :), q2_z(i,j,:), n3, 0.d0, .false., NS_DEF_BC1)
+                    call D0s(tmp_z_f(4, :), press_3D_z(i,j,:), n3, 0.d0, .false., NS_DEF_BC1)
 
                 end do
             end do
-        end do
+        else
+            q1_z=q1_z_Z
+            q2_z=q2_z_Z
+            q3_z=q3_z_Z
+            press_3D_z=press_3D_z_Z
+        endif
+
+!        if(nrank==0)  call hdf_create_file_with_3Dmesh('Fine_fields', Z, Y,X, "x1", "x2", "x3", n1, n2,n3)
+!
+!        if(nrank==0)  call hdf_addgroup('Fine_fields', "q")
+!
+!        n1s=zstart(1)
+!        n1e=zend(1)
+!        n2s=zstart(2)
+!        n2e=zend(2)
+!        n3s=zstart(3)
+!        n3e=zend(3)
+!
+!        call hdf_add_3Dfield('Fine_fields', q1_z(n1s:n1e,n2s:n2e,n3s:n3e), "q/q1", n1, n2, n3, n1s, n1e, n2s, n2e, n3s, n3e)
+!        call hdf_add_3Dfield('Fine_fields', q2_z(n1s:n1e,n2s:n2e,n3s:n3e), "q/q2", n1, n2, n3, n1s, n1e, n2s, n2e, n3s, n3e)
+!        call hdf_add_3Dfield('Fine_fields', q3_z(n1s:n1e,n2s:n2e,n3s:n3e), "q/q3", n1, n2, n3, n1s, n1e, n2s, n2e, n3s, n3e)
+!        call hdf_add_3Dfield('Fine_fields', press_3D_z(n1s:n1e,n2s:n2e,n3s:n3e), "pr", n1, n2, n3, n1s, n1e, n2s, n2e, n3s, n3e)
 
         deallocate(q1_z_Z, q2_z_Z, q3_z_Z, press_3D_z_Z)
 
@@ -363,6 +429,7 @@ contains
         use physical_fields
         use mesh
         use DNS_settings
+        use start_settings
 
 
         use VELOCITY_dao, only: DAO_read_fields => read_fields
@@ -374,28 +441,31 @@ contains
         logical, optional               :: fexist(4)
 
         type(DECOMP_INFO)   :: decomp_XYZ
-        integer             :: n1c, n2c, n3c        ! Coarse mesh resolution
-        real*8, dimension(:,:,:), allocatable   :: u_x_XYZ, v_x_XYZ, w_x_XYZ, pr_x_XYZ
+!        integer, intent(in)             :: n1c, n2c, n3c        ! Coarse mesh resolution
+        real*8, dimension(:,:,:), allocatable   :: u_x_XYZ, v_x_XYZ, w_x_XYZ, dp_x_XYZ
 
         if (fill_from_coarse) then
             ! Coarse field dimensions :
-            n1c=(n1+1)/2
-            n2c=(n2+1)/2
-            n3c=(n3+1)/2
+!            n1c=(n1+1)/2
+!            n2c=(n2+1)/2
+!            n3c=(n3+1)/2
 
             call decomp_info_init(n1c, n2c, n3c, decomp_XYZ)
 
             allocate(w_x_XYZ(decomp_XYZ%xst(1):decomp_XYZ%xen(1), decomp_XYZ%xst(2):decomp_XYZ%xen(2), decomp_XYZ%xst(3):decomp_XYZ%xen(3)))
             allocate(v_x_XYZ(decomp_XYZ%xst(1):decomp_XYZ%xen(1), decomp_XYZ%xst(2):decomp_XYZ%xen(2), decomp_XYZ%xst(3):decomp_XYZ%xen(3)))
             allocate(u_x_XYZ(decomp_XYZ%xst(1):decomp_XYZ%xen(1), decomp_XYZ%xst(2):decomp_XYZ%xen(2), decomp_XYZ%xst(3):decomp_XYZ%xen(3)))
-            allocate(pr_x_XYZ(decomp_XYZ%xst(1):decomp_XYZ%xen(1), decomp_XYZ%xst(2):decomp_XYZ%xen(2), decomp_XYZ%xst(3):decomp_XYZ%xen(3)))
+            allocate(dp_x_XYZ(decomp_XYZ%xst(1):decomp_XYZ%xen(1), decomp_XYZ%xst(2):decomp_XYZ%xen(2), decomp_XYZ%xst(3):decomp_XYZ%xen(3)))
 
             u_x_XYZ=2.d0
+            v_x_XYZ=0.d0
+            w_x_XYZ=0.d0
+            dp_x_XYZ=0.d0
 
             ! Read coarse fields
-            call DAO_read_fields(file, u_x_XYZ, v_x_XYZ, w_x_XYZ, pr_x_XYZ, decomp_XYZ)
+            call DAO_read_fields(file, u_x_XYZ, v_x_XYZ, w_x_XYZ, dp_x_XYZ, decomp_XYZ)
             ! Build the fine field from coarse ones
-            call build_fine_field(w_x_XYZ, v_x_XYZ, u_x_XYZ, pr_x_XYZ, q1_z, q2_z, q3_z, pr_z, decomp_XYZ)
+            call build_fine_field(w_x_XYZ, v_x_XYZ, u_x_XYZ, dp_x_XYZ, q1_z, q2_z, q3_z, dp_z, decomp_XYZ)
 
             ! Spread to all transpositions
             call transpose_z_to_y(q3_z, q3_y)
@@ -407,14 +477,14 @@ contains
             call transpose_z_to_y(q1_z, q1_y)
             call transpose_y_to_x(q1_y, q1_x)
 
-            call transpose_z_to_y(pr_z, pr_y)
-            call transpose_y_to_x(pr_y, pr_x)
+            call transpose_z_to_y(dp_z, dp_y)
+            call transpose_y_to_x(dp_y, dp_x)
 
         else
 
             call decomp_info_init(n1, n2, n3, decomp_XYZ)
 
-            call DAO_read_fields(file, q3_x, q2_x, q1_x, pr_x, decomp_XYZ, fexist)
+            call DAO_read_fields(file, q3_x, q2_x, q1_x, dp_x, decomp_XYZ, fexist)
 
             ! Spread to all transpositions
             call transpose_x_to_y(q3_x, q3_y)
@@ -426,8 +496,8 @@ contains
             call transpose_x_to_y(q1_x, q1_y)
             call transpose_y_to_z(q1_y, q1_z)
 
-            call transpose_x_to_y(pr_x, pr_y)
-            call transpose_y_to_z(pr_y, pr_z)
+            call transpose_x_to_y(dp_x, dp_y)
+            call transpose_y_to_z(dp_y, dp_z)
 
         end if
 
@@ -493,28 +563,28 @@ contains
         character(*)    :: file_path
 
         divergence_file_id=400
-7698    format(i7,',',x,8e18.9)
+!7698    format(i7,',',x,8e18.9)
 
         open(divergence_file_id, file=trim(file_path), position="append")
 
-        write(divergence_file_id,7698) ntime, cflmax, divmax, div_mean, divdiff, divg1, divg2
+        write(divergence_file_id,*) ntime, cflmax, divmax, div_mean, divdiff, divg1, divg2
         close(divergence_file_id)
 
     end subroutine export_divergence_file
 
-    subroutine export_kinetic(file_path, flow_rate, kinetic_energy, enstrophy, ntime)
+    subroutine export_kinetic(file_path, flow_rate, spanwise_flow_rate, kinetic_energy, enstrophy, ntime)
 
         implicit none
-        real*8          :: kinetic_energy(3), enstrophy, flow_rate
+        real*8          :: kinetic_energy(3), enstrophy, flow_rate, spanwise_flow_rate
         integer         :: ntime, kinetic_file_id
         character(*)    :: file_path
 
         kinetic_file_id=400
-7699    format(i7,',',x,6e16.9)
+!7699    format(i7,',',x,7e16.9)
 
         open(kinetic_file_id, file=trim(file_path), position="append")
 
-        write(kinetic_file_id,7699) ntime, sum(kinetic_energy), flow_rate, kinetic_energy, enstrophy
+        write(kinetic_file_id,*) ntime, sum(kinetic_energy), flow_rate, spanwise_flow_rate, kinetic_energy, enstrophy
         close(kinetic_file_id)
 
     end subroutine export_kinetic
@@ -600,10 +670,10 @@ contains
         real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))      :: q2c_y
         real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))      :: q3c_z
 
-        real*8      :: kinetic_energy(3), enstrophy, flow_rate
+        real*8      :: kinetic_energy(3), enstrophy, flow_rate, spanwise_flow_rate
 
-        call perform_kinetic(q3_z, q2_y, q1_x, flow_rate, kinetic_energy, enstrophy, streamwise)
-        if(nrank==0) call export_kinetic(kinetic_history_file, flow_rate, kinetic_energy, enstrophy, ntime)
+        call perform_kinetic(q3_z, q2_y, q1_x, flow_rate,spanwise_flow_rate, kinetic_energy, enstrophy, streamwise)
+        if(nrank==0) call export_kinetic(kinetic_history_file, flow_rate,spanwise_flow_rate, kinetic_energy, enstrophy, ntime)
 
         if (IBM_activated) then
             if(mod(ntime, nb_flow_rate).eq.0) then
@@ -620,5 +690,60 @@ contains
         endif
 
     end subroutine export_properties
+
+    subroutine export_gradP
+
+        use run_ctxt_data
+        use physical_fields, only: dP_streamwise, dP_spanwise
+        use VELOCITY_solver, only: Fext1, Fext3
+        use DNS_settings, only:streamwise
+        use mesh
+        use mpi
+
+        implicit none
+
+        integer :: i, j, k, mpierr
+        real*8  :: Fstream, Fspan, stot
+
+        Fstream=0.d0
+        Fspan=0.d0
+        stot=0.d0
+
+        if (streamwise==1) then
+            do i=1, n1m
+                do j =xstart(2), min(n2m, xend(2))
+                    do k= xstart(3), min (n3m, xend(3))
+                        Fstream=Fstream+Fext1(i,j,k)*dx1*dx3*cell_size_Y(j)
+                        Fspan=Fspan+Fext3(i,j,k)*dx1*dx3*cell_size_Y(j)
+                    enddo
+                enddo
+            enddo
+
+        elseif (streamwise==3) then
+            do i=1, n1m
+                do j =xstart(2), min(n2m, xend(2))
+                    do k= xstart(3), min (n3m, xend(3))
+                        Fstream=Fstream+Fext3(i,j,k)*dx1*dx3*cell_size_Y(j)
+                        Fspan=Fspan+Fext1(i,j,k)*dx1*dx3*cell_size_Y(j)
+                    enddo
+                enddo
+            enddo
+        endif
+
+        call MPI_ALLREDUCE (Fstream, stot, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpierr)
+        Fstream=stot/(L1*L2*L3)
+
+        stot=0.d0
+
+        call MPI_ALLREDUCE (Fspan, stot, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpierr)
+        Fspan=stot/(L1*L2*L3)
+
+        if(nrank==0) then
+            open(3698, file="gradP.dat", position="append")
+            write(3698,*) ntime, t, -dP_streamwise +Fstream, -dP_streamwise, -dP_spanwise+ Fspan, -dP_spanwise
+            close(3698)
+        endif
+
+    end subroutine export_gradP
 
 end module VELOCITY_log_writer

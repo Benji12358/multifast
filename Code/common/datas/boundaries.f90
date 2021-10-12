@@ -32,4 +32,12 @@ module boundaries
     type(slow), dimension(10)   :: slows
     integer :: nb_slows=0
 
+	type wave
+		real*8 :: Amp
+		real*8 :: kappa
+		real*8 :: omega
+	end type wave
+
+	type(wave) :: Twave
+
 end module boundaries

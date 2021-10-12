@@ -2937,7 +2937,7 @@ contains
         integer             :: nx, ny, nz
 
         select case (nclx1)
-            case (UNBOUNDED, FRINGE)
+            case (UNBOUNDED)
                 nclx=0
                 nx=n1-1
             case (FREESLIP)
@@ -2951,7 +2951,7 @@ contains
         end select
 
         select case (ncly1)
-            case (UNBOUNDED, FRINGE)
+            case (UNBOUNDED)
                 ncly=0
                 ny=n2-1
             case (FREESLIP)
@@ -2965,7 +2965,7 @@ contains
         end select
 
         select case (nclz1)
-            case (UNBOUNDED, FRINGE)
+            case (UNBOUNDED)
                 nclz=0
                 nz=n3-1
             case (FREESLIP)
