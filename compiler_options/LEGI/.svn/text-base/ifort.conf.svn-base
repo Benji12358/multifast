@@ -1,6 +1,0 @@
-
-
-FF=mpif90
-
-# Compiler options ________________________________________________________________
-COMPILER_OPTIONS=-O3 -m64 -auto-scalar -mcmodel=medium -convert big_endian -i-dynamic
