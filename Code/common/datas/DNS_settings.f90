@@ -7,7 +7,7 @@ module DNS_settings
     ! inflow and inner field and avoid divergence of code
     integer, parameter  :: CONSTANT_FLOW=0, CHANNEL_FLOW=1, FLOW_FROM_INFLOW=2
 
-    real*8         :: dt,ren, Uc, g, h_height
+    real*8         :: dt,ren, Uc, g, h_height, fringe_length
     integer         :: save_gradP_frequency ! mean_gradP export frequency
     integer         :: first_it=0
     integer         :: last_it

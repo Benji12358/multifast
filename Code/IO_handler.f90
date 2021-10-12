@@ -20,6 +20,9 @@ contains
             open(15,file=trim(COMMON_settings_path)//'start.d')
 
             read(15,*) start_source_type
+            read(15,*) half_length
+            read(15,*) half_length_inflow
+            read(15,*) previous_fringe_start
             read(15,*) start_from_coarse_file_int, n1c, n2c, n3c !
             read(15,*)
             read(15,'(a)') external_fields_path  ! path of the read field  file (cha.rea)
@@ -80,7 +83,7 @@ contains
             read(15,*) stretch_Y, mesh_type
 
             close(15)
-
+    
             n1m=n1-1                !number of spanwise cells
             n2m=n2-1                !number of normal cells
             n3m=n3-1                !number of streamwise cells
@@ -107,10 +110,13 @@ contains
             read(15,*) BC1, BC2, BC3
             read(15,*) streamwise
             read(15,*) flow_type
+            read(15,*) delta_BL
+            read(15,*) outflow_type
             read(15,*) outflow_buff
             read(15,*) inflow_buff
             read(15,*) inflow_mode
             read(15,'(a)')COMMON_inflow_path  ! path for inflow
+            read(15,*) nx_start ! x for inflow
             read(15,*) divro
             read(15,*) d ! with physical unity (mm)
             read(15,*) g ! with physical unity (mm/s/s)
@@ -184,6 +190,7 @@ contains
         subroutine read_IBM_settings()
 
             use IBM_settings
+            use mesh
 
             implicit none
             integer :: IBM_activated_int
@@ -192,10 +199,14 @@ contains
             open(15,file=trim(COMMON_settings_path)//'IBM.d')
 
             read(15,*) IBM_activated_int
-            read(15,'(a)')obj_file_path  ! path of the read field  file (cha.rea)
+            read(15,*) interpol_type
+            read(15,'(a)') obj_file_path  ! path of the read field  file (cha.rea)
             read(15,*) body_x1, body_x2, body_x3
             read(15,*) body_scale_x1, body_scale_x2, body_scale_x3
             close(15)
+
+            ! body_scale_x3 = L3/2.d0
+            ! body_x3 = L3/2.d0
 
             IBM_activated=(IBM_activated_int==1)
 
@@ -323,6 +334,53 @@ contains
             close(68)
 
         end subroutine read_vortices_settings
+
+        subroutine read_counterrotating_vortices_settings()
+
+            use mathematical_constants
+            use DNS_settings
+
+            implicit none
+            integer :: counterrotating_vortices_state
+
+            open(10,file=trim(COMMON_settings_path)//'counterrotating_vortices.d')
+
+            read(10,*) 
+            read(10,*) 
+            read(10,*) counterrotating_vortices_state
+            read(10,*) perturbation_angle
+            read(10,*)
+            read(10,*) epsilon_A
+            read(10,*) p_A
+            read(10,*) q_A
+            read(10,*) lx_A
+            read(10,*) lz_A
+            read(10,*) xc_A
+            read(10,*) zc_A
+            read(10,*)
+            read(10,*) epsilon_B
+            read(10,*) p_B
+            read(10,*) q_B
+            read(10,*) lx_B
+            read(10,*) lz_B
+            read(10,*) xc_B
+            read(10,*) zc_B
+
+            close(10)
+
+            xc_A = xc_A*pi
+            zc_A = zc_A*pi
+            xc_B = xc_B*pi
+            zc_B = zc_B*pi
+
+            !lx_A = lx_A*pi
+            !lz_A = lz_A*pi
+            !lx_B = lx_B*pi
+            !lz_B = lz_B*pi
+
+            use_counterrotating_vortices = (counterrotating_vortices_state==1)
+
+        end subroutine read_counterrotating_vortices_settings
 
 
         subroutine resume_settings()
@@ -474,6 +532,8 @@ contains
                         write(*,*)'BC1: Freeslip'
                     case (NOSLIP)
                         write(*,*)'BC1: Noslip'
+                    case (FRINGE)
+                        write(*,*)'BC1: Pseudo-Periodic with Fringe function'
                     case (OPEN)
                         write(*,*)'BC1: In/Outflow'
                         if (flow_type==FLOW_FROM_INFLOW)write(*,*)'First field from outflow'
@@ -508,6 +568,8 @@ contains
                         write(*,*)'BC3: Noslip'
                     case (OPEN)
                         write(*,*)'BC3: In/Outflow'
+                    case (FRINGE)
+                        write(*,*)'BC3: Pseudo-Periodic with Fringe function'
 
                     case default
 
@@ -1067,15 +1129,15 @@ contains
                     if(nrank==0)  call hdf_addgroup(file_path, slice_name)
 
                     if (param_anim2D_1%export_q1) then
-                        call hdf_add_2Dfield(trim(file_path), IBM_mask1(i, :,:), trim(slice_name)//"/q1", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+                        call hdf_add_2Dfield(trim(file_path), IBM_mask1_x(i, :,:), trim(slice_name)//"/q1", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
                     end if
 
                     if (param_anim2D_1%export_q2) then
-                        call hdf_add_2Dfield(trim(file_path), IBM_mask2(i, :,:), trim(slice_name)//"/q2", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+                        call hdf_add_2Dfield(trim(file_path), IBM_mask2_x(i, :,:), trim(slice_name)//"/q2", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
                     end if
 
                     if (param_anim2D_1%export_q3) then
-                        call hdf_add_2Dfield(trim(file_path), IBM_mask2(i, :,:), trim(slice_name)//"/q3", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+                        call hdf_add_2Dfield(trim(file_path), IBM_mask2_x(i, :,:), trim(slice_name)//"/q3", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
                     end if
 
                 end do
@@ -1162,15 +1224,15 @@ contains
 !                    if(nrank==0)  call hdf_addgroup(file_path, slice_name)
 !
 !                    if (param_anim2D_1%export_q1) then
-!                        call hdf_add_2Dfield(trim(file_path), IBM_mask1(i, :,:), trim(slice_name)//"/q1", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+!                        call hdf_add_2Dfield(trim(file_path), IBM_mask1_x(i, :,:), trim(slice_name)//"/q1", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
 !                    end if
 !
 !                    if (param_anim2D_1%export_q2) then
-!                        call hdf_add_2Dfield(trim(file_path), IBM_mask2(i, :,:), trim(slice_name)//"/q2", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+!                        call hdf_add_2Dfield(trim(file_path), IBM_mask2_x(i, :,:), trim(slice_name)//"/q2", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
 !                    end if
 !
 !                    if (param_anim2D_1%export_q3) then
-!                        call hdf_add_2Dfield(trim(file_path), IBM_mask2(i, :,:), trim(slice_name)//"/q3", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+!                        call hdf_add_2Dfield(trim(file_path), IBM_mask2_x(i, :,:), trim(slice_name)//"/q3", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
 !                    end if
 !
 !                end do
@@ -1683,8 +1745,8 @@ contains
         character(10)           :: tmp_str
         integer                 :: i,j
 
-        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))  :: IBM_mask1_z, IBM_mask2_z, IBM_mask3_z
         real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))  :: IBM_mask1_y, IBM_mask2_y, IBM_mask3_y
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))  :: IBM_mask1_z, IBM_mask2_z, IBM_mask3_z
 
         integer         :: k,s, xdmf_id, ierr, anim_id
 
@@ -1750,13 +1812,13 @@ contains
 
             if (IBM_activated) then
 
-                call transpose_x_to_y(IBM_mask1, IBM_mask1_y)
+                call transpose_x_to_y(IBM_mask1_x, IBM_mask1_y)
                 call transpose_y_to_z(IBM_mask1_y, IBM_mask1_z)
 
-                call transpose_x_to_y(IBM_mask2, IBM_mask2_y)
+                call transpose_x_to_y(IBM_mask2_x, IBM_mask2_y)
                 call transpose_y_to_z(IBM_mask2_y, IBM_mask2_z)
 
-                call transpose_x_to_y(IBM_mask3, IBM_mask3_y)
+                call transpose_x_to_y(IBM_mask3_x, IBM_mask3_y)
                 call transpose_y_to_z(IBM_mask3_y, IBM_mask3_z)
 
                 do s = 1, param_anim2D_3%nb_slices
@@ -1857,14 +1919,14 @@ contains
 !
 !                if(nrank==0)  call hdf_addgroup(file_path, "MASKS")
 !
-!                call transpose_x_to_y(IBM_mask1, IBM_mask1_y)
-!                call transpose_y_to_z(IBM_mask1_y, IBM_mask1_z)
+!                call transpose_x_to_y(IBM_mask1_x, IBM_mask1_x_y)
+!                call transpose_y_to_z(IBM_mask1_x_y, IBM_mask1_x_z)
 !
-!                call transpose_x_to_y(IBM_mask2, IBM_mask2_y)
-!                call transpose_y_to_z(IBM_mask2_y, IBM_mask2_z)
+!                call transpose_x_to_y(IBM_mask2_x, IBM_mask2_x_y)
+!                call transpose_y_to_z(IBM_mask2_x_y, IBM_mask2_x_z)
 !
-!                call transpose_x_to_y(IBM_mask3, IBM_mask3_y)
-!                call transpose_y_to_z(IBM_mask3_y, IBM_mask3_z)
+!                call transpose_x_to_y(IBM_mask3_x, IBM_mask3_x_y)
+!                call transpose_y_to_z(IBM_mask3_x_y, IBM_mask3_x_z)
 !
 !                do s = 1, param_anim2D_3%nb_slices
 !
@@ -1874,15 +1936,15 @@ contains
 !                    if(nrank==0)  call hdf_addgroup(file_path, slice_name)
 !
 !                    if (param_anim2D_3%export_q1) then
-!                        call hdf_add_2Dfield(trim(file_path), IBM_mask1_z(:, :,k), trim(slice_name)//"/q1", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+!                        call hdf_add_2Dfield(trim(file_path), IBM_mask1_x_z(:, :,k), trim(slice_name)//"/q1", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
 !                    end if
 !
 !                    if (param_anim2D_3%export_q2) then
-!                        call hdf_add_2Dfield(trim(file_path), IBM_mask2_z(:, :,k), trim(slice_name)//"/q2", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+!                        call hdf_add_2Dfield(trim(file_path), IBM_mask2_x_z(:, :,k), trim(slice_name)//"/q2", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
 !                    end if
 !
 !                    if (param_anim2D_3%export_q3) then
-!                        call hdf_add_2Dfield(trim(file_path), IBM_mask3_z(:, :,k), trim(slice_name)//"/q3", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+!                        call hdf_add_2Dfield(trim(file_path), IBM_mask3_x_z(:, :,k), trim(slice_name)//"/q3", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
 !                    end if
 !
 !                end do
