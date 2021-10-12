@@ -11,7 +11,7 @@ contains
         use mesh
 
         implicit none
-        integer             :: fringe_state, n_interest_region
+        integer             :: fringe_state
 
         open(15,file=trim(COMMON_settings_path)//'fringe.d')
 
@@ -37,7 +37,7 @@ contains
 
                 L1 = L1*(1+fringe_length)
                 n_interest_region = int(n1/(1+fringe_length))
-                n_fringe_region = n1 - n_interest_region
+                n_fringe_region = n1 - n_interest_region - delta_activation - 1
                 n_fringe_end = n1
             endif
 
@@ -45,7 +45,7 @@ contains
 
                 L3 = L3*(1+fringe_length)
                 n_interest_region = int(n3/(1+fringe_length))
-                n_fringe_region = n3 - n_interest_region
+                n_fringe_region = n3 - n_interest_region - delta_activation - 1
                 n_fringe_end = n3
             endif
     
@@ -57,7 +57,7 @@ contains
             ! At this stage, L1/L3/n1 and n3 have not been updated
             n_delta_rise = int(delta_rise*n_fringe_region)
             n_delta_fall = int(delta_fall*n_fringe_region)
-            n_fringe_start = n_interest_region + delta_activation
+            n_fringe_start = n_interest_region + delta_activation 
             n_delta_fall = 1
 
         endif

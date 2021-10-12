@@ -2,10 +2,10 @@ include $(ENVIRONMENT_FILE)
 
 FFLAGS		= -c $(COMPILER_OPTIONS) $(DECOMP2D_INC)
 SOURCES		= sources
-INCS 		= $(FLAG_FFT) $(HDF5_INC) $(IO_INC) $(SOLVERS_INC) $(MISCELLANEOUS_INC) $(SCHEMES_INC) -I $(COMMON) -I $(CORE) -I $(CORE)/FRINGE
+INCS 		= $(FLAG_FFT) $(HDF5_INC) $(IO_INC) $(SOLVERS_INC) $(MISCELLANEOUS_INC) $(SCHEMES_INC) -I $(COMMON) -I $(CORE) -I $(CORE)/FRINGE -I $(CORE)/passive_scalar
 DATA		=./data
 FIELDS		=./fields_utils
-OBJ			=$(DATA)/workspace_view.o $(DATA)/settings.o $(FIELDS)/operations.o $(FIELDS)/properties.o $(FIELDS)/quality_criteriums.o initializer.o BC_controller.o \
+OBJ			=$(DATA)/workspace_view.o $(DATA)/settings.o $(FIELDS)/operations.o $(FIELDS)/properties.o $(FIELDS)/quality_criteriums.o  initializer.o BC_controller.o \
 			open.o solver.o IO.o Lifecycle.o interfaces.o
 
 ./.lib/libvelocity.a: $(OBJ)

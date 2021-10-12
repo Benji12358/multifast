@@ -66,7 +66,6 @@ contains
         if (inflow_buff>0) call inflow_from_file
         if (inflow_buff==0) call default_inflow
 
-
         return
 
         contains
@@ -85,7 +84,7 @@ contains
 
                 !if (nrank==0) close(15)
 
-                if (inflow_mode==BOUNDARY_LAYER) then
+                if (inflow_mode==INFLOW_BOUNDARY_LAYER) then
                     q1_x(1,:,:)=0.d0
                     q2_x(1,:,:)=0.d0
                     q3_x(1,:,:)=0.d0
@@ -101,7 +100,7 @@ contains
 
                 endif
 
-                if (inflow_mode==CHANNEL_FLOW) then
+                if (inflow_mode==INFLOW_POISEUILLE) then
                     q1_x(1,:,:)=0.d0
                     q2_x(1,:,:)=0.d0
                     q3_x(1,:,:)=0.d0
@@ -117,7 +116,7 @@ contains
 
                 endif                
 
-                if (inflow_mode==CONSTANT_FLOW) then
+                if (inflow_mode==INFLOW_SQUARE) then
                     q1_x(1,:,:)=0.d0
                     q2_x(1,:,:)=0.d0
                     q3_x(1,:,:)=0.d0
@@ -203,7 +202,7 @@ contains
 
                   end if
 
-                  do k = xstart(3),xend(3)
+                  do k = xstart(3),min(xend(3),n3m)
                       do j= xstart(2),xend(2)
                           stream1(j,k)=f2(j)*f3(k)
                       end do
@@ -274,7 +273,7 @@ contains
             real*8, dimension(1:n2)                                 :: f1
 
             real*8                                                  :: delta_BL
-            integer                                                 :: j
+            integer                                                 :: j, k
             logical                                                 :: pair_n2
 
             pair_n2 = (mod(n2, 2)==0)
@@ -296,7 +295,9 @@ contains
             endif
 
             do j = xstart(2),xend(2)
-                stream1(j,:)=f1(j)
+                do k = xstart(3), min(xend(3),n3m)
+                    stream1(j,k)=f1(j)
+                end do
             end do
 
             end subroutine perform_boundary_layer_1

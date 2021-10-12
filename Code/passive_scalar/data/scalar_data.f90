@@ -1,9 +1,12 @@
 module SCALAR_data
     implicit none
 
+    integer, parameter  :: CLASSIC_INIT=0, INIT_FROM_FILE=1
+
     real*8,dimension (:,:,:), allocatable       :: sca_x, sca_y, sca_z
     real*8  :: renprandtl, delta_T, heat_flux
     integer :: SCA_state
+    integer :: init_type
 
     real*8,dimension (:,:), allocatable         :: sca_wall10, sca_wall20, sca_wall30
     real*8,dimension (:,:), allocatable         :: sca_wall11, sca_wall21, sca_wall31

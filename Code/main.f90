@@ -198,51 +198,17 @@ contains
                 IBM_mask2_x=0.d0
                 allocate(IBM_mask3_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
                 IBM_mask3_x=0.d0
-            end if
 
-        endif
+                if (interpol_type==ANTISYMMETRIC_INTERPOL) then
 
-        if (streamwise==3) then
+                    allocate(IBM_modulation_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+                    IBM_modulation_x = 0.d0
+                    allocate(IBM_modulation_y(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+                    IBM_modulation_y = 0.d0
+                    allocate(IBM_modulation_z(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+                    IBM_modulation_z = 0.d0
+                endif
 
-            allocate(IBM_mask1_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-            IBM_mask1_x=0.d0
-            allocate(IBM_mask3_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-            IBM_mask3_x=0.d0
-            allocate(flow_rate_IBM(n3))
-            flow_rate_IBM=0.d0
-            allocate(kin1_IBM(n3))
-            kin1_IBM=0.d0
-            allocate(kin2_IBM(n3))
-            kin2_IBM=0.d0
-            allocate(kin3_IBM(n3))
-            kin3_IBM=0.d0
-            allocate(q1max_IBM(n3))
-            q1max_IBM=0.d0
-            allocate(q2max_IBM(n3))
-            q2max_IBM=0.d0
-            allocate(q3max_IBM(n3))
-            q3max_IBM=0.d0
-            allocate(prmax_IBM(n3))
-            prmax_IBM=0.d0
-            allocate(q1min_IBM(n3))
-            q1min_IBM=0.d0
-            allocate(q2min_IBM(n3))
-            q2min_IBM=0.d0
-            allocate(q3min_IBM(n3))
-            q3min_IBM=0.d0
-            allocate(prmin_IBM(n3))
-            prmin_IBM=0.d0
-
-            ! IBM_mask3_x is used even when IBM is not activated and is always allocated
-            if (IBM_activated) then
-                allocate(IBM_mask2_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-                IBM_mask2_x=0.d0
-                allocate(IBM_mask1_z(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3)))
-                IBM_mask1_x=0.d0
-                allocate(IBM_mask2_z(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3)))
-                IBM_mask1_x=0.d0
-                allocate(IBM_mask3_z(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3)))
-                IBM_mask1_x=0.d0
             end if
 
         endif
@@ -721,6 +687,7 @@ program main
             if (SCA_state==1) call SCALAR_IO_write_fields(ntime)
             if ((MHD_state/=0).and.(MHD_export_3D.eq.1)) call MHD_IO_write_fields(ntime)
             if (use_fringe) call FRINGE_IO_write_fields(ntime)
+            call CELL_CENTERED_IO_WRITE_FIELDS(ntime,t)
         endif
 
         ! Animation2D -----------------------------------------------------------------------------

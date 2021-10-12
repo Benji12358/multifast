@@ -41,7 +41,15 @@ contains
             select case (start_source_type)
                 case (NO_SOURCE)
 
-                    call generate_fields(sca_x(:,:,:), sca_y(:,:,:), sca_z(:,:,:), -delta_T, delta_T)
+                    if (init_type==CLASSIC_INIT) then
+
+                        call generate_fields(sca_x(:,:,:), sca_y(:,:,:), sca_z(:,:,:), -delta_T, delta_T)
+
+                    elseif (init_type==INIT_FROM_FILE) then
+
+                        call generate_from_file(sca_x(:,:,:), sca_y(:,:,:), sca_z(:,:,:))
+
+                    endif
 
                 case (HDF5_FILE)
 

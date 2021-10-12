@@ -89,8 +89,9 @@ contains
               endif
 
             call update_velocity(ntime, ns)
-
             if(SCA_state==1) call solve_scalar(q1_x, q2_y, q3_z, ns)
+
+            ! exit
 
          enddo
 

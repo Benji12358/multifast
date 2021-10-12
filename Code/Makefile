@@ -38,7 +38,7 @@ MESH		= $(CORE)/common/mesh
 
 INCS 		= $(FLAG_FFT) $(HDF5_INC) $(IO_INC) $(SOLVERS_INC) $(MISCELLANEOUS_INC) $(SCHEMES_INC) -I $(COMMON) -I $(SCALAR) -I $(MHD) -I $(FRINGE) -I $(BUBBLE) -I $(VELOCITY)
 
-OBJ		= main.o IBM.o diagnostic.o multiphysics.o IO_handler.o \
+OBJ		= main.o diagnostic.o multiphysics.o IO_handler.o \
 		   
 
 
@@ -47,7 +47,7 @@ OBJ		= main.o IBM.o diagnostic.o multiphysics.o IO_handler.o \
 #$(SCALAR)/scalar_data.o 	: $(COMMON)/mesh_settings.o 
 
 
-main.o			: build_common build_scalar build_mhd build_fringe build_bubble IBM.o build_velocity build_core   
+main.o			: build_common build_scalar build_mhd build_fringe build_bubble build_velocity build_core   
 
 # Rules _________________________________________________________________
 $(EXEC_NAME): subsection_text=Linking objects files

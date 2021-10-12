@@ -79,7 +79,12 @@ contains
         use FRINGE_data
         use FRINGE_dao, only:fringe_infos
 
+        use IBM_data
+        use IBM
+
         implicit none
+
+        if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) call activate_O2_for_pressure_correction
 
         ! Poisson solver initialization
         if (use_generic_poisson) then
@@ -292,7 +297,7 @@ contains
         use IBM_data
         use IBM
         use mpi
-
+        
         use time_schemes, only:nb_substep
 
         implicit none
@@ -308,24 +313,17 @@ contains
         !******************  CORE OF THE DNS ***********************
         !***********************************************************
 
+        if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) call deactivate_O2_for_intermediate_velocity
+
+
         !   Time integration implicit viscous
         !   if nb_substep=1 Adams-Bashfort if nb_substep=3 Runge-Kutta
         call set_time_coeffs
         call set_NS_coeffs
 
-
         ! ****************  RHS COMPUTATION ************************
         call perform_velocity_products
         call perform_RHS
-
-        ! The mean pressure gradient is performed so as to fullfill the flow rate conservation
-        if (streamwise==3)  then
-            call perform_mean_gradP3(mean_grad_P3)
-            mean_grad_P1=0.d0
-        elseif (streamwise==1)  then
-            call perform_mean_gradP1(mean_grad_P1)
-            mean_grad_P3=0.d0
-        endif
 
         ! Define the velocity field at the inlet/outlet for an open boundary problem
         ! MUST BE AFTER the RHS calculation: the inflow and outflow obtained are for the next time step (n+1)
@@ -349,10 +347,25 @@ contains
             !endif
         endif
 
+        ! The mean pressure gradient is performed so as to fullfill the flow rate conservation
+        if (streamwise==3)  then
+            call perform_mean_gradP3(mean_grad_P3)
+            mean_grad_P1=0.d0
+        elseif (streamwise==1)  then
+            call perform_mean_gradP1(mean_grad_P1)
+            mean_grad_P3=0.d0
+        endif
+
+        RHS1_x =  RHS1_x - mean_grad_P1
+        RHS3_x =  RHS3_x - mean_grad_P3
+
         ! ******************  UPDATE VELOCITY **********************
         ! RHS=(Non linear terms + Diffusive terms)
         ! PreviousRHS = RHS(n-1)
         ! Obtention of û*, v*, w*
+        RHS1_x = RHS1_x + Fext1
+        RHS2_x = RHS2_x + Fext2
+        RHS3_x = RHS3_x + Fext3
 
         ! Store velocity at the current time step for support of an external force.
         ! The arrays "q" will be erased by the current estimation of velocity at n+1 (in the coupling process)
@@ -438,6 +451,8 @@ contains
         subroutine perform_mean_gradP1(mean_grad_P1)
 
             use boundary_scheme
+            use IBM
+            use DRP_IBM
 
             implicit none
 
@@ -446,50 +461,116 @@ contains
             real*8,dimension (n1)           :: don1
             real*8,dimension (n2)           :: don2
             real*8,dimension (n3)           :: don3
-            real*8,dimension (xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))          :: tmp1
-            real*8,dimension (ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))          :: tmp2
-            real*8,dimension (zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))          :: tmp3
+            real*8,dimension (xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))          :: tmp1, o2_tmp1
+            real*8,dimension (ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))          :: tmp2, o2_tmp2
+            real*8,dimension (zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))          :: tmp3, o2_tmp3
 
             real*8 s1tot, s1tot_glob
             integer k,i,j, mpi_err, n1e, n2e, n3e
+            integer i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end
 
             s1tot=0.d0
             tmp1=0.d0
             tmp2=0.d0
             tmp3=0.d0
 
-            ! _______________________________________________________________________________________________________________________
-            ! ***********************************************************************************************************************
-            ! ****************************** Derivative along the Z direction *******************************************************
-            ! ***********************************************************************************************************************
+            ! Z ------------------------------------------------------------------------
 
-            !do j=1,n2m
-            if (NS_Q1_BC3/=periodic) then
+            n1e=(min(n1m, zend(1))-zstart(1))+1
+            n2e=(min(n2m, zend(2))-zstart(2))+1
 
-                n1e=(min(n1m, zend(1))-zstart(1))+1
-                n2e=(min(n2m, zend(2))-zstart(2))+1
+            ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
+            !     call set_antisymmetric_velocity_in_object(Z,Yc,Xc,q1_z,'Z')
+            ! endif
 
-                call D2c_3Dz(q1_z, tmp3, zsize(1),n1e,zsize(2),n2e,n3, dx3, .true., NS_Q1_BC3)
+            call D2c_3Dz(q1_z, tmp3, zsize(1),n1e,zsize(2),n2e,n3, dx3, .true., NS_Q1_BC3)
 
-                do j = zstart(2), min(n2m, zend(2))
-                    do i=zstart(1), min(n1m, zend(1))   !do i=1,n1m
+            if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
 
-                        do k=1,n3m
-                            s1tot=s1tot+don3(k)*dx1*dx3*cell_size_Y(j)
-                        enddo
+                call get_ijk_IBM(Z,Yc,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+                do i=zstart(1),zend(1)
+                    do j=zstart(2),zend(2)
+
+                        if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end)) then
+                            tmp3(i,j,max(1,k_IBM_start):min(n3m,k_IBM_end)) = 0.d0
+                            call D2c_IBM_O2_3Dz(q1_z(i,j,:),tmp3(i,j,:),n3,k_IBM_start,k_IBM_end,dx3)
+                        endif
 
                     enddo
                 enddo
 
+                ! call D2c_O2_3Dz(q1_z, o2_tmp3, zsize(1),n1e,zsize(2),n2e,n3, dx3, .true., NS_Q1_BC3)
+
+                ! call get_ijk_IBM(Z,Yc,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+                ! do i=zstart(1),zend(1)
+                !     do j=zstart(2),zend(2)
+                !         do k=zstart(3),zend(3)
+
+                !             if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+                !                 ! call D2c_DRP6_3Dxz(q1_z(i,j,:),tmp3(i,j,:),k_IBM_start,k_IBM_end,n3,dx3)
+                !                 tmp3(i,j,k) = o2_tmp3(i,j,k)
+                !             endif
+
+                !         enddo
+                !     enddo
+                ! enddo
+
             endif
 
+            do j = zstart(2), min(n2m, zend(2))
+                do i=zstart(1), min(n1m, zend(1))   !do i=1,n1m
 
+                    do k=1,n3m
+                        s1tot=s1tot+tmp3(i,j,k)*dx1*dx3*cell_size_Y(j)
+                    enddo
+                enddo
+            enddo
+
+            ! Y ------------------------------------------------------------------------
 
             n1e=(min(n1m, yend(1))-ystart(1))+1
             n3e=(min(n3m, yend(3))-ystart(3))+1
 
+            ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
+            !     call set_antisymmetric_velocity_in_object(Z,Yc,Xc,q1_y,'Y')
+            ! endif
+
             call D1c_MULT_3Dy(q1_y, tmp2, ysize(1),n1e,n2,ysize(3),n3e, dx2, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,1))
             call D2c_MULTACC_3Dy(q1_y, tmp2, ysize(1),n1e,n2,ysize(3),n3e, dx2, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,2))
+
+            if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
+
+                do i=ystart(1),yend(1)
+                    do k=ystart(3),yend(3)
+
+                        if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+                            tmp2(i,max(1,j_IBM_start):min(n2m,j_IBM_end),k) = 0.d0
+                            call D1c_IBM_O2_MULT_3Dy(q1_y(i,:,k),tmp2(i,:,k),n2,j_IBM_start,j_IBM_end,dx2,Yc_to_YcTr_for_D2(:,1))
+                            call D2c_IBM_O2_MULTACC_3Dy(q1_y(i,:,k),tmp2(i,:,k),n2,j_IBM_start,j_IBM_end,dx2,Yc_to_YcTr_for_D2(:,2))
+                        endif
+
+                    enddo
+                enddo
+
+                ! call D1c_O2_MULT_3Dy(q1_y, o2_tmp2, ysize(1),n1e,n2,ysize(3),n3e, dx2, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,1))
+                ! call D2c_O2_MULTACC_3Dy(q1_y, o2_tmp2, ysize(1),n1e,n2,ysize(3),n3e, dx2, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,2))
+
+                ! do i=ystart(1),yend(1)
+                !     do j=ystart(2),yend(2)
+                !         do k=ystart(3),yend(3)
+
+                !             if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+                !                 ! call D2c_DRP6_MULT_3Dy(q1_y(i,:,k),tmp2(i,:,k),j_IBM_start,j_IBM_end,n2,dx2,Yc_to_YcTr_for_D2(:,2))
+                !                 ! call D1c_DRP6_MULTACC_3Dy(q1_y(i,:,k),tmp2(i,:,k),j_IBM_start,j_IBM_end,n2,dx2,Yc_to_YcTr_for_D2(:,1))
+                !                 tmp2(i,j,k) = o2_tmp2(i,j,k)
+                !             endif
+
+                !         enddo
+                !     enddo
+                ! enddo
+            endif
 
             do k=ystart(3), min(n3m, yend(3))   !do k=1,n3m
                 do i=ystart(1), min(n1m, yend(1))   !do i=1,n1m
@@ -499,7 +580,6 @@ contains
                     do j = 1, n2m
                         s1tot=s1tot+tmp2(i,j,k)*dx1*dx3*cell_size_Y(j)
                     end do
-
                 enddo
             enddo
 
@@ -508,7 +588,40 @@ contains
             n2e=(min(n2m, xend(2))-xstart(2))+1
             n3e=(min(n3m, xend(3))-xstart(3))+1
 
+            ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
+            !     call set_antisymmetric_velocity_in_object(Z,Yc,Xc,q1_x,'X')
+            ! endif
+
             call D2c_3Dx(q1_x, tmp1, n1,xsize(2),n2e,xsize(3),n3e, dx1, .false., NS_Q1_BC1)
+
+            if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
+
+                do j=xstart(2),xend(2)
+                    do k=xstart(3),xend(3)
+
+                        if ((j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+                            tmp1(max(1,i_IBM_start):min(n1m,i_IBM_end),j,k) = 0.d0
+                            call D2c_IBM_O2_3Dx(q1_x(:,j,k),tmp1(:,j,k),n1,i_IBM_start,i_IBM_end,dx1)
+                        endif
+
+                    enddo
+                enddo
+
+                ! call D2c_O2_3Dx(q1_x, o2_tmp1, n1,xsize(2),n2e,xsize(3),n3e, dx1, .false., NS_Q1_BC1)
+
+                ! do i=xstart(1),xend(1)
+                !     do j=xstart(2),xend(2)
+                !         do k=xstart(3),xend(3)
+
+                !             if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+                !                 ! call D2c_DRP6_3Dxz(q1_x(:,j,k),tmp1(:,j,k),i_IBM_start,i_IBM_end,n1,dx1)
+                !                 tmp1(i,j,k) = o2_tmp1(i,j,k)
+                !             endif
+
+                !         enddo
+                !     enddo
+                ! enddo
+            endif
 
             do k=xstart(3), min(n3m, xend(3))   !do k=1,n3m
                 do j=xstart(2), min(n2m, xend(2))   !do j=1,n2m
@@ -516,7 +629,6 @@ contains
                     do i=1,n1m
                         s1tot=s1tot+tmp1(i,j,k)*dx1*dx3*cell_size_Y(j)
                     enddo
-
                 enddo
             enddo
 
@@ -560,10 +672,7 @@ contains
 
             s3tot=0.d0
 
-            ! _______________________________________________________________________________________________________________________
-            ! ***********************************************************************************************************************
-            ! ****************************** Derivative along the Z direction *******************************************************
-            ! ***********************************************************************************************************************
+            ! Z ------------------------------------------------------------------------
 
             n1e=(min(n1m, zend(1))-zstart(1))+1
             n2e=(min(n2m, zend(2))-zstart(2))+1
@@ -578,6 +687,8 @@ contains
                     enddo
                 enddo
             enddo
+
+            ! Y ------------------------------------------------------------------------
 
             n1e=(min(n1m, yend(1))-ystart(1))+1
             n3e=(min(n3m, yend(3))-ystart(3))+1
@@ -646,17 +757,13 @@ contains
 
             if ((BC1==UNBOUNDED).or.(BC1==FRINGE)) n1s=xstart(1)
             if ((BC1/=UNBOUNDED).and.(BC1/=FRINGE)) n1s=max(2,xstart(1))
-            if (BC1==OPEN) then
-                n1s=2
-                n1e=n1-2
-            endif
             n2s=xstart(2)
             n3s=xstart(3)
             do k = n3s, n3e
                 do j = n2s, n2e
                     do i = n1s, n1e
 !                     NSTERMS1(i,j,k)=(RHS1_x(i,j,k)*gam + previousRHS1_x(i,j,k)*rom - al*(gradP1_x(i,j,k) + mean_grad_P1) + al*(It_Factor_1*PreviousFext1(i,j,k) + It_Factor_2*Fext1(i,j,k)) )*dt
-                      NSTERMS1(i,j,k)=(RHS1_x(i,j,k)*gam + previousRHS1_x(i,j,k)*rom - al*(gradP1_x(i,j,k) + mean_grad_P1) )*dt
+                      NSTERMS1(i,j,k)=(RHS1_x(i,j,k)*gam + previousRHS1_x(i,j,k)*rom - al*gradP1_x(i,j,k) )*dt
                     end do
                 end do
             end do
@@ -696,7 +803,7 @@ contains
             do k = n3s, n3e
                 do j = n2s, n2e
                     do i = n1s, n1e
-                        NSTERMS3(i,j,k)=(RHS3_x(i,j,k)*gam + previousRHS3_x(i,j,k)*rom - al*(gradP3_x(i,j,k) + mean_grad_P3) )*dt
+                        NSTERMS3(i,j,k)=(RHS3_x(i,j,k)*gam + previousRHS3_x(i,j,k)*rom - al*gradP3_x(i,j,k) )*dt
 !                       NSTERMS3(i,j,k)= (RHS3_x(i,j,k)*gam + previousRHS3_x(i,j,k)*rom + gradP3_x(i,j,k) + Fext3(i,j,k)*al)*dt
 
                     end do
@@ -754,6 +861,11 @@ contains
         integer                                                 :: mpi_err, s
         real*8, dimension(3)                                    :: fringe_error_velocity, fringe_error_velocity_glob
         integer                                                 :: i,j,k
+        real*8                                                  :: max_q1, min_q1, max_q2, min_q2, max_q3, min_q3
+        real*8                                                  :: max_glob_q1, min_glob_q1, max_glob_q2, min_glob_q2, max_glob_q3, min_glob_q3
+
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)) :: IBM_mask3_z
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: IBM_mask3_y, IBM_mask2_y
 
 
         ! ******************  CORRECT VELOCITY *********************
@@ -777,7 +889,7 @@ contains
             ! Vc=Vc+grad(p)[s] (Vc = desired value of velocity)
             ! after correction the velocity in body and BC will be : Vc+grad(p)[N-1]-grad(p)[N]
             ! where n is the number of iteration and will be near to u
-            call pressure_gradient_transpose_x_to_z(dphidx1_x, dphidx2_x, dphidx3_x)
+            ! call pressure_gradient_transpose_x_to_z(dphidx1_x, dphidx2_x, dphidx3_x)
 
             if (BC1==OPEN) call apply_gradp_inoutflow_velocity_1
             if (BC3==OPEN) call apply_gradp_inoutflow_velocity_3
@@ -786,12 +898,12 @@ contains
             !if (BC3==OPEN) call apply_gradp_inoutflow_velocity_3
 
             if ((streamwise==1).and.(IBM_activated)) call apply_gradp_IBM_velocity_1
-            if ((streamwise==3).and.(IBM_activated)) then
-                call velocity_transpose_x_to_z(q1_x, q2_x, q3_x)
-                ! pressure correction
-                call apply_gradp_IBM_velocity_3
-                call velocity_transpose_z_to_x(q1_z, q2_z, q3_z)
-            endif                
+            ! if ((streamwise==3).and.(IBM_activated)) then
+            !     call velocity_transpose_x_to_z(q1_x, q2_x, q3_x)
+            !     ! pressure correction
+            !     call apply_gradp_IBM_velocity_3
+            !     call velocity_transpose_z_to_x(q1_z, q2_z, q3_z)
+            ! endif
 
             call transpose_x_to_y(q2_x, q2_y)
             call transpose_x_to_y(q3_x, q3_y)
@@ -802,7 +914,15 @@ contains
             call apply_BC2
             call apply_BC1
 
+            if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) call activate_O2_for_pressure_correction
+
+            if (IBM_activated) call transpose_x_to_y(IBM_mask2_x, IBM_mask2_y)
+
+            if (IBM_activated) call transpose_x_to_y(IBM_mask3_x, IBM_mask3_y)
+            if (IBM_activated) call transpose_y_to_z(IBM_mask3_y, IBM_mask3_z)
+
             call perform_divergence(divu_z, q3_z, q2_y, q1_x)
+            ! call perform_divergence(divu_z, (1-IBM_mask3_z)*q3_z, (1-IBM_mask2_y)*q2_y, (1-IBM_mask1_x)*q1_x)
 
             call solve_Poisson(divu_z/(al*dt), dp_z)
 
@@ -827,11 +947,10 @@ contains
 
         ! ******************  PERFORM RESIDUAL DIVERGENCE **********
         ! RHS3_z=P*aldt
-        call perform_divergence(divu_z, q3_z, q2_y, q1_x, divy_mean)
+        ! call perform_divergence(divu_z, q3_z, q2_y, q1_x, divy_mean)
         if (nrank==0) write(*,*) 'divy_mean', divy_mean
         call transpose_z_to_y(divu_z, divu_y)
         call transpose_y_to_x(divu_y, divu_x)
-
 
         call spread_to_all_pencil(q3_z, q2_y, q1_x, dp_z)
 
@@ -851,6 +970,35 @@ contains
 
             call MPI_ALLREDUCE(fringe_error_velocity,fringe_error_velocity_glob,1,MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
             if (nrank==0) write(*,*) 'ERROR VELOCITY IN/OUT:', fringe_error_velocity_glob
+
+
+        endif
+
+        if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
+            call set_antisymmetric_velocity_in_object(Z,Yc,Xc,q1_x,'X')
+            ! call set_antisymmetric_velocity_in_object(Zc,Y,Xc,q2_x,'X')
+            ! call set_antisymmetric_velocity_in_object(Zc,Yc,X,q3_x,'X')
+        endif
+    
+        max_q1 = maxval(q1_x)
+        min_q1 = minval(q1_x)
+        max_q2 = maxval(q2_x)
+        min_q2 = minval(q2_x)
+        max_q3 = maxval(q3_x)
+        min_q3 = minval(q3_x)
+
+        call MPI_ALLREDUCE (max_q1, max_glob_q1, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (max_q2, max_glob_q2, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (max_q3, max_glob_q3, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
+
+        call MPI_ALLREDUCE (min_q1, min_glob_q1, 1, MPI_DOUBLE_PRECISION , MPI_MIN , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (min_q2, min_glob_q2, 1, MPI_DOUBLE_PRECISION , MPI_MIN , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (min_q3, min_glob_q3, 1, MPI_DOUBLE_PRECISION , MPI_MIN , MPI_COMM_WORLD , mpi_err)
+
+        if (nrank==0) then
+            write(*,*) 'q1 velocity', max_glob_q1, min_glob_q1, maxloc(q1_x), minloc(q1_x)
+            write(*,*) 'q2 velocity', max_glob_q2, min_glob_q2, maxloc(q2_x), minloc(q2_x)
+            write(*,*) 'q3 velocity', max_glob_q3, min_glob_q3, maxloc(q3_x), minloc(q3_x)
         endif
 
         contains
@@ -919,14 +1067,14 @@ contains
                 do k=xstart(3),min(xend(3),n3-1)
                     do j=xstart(2),min(xend(2),n2-1)
 
-                        q1_x(n1,j,k)=q1_save2(n1,j,k)+dphidx1_x(n1,j,k)*al*dt
-                        q1_x(1,j,k)=q1_save2(1,j,k)+dphidx1_x(1,j,k)*al*dt
+                        ! q1_x(n1,j,k)=q1_x(n1,j,k)+dphidx1_x(n1,j,k)*al*dt
+                        ! q1_x(1,j,k)=q1_save(1,j,k)+dphidx1_x(1,j,k)*al*dt
 
-                        q2_x(n1,j,k)=q2_save2(n1,j,k)+dphidx2_x(n1,j,k)*al*dt
-                        q2_x(1,j,k)=q2_save2(1,j,k)+dphidx2_x(1,j,k)*al*dt
+                        q2_x(n1-1,j,k)=q2_save(n1-1,j,k)+dphidx2_x(n1-1,j,k)*al*dt
+                        q2_x(1,j,k)=q2_save(1,j,k)+dphidx2_x(1,j,k)*al*dt
 
-                        q3_x(n1,j,k)=q3_save2(n1,j,k)+dphidx3_x(n1,j,k)*al*dt
-                        q3_x(1,j,k)=q3_save2(1,j,k)+dphidx3_x(1,j,k)*al*dt
+                        q3_x(n1-1,j,k)=q3_save(n1-1,j,k)+dphidx3_x(n1-1,j,k)*al*dt
+                        q3_x(1,j,k)=q3_save(1,j,k)+dphidx3_x(1,j,k)*al*dt
 
                     enddo
                 enddo
@@ -1001,25 +1149,25 @@ contains
 
             end subroutine apply_gradp_IBM_velocity_1
 
-            subroutine apply_gradp_IBM_velocity_3
-                use IBM_settings
-                use IBM_data
-                implicit none
-                integer     :: i, j, k
+            ! subroutine apply_gradp_IBM_velocity_3
+            !     use IBM_settings
+            !     use IBM_data
+            !     implicit none
+            !     integer     :: i, j, k
 
-                do i = zstart(1),min(zend(1),n1-1)
-                    do j = zstart(2),min(zend(2),n2-1)
-                        do k = 1, n3-1
+            !     do i = zstart(1),min(zend(1),n1-1)
+            !         do j = zstart(2),min(zend(2),n2-1)
+            !             do k = 1, n3-1
 
-                            q1_z(i,j,k)=q1_save(i,j,k)+IBM_mask1_z(i,j,k)*dphidx1_z(i,j,k)*al*dt
-                            q2_z(i,j,k)=q2_save(i,j,k)+IBM_mask2_z(i,j,k)*dphidx2_z(i,j,k)*al*dt
-                            q3_z(i,j,k)=q3_save(i,j,k)+IBM_mask3_z(i,j,k)*dphidx3_z(i,j,k)*al*dt
+            !                 q1_z(i,j,k)=q1_save(i,j,k)+IBM_mask1_z(i,j,k)*dphidx1_z(i,j,k)*al*dt
+            !                 q2_z(i,j,k)=q2_save(i,j,k)+IBM_mask2_z(i,j,k)*dphidx2_z(i,j,k)*al*dt
+            !                 q3_z(i,j,k)=q3_save(i,j,k)+IBM_mask3_z(i,j,k)*dphidx3_z(i,j,k)*al*dt
 
-                        end do
-                    enddo
-                enddo
+            !             end do
+            !         enddo
+            !     enddo
 
-            end subroutine apply_gradp_IBM_velocity_3
+            ! end subroutine apply_gradp_IBM_velocity_3
 
 
             subroutine perform_gradp(dph_z)
@@ -1036,6 +1184,11 @@ contains
                 ! Gradx(P) -----------------------------------------------------------------
                 n1e=zsize(1)
                 n2e=zsize(2)
+
+                ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
+                !     call set_antisymmetric_velocity_in_object(Zc,Yc,X,dph_z,'Z')
+                ! endif
+
                 call D1ssh_3Dz(dph_z, dphidx3_z, zsize(1),n1e,zsize(2),n2e,n3, dx3, .true., POISSON_PR_BC3)
 
                 call transpose_z_to_y(dphidx3_z, dph_y)
@@ -1046,6 +1199,10 @@ contains
 
                 n1e=ysize(1)
                 n3e=ysize(3)
+
+                ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
+                !     call set_antisymmetric_velocity_in_object(Zc,Y,Xc,dph_y,'Y')
+                ! endif
 
                 if (use_generic_poisson) then
 
@@ -1069,10 +1226,15 @@ contains
                 n2e=xsize(2)
                 n3e=xsize(3)
 
+                ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
+                !     call set_antisymmetric_velocity_in_object(Z,Yc,Xc,dph_x,'X')
+                ! endif
+
                 call D1ssh_3Dx(dph_x, dphidx1_x, n1,xsize(2),n2e,xsize(3),n3e, dx1, .true., POISSON_PR_BC1)
 
                 return
-            end subroutine
+
+            end subroutine perform_gradp
 
 
             ! ________________________________________________________________________________________
@@ -1178,9 +1340,6 @@ contains
 
     end subroutine substract_action
 
-
-
-
     subroutine perform_outflow_velocity()
         use MPI
         use DNS_settings
@@ -1195,10 +1354,6 @@ contains
         real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: cx, cx1, cx2, cx3
         real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: conv1, conv2, conv3
         real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: diff1, diff2, diff3
-        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)) :: diff13, diff23, diff33
-        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: diff12, diff22, diff32
-        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: diff13y, diff23y, diff33y
-        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: diff12x, diff22x, diff32x, diff13x, diff23x, diff33x
 
         diff1=0.d0
         diff2=0.d0
@@ -1218,20 +1373,49 @@ contains
 
         if (outflow_type==5) then
             call perform_global_cx
-            call perform_diff
+            ! use d²u/dy²
+            call perform_diff(0,1,0)
         endif
 
         if (outflow_type==6) then
-            call perform_local_cx
-            call perform_diff
+            call perform_global_cx
+            ! use d²u/dx²
+            call perform_diff(1,0,0)
         endif
 
-        if (outflow_type==6) then
-            call perform_inlet_cx
-            call perform_diff
+        if (outflow_type==7) then
+            call perform_global_cx
+            ! use d²u/dz²
+            call perform_diff(0,0,1)
         endif
 
-        call perform_conv
+        if (outflow_type==8) then
+            call perform_global_cx
+            ! use d²u/dx² + d²u/dz²
+            call perform_diff(1,0,1)
+        endif
+
+        if (outflow_type==9) then
+            call perform_global_cx
+            ! use d²u/dx² + d²u/dy² + d²u/dz²
+            call perform_diff(1,1,1)
+        endif
+
+        ! if (outflow_type==6) then
+        !     call perform_local_cx
+        !     call perform_diff
+        ! endif
+
+        ! if (outflow_type==6) then
+        !     call perform_inlet_cx
+        !     call perform_diff
+        ! endif
+
+        ! cx1 = 10*cx1
+        ! cx2 = 10*cx2
+        ! cx3 = 10*cx3
+
+        call perform_conv(1,0,0)
 
         n2s=xstart(2)
         n3s=xstart(3)
@@ -1241,9 +1425,11 @@ contains
         do k=n3s,n3e
             do j=n2s,n2e
                 q1_x(n1,j,k) = q1_x(n1,j,k) + conv1(j,k) + diff1(j,k)*dt
-                q1_wall11(j,k) = q1_x(n1,j,k)
                 q2_x(n1-1,j,k) = q2_x(n1-1,j,k) + conv2(j,k) + diff2(j,k)*dt
                 q3_x(n1-1,j,k) = q3_x(n1-1,j,k) + conv3(j,k) + diff3(j,k)*dt
+                q1_wall11(j,k) = q1_x(n1,j,k)
+                q2_wall11(j,k) = q2_x(n1-1,j,k)
+                q3_wall11(j,k) = q3_x(n1-1,j,k)
             enddo
         enddo
 
@@ -1256,14 +1442,20 @@ contains
 
     contains
 
-        subroutine perform_diff()
+        subroutine perform_diff(ax,ay,az)
             use boundary_scheme
-            use snapshot_writer
+            use second_order_schemes
             implicit none
-            integer :: i,j,k
-            real*8      :: diff1_coef, diff2_coef, diff3_coef, diff22_coef, diff21_coef
-
-
+            integer                 :: i,j,k
+            integer, intent(in)     :: ax,ay,az
+            real*8                  :: diff1_coef, diff2_coef, diff3_coef, diff22_coef, diff21_coef
+            real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: diff11, diff21, diff31, test
+            real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: test_x
+            real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: diff12_y, diff22_y, diff32_y
+            real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)) :: diff13_z, diff23_z, diff33_z
+            real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: diff13_y, diff23_y, diff33_y
+            real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: diff12_x, diff22_x, diff32_x, diff13_x, diff23_x, diff33_x
+            real*8, dimension(ystart(1):yend(1), ystart(3):yend(3))                    :: tmp
 
             diff1_coef=dx1*sqrt(ren)
             diff2_coef=dx2*sqrt(ren)
@@ -1272,55 +1464,126 @@ contains
             diff21_coef=dx2*ren
 
             ! Initializations necessary to avoid VALGRIND errors
-            diff13=0.d0
-            diff23=0.d0
-            diff33=0.d0
-            diff12=0.d0
-            diff22=0.d0
-            diff32=0.d0
+            diff11=0.d0
+            diff21=0.d0
+            diff31=0.d0
+            diff13_z=0.d0
+            diff23_z=0.d0
+            diff33_z=0.d0
+            diff12_y=0.d0
+            diff22_y=0.d0
+            diff32_y=0.d0
+            diff13_y=0.d0
+            diff23_y=0.d0
+            diff33_y=0.d0
+            diff12_x=0.d0
+            diff22_x=0.d0
+            diff32_x=0.d0
+            diff13_x=0.d0
+            diff23_x=0.d0
+            diff33_x=0.d0
 
-            if (.not. allocated(outflow_diff1o)) then
-            endif
+            ! for outflow_diff1c
+            call D2c_3Dz(q1_z, diff13_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, diff3_coef, .true., NS_Q1_BC3)
 
-            call D2c_3Dz(q1_z, diff13, zsize(1),zsize(1),zsize(2),zsize(2),n3, diff3_coef, .true., NS_Q1_BC3)
-            call D2c_3Dz(q2_z, diff23, zsize(1),zsize(1),zsize(2),zsize(2),n3, diff3_coef, .true., NS_Q2_BC3)
-            call D2c_3Dz(q3_z, diff33, zsize(1),zsize(1),zsize(2),zsize(2),n3, diff3_coef, .true., NS_Q3_BC3)
+            call D1c_MULT_3Dy(q1_y, diff12_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), diff21_coef, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,1))
+            call D2c_MULTACC_3Dy(q1_y, diff12_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), diff22_coef, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,2))
+            ! call D2c_3Dx(q1_x, diff11, n1, xsize(2),xsize(2),xsize(3),xsize(3), diff1_coef, .false., NS_Q1_BC1)
+            ! Not necessary a priori as it does not compute what happens at n1
 
-            do k = ystart(3), yend(3)
-                do i = ystart(1), yend(1)
-                    diff12(i,1,k)=( q1_y(i,2,k)*a3_d + q1_y(i,1,k)*a2_d + q1_wall20(i,k)*a1_d)            /diff2_coef**2
-                    diff12(i,n2m,k)=( q1_y(i,n2m-1,k)*a1_u + q1_y(i,n2m,k)*a2_u + q1_wall21(i,k)*a3_u ) /diff2_coef**2
+            do i=ystart(1),yend(1)
+                do k=ystart(3),yend(3)
 
-                    diff32(i,1,k)=( q3_y(i,2,k)*a3_d + q3_y(i,1,k)*a2_d + q3_wall20(i,k)*a1_d )           /diff2_coef**2
-                    diff32(i,n2m,k)=( q3_y(i,n2m-1,k)*a1_u + q3_y(i,n2m,k) *a2_u + q3_wall21(i,k)*a3_u) /diff2_coef**2
-                end do
-            end do
+                    if (i.eq.n1) then
+            
+                        call compute_backward_diff_order_2(q1_y(i,n2m,k)/ren, q1_y(i,n2m-1,k)/ren, q1_y(i,n2m-2,k)/ren, q1_y(i,n2m-3,k)/ren, diff12_y(i,n2m,k), Yc, n2m)
+                        call compute_backward_diff_order_2(q1_y(i,n2m-1,k)/ren, q1_y(i,n2m-2,k)/ren, q1_y(i,n2m-3,k)/ren, q1_y(i,n2m-4,k)/ren, diff12_y(i,n2m-1,k), Yc, n2m-1)
+                        call compute_upward_diff_order_2(q1_y(i,1,k)/ren, q1_y(i,2,k)/ren, q1_y(i,3,k)/ren, q1_y(i,4,k)/ren, diff12_y(i,1,k), Yc, 1)
+                        call compute_upward_diff_order_2(q1_y(i,2,k)/ren, q1_y(i,3,k)/ren, q1_y(i,4,k)/ren, q1_y(i,5,k)/ren, diff12_y(i,2,k), Yc, 2)
 
-            call D1c_MULT_3Dy(q1_y, diff12, ysize(1),ysize(1),n2,ysize(3),ysize(3), diff21_coef, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,1))
-            call D2c_MULTACC_3Dy(q1_y, diff12, ysize(1),ysize(1),n2,ysize(3),ysize(3), diff22_coef, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,2))
+                    endif
+                enddo
+            enddo
 
-            call D1c_MULT_3Dy(q2_y, diff22, ysize(1),ysize(1),n2,ysize(3),ysize(3), diff21_coef, .false., NS_Q2_BC2, Y_to_YTr_for_D2(:,1))
-            call D2c_MULTACC_3Dy(q2_y, diff22, ysize(1),ysize(1),n2,ysize(3),ysize(3), diff22_coef, .false., NS_Q2_BC2, Y_to_YTr_for_D2(:,2))
+            do j=xstart(2),xend(2)
+                do k=xstart(3),xend(3)
 
-            call D1c_MULT_3Dy(q3_y, diff32, ysize(1),ysize(1),n2,ysize(3),ysize(3), diff21_coef, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,1))
-            call D2c_MULTACC_3Dy(q3_y, diff32, ysize(1),ysize(1),n2,ysize(3),ysize(3), diff22_coef, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,2))
+                    call compute_backward_diff_order_2(q1_x(n1,j,k)/ren, q1_x(n1-1,j,k)/ren, q1_x(n1-2,j,k)/ren, q1_x(n1-3,j,k)/ren, diff11(j,k), Z, n1)
 
-            call transpose_z_to_y(diff13, diff13y)
-            call transpose_z_to_y(diff23, diff23y)
-            call transpose_z_to_y(diff33, diff33y)
+                enddo
+            enddo
 
+            ! for outflow_diff2c
+            call D2c_3Dz(q2_z, diff23_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, diff3_coef, .true., NS_Q2_BC3)
 
-            call transpose_y_to_x(diff13y, diff13x)
-            call transpose_y_to_x(diff23y, diff23x)
-            call transpose_y_to_x(diff33y, diff33x)
+            call D1c_MULT_3Dy(q2_y, diff22_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), diff21_coef, .false., NS_Q2_BC2, Y_to_YTr_for_D2(:,1))
+            call D2c_MULTACC_3Dy(q2_y, diff22_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), diff22_coef, .false., NS_Q2_BC2, Y_to_YTr_for_D2(:,2))
 
-            call transpose_y_to_x(diff12, diff12x)
-            call transpose_y_to_x(diff22, diff22x)
-            call transpose_y_to_x(diff32, diff32x)
+            do i=ystart(1),yend(1)
+                do k=ystart(3),yend(3)
 
-            outflow_diff1c = diff13x(n1,:,:) + diff12x(n1,:,:)
-            outflow_diff2c = diff23x(n1-1,:,:) + diff22x(n1-1,:,:)
-            outflow_diff3c = diff33x(n1-1,:,:) + diff32x(n1-1,:,:)
+                    if (i.eq.n1-1) then
+
+                        call compute_backward_diff_order_2(q2_y(i,n2,k)/ren, q2_y(i,n2-1,k)/ren, q2_y(i,n2-2,k)/ren, q2_y(i,n2-3,k)/ren, diff22_y(i,n2m,k), Y, n2)
+                        call compute_backward_diff_order_2(q2_y(i,n2-1,k)/ren, q2_y(i,n2-2,k)/ren, q2_y(i,n2-3,k)/ren, q2_y(i,n2-4,k)/ren, diff22_y(i,n2m-1,k), Y, n2-1)
+                        call compute_upward_diff_order_2(q2_y(i,1,k)/ren, q2_y(i,2,k)/ren, q2_y(i,3,k)/ren, q2_y(i,4,k)/ren, diff22_y(i,1,k), Y, 1)
+                        call compute_upward_diff_order_2(q2_y(i,2,k)/ren, q2_y(i,3,k)/ren, q2_y(i,4,k)/ren, q2_y(i,5,k)/ren, diff22_y(i,2,k), Y, 2)
+
+                    endif
+                enddo
+            enddo
+
+            do j=xstart(2),xend(2)
+                do k=xstart(3),xend(3)
+
+                    call compute_backward_diff_order_2(q2_x(n1-1,j,k)/ren, q2_x(n1-2,j,k)/ren, q2_x(n1-3,j,k)/ren, q2_x(n1-4,j,k)/ren, diff21(j,k), Zc, n1-1)
+
+                enddo
+            enddo
+
+            ! for outflow_diff3c
+            call D2c_3Dz(q3_z, diff33_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, diff3_coef, .false., NS_Q3_BC3)
+
+            call D1c_MULT_3Dy(q3_y, diff32_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), diff21_coef, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,1))
+            call D2c_MULTACC_3Dy(q3_y, diff32_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), diff22_coef, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,2))
+
+            do i=ystart(1),yend(1)
+                do k=ystart(3),yend(3)
+
+                    if (i.eq.n1-1) then
+                        call compute_backward_diff_order_2(q3_y(i,n2m,k)/ren, q3_y(i,n2m-1,k)/ren, q3_y(i,n2m-2,k)/ren, q3_y(i,n2m-3,k)/ren, diff32_y(i,n2m,k), Yc, n2m)
+                        call compute_backward_diff_order_2(q3_y(i,n2m-1,k)/ren, q3_y(i,n2m-2,k)/ren, q3_y(i,n2m-3,k)/ren, q3_y(i,n2m-4,k)/ren, diff32_y(i,n2m,k), Yc, n2m-1)
+                        call compute_upward_diff_order_2(q3_y(i,1,k)/ren, q3_y(i,2,k)/ren, q3_y(i,3,k)/ren, q3_y(i,4,k)/ren, diff32_y(i,1,k), Yc, 1)
+                        call compute_upward_diff_order_2(q3_y(i,2,k)/ren, q3_y(i,3,k)/ren, q3_y(i,4,k)/ren, q3_y(i,5,k)/ren, diff32_y(i,2,k), Yc, 2)
+
+                    endif
+                enddo
+            enddo
+
+            do j=xstart(2),xend(2)
+                do k=xstart(3),xend(3)
+
+                    call compute_backward_diff_order_2(q3_x(n1-1,j,k)/ren, q3_x(n1-2,j,k)/ren, q3_x(n1-3,j,k)/ren, q3_x(n1-4,j,k)/ren, diff31(j,k), Zc, n1-1)
+
+                enddo
+            enddo
+
+            ! transpose everything in X configuration
+            call transpose_z_to_y(diff13_z, diff13_y)
+            call transpose_z_to_y(diff23_z, diff23_y)
+            call transpose_z_to_y(diff33_z, diff33_y)
+
+            call transpose_y_to_x(diff13_y, diff13_x)
+            call transpose_y_to_x(diff23_y, diff23_x)
+            call transpose_y_to_x(diff33_y, diff33_x)
+
+            call transpose_y_to_x(diff12_y, diff12_x)
+            call transpose_y_to_x(diff22_y, diff22_x)
+            call transpose_y_to_x(diff32_y, diff32_x)
+
+            outflow_diff1c = ax*diff11(:,:) + ay*diff12_x(n1,:,:) + az*diff13_x(n1,:,:)
+            outflow_diff2c = ax*diff21(:,:) + ay*diff22_x(n1-1,:,:) + az*diff23_x(n1-1,:,:)
+            outflow_diff3c = ax*diff31(:,:) + ay*diff32_x(n1-1,:,:) + az*diff33_x(n1-1,:,:)
 
             diff1 = gam*outflow_diff1c + rom*outflow_diff1o
             diff2 = gam*outflow_diff2c + rom*outflow_diff2o
@@ -1334,17 +1597,150 @@ contains
         end subroutine perform_diff
 
         ! Update condition at outflow from the current time scheme, according an information propagation with phase velocity cx.
-        subroutine perform_conv()
-            use snapshot_writer
+        subroutine perform_conv(ax, ay, az)
+            use second_order_schemes
+            use mesh
+            use COMMON_fieldstools
             implicit none
+            real*8              :: cs1, cs2, cs3
+            real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: conv11, conv21, conv31
+            real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: conv12_y, conv22_y, conv32_y
+            real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)) :: conv13_z, conv23_z, conv33_z
+            real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: conv13_y, conv23_y, conv33_y
+            real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: conv12_x, conv22_x, conv32_x, conv13_x, conv23_x, conv33_x
+            integer, intent(in)     :: ax, ay, az
 
-            do k=xstart(3),min(xend(3), n3-1)
-                do j=xstart(2),min(xend(2), n2-1)
-                    outflow_conv1c(j,k) = -cx1(j,k)*( q1_x(n1,j,k) - q1_x(n1-1,j,k) )
-                    outflow_conv2c(j,k) = -cx2(j,k)*( q2_x(n1-1,j,k) - q2_x(n1-2,j,k) )
-                    outflow_conv3c(j,k) = -cx3(j,k)*( q3_x(n1-1,j,k) - q3_x(n1-2,j,k) )
+            cs1 = 0.d0
+            cs2 = 0.d0
+            cs3 = 0.d0
+
+            conv11 = 0.d0
+            conv21 = 0.d0
+            conv31 = 0.d0
+
+            conv12_y = 0.d0
+            conv22_y = 0.d0
+            conv32_y = 0.d0
+            conv13_y = 0.d0
+            conv23_y = 0.d0
+            conv33_y = 0.d0
+
+            conv13_z = 0.d0
+            conv23_z = 0.d0
+            conv33_z = 0.d0
+
+            conv12_x = 0.d0
+            conv22_x = 0.d0
+            conv32_x = 0.d0
+            conv13_x = 0.d0
+            conv23_x = 0.d0
+            conv33_x = 0.d0
+
+            call perform_checksum_x(q1_x(:,:,:), cs1)
+            call perform_checksum_x(q2_x(:,:,:), cs2)
+            call perform_checksum_x(q3_x(:,:,:), cs3)
+
+            ! cs1 = 10* ax * cs1 * dt
+            ! cs2 = ay * cs2 * dt
+            ! cs3 = az * cs3 * dt
+
+            ! for outflow_conv1c
+            ! call D1c_3Dz(q1_z, conv13_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, dx3, .true., NS_Q1_BC3)
+            ! call D1c_MULT_3Dy(q1_y, conv12_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), dx2, .true., NS_Q1_BC2, Yc_to_YcTr_for_D1)
+            ! call D1c_3Dx(q1_x, conv11, n1, xsize(2),xsize(2),xsize(3),xsize(3), dx1, .false., NS_Q1_BC1)
+            ! Not necessary a priori as it does not compute what happens at n1
+
+            ! do i=ystart(1),yend(1)
+            !     do k=ystart(3),yend(3)
+
+            !         if (i.eq.n1) then
+
+            !             call compute_backward_diff_order_1(q1_y(i,n2m,k), q1_y(i,n2m-1,k), q1_y(i,n2m-2,k), conv12_y(i,n2m,k), Yc, n2m)
+            !             call compute_upward_diff_order_1(q1_y(i,1,k), q1_y(i,2,k), q1_y(i,3,k), conv12_y(i,1,k), Yc, 1)
+
+            !         endif
+            !     enddo
+            ! enddo
+
+            do j=xstart(2),xend(2)
+                do k=xstart(3),xend(3)
+
+                    call compute_backward_diff_order_1(q1_x(n1,j,k), q1_x(n1-1,j,k), q1_x(n1-2,j,k), conv11(j,k), Z, n1)
+
                 enddo
             enddo
+
+            ! for outflow_conv2c
+            ! call D1c_3Dz(q2_z, conv23_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, dx3, .true., NS_Q2_BC3)
+            ! call D1c_MULT_3Dy(q2_y, conv22_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), dx2, .false., NS_Q2_BC2, Y_to_YTr_for_D1)
+            ! call D1c_3Dx(q2_x, conv21, n1, xsize(2),xsize(2),xsize(3),xsize(3), dx1, .true., NS_Q2_BC1)
+            ! Not necessary a priori as it does not compute what happens at n1-1
+
+            ! do i=ystart(1),yend(1)
+            !     do k=ystart(3),yend(3)
+
+            !         if (i.eq.n1-1) then
+
+            !             call compute_backward_diff_order_1(q2_y(i,n2,k), q2_y(i,n2-1,k), q2_y(i,n2-2,k), conv22_y(i,n2m,k), Y, n2)
+            !             call compute_upward_diff_order_1(q2_y(i,1,k), q2_y(i,2,k), q2_y(i,3,k), conv22_y(i,1,k), Y, 1)
+
+            !         endif
+            !     enddo
+            ! enddo
+
+            do j=xstart(2),xend(2)
+                do k=xstart(3),xend(3)
+
+                    call compute_backward_diff_order_1(q2_x(n1-1,j,k), q2_x(n1-2,j,k), q2_x(n1-3,j,k), conv21(j,k), Zc, n1-1)
+
+                enddo
+            enddo
+
+            ! for outflow_conv3c
+            ! call D1c_3Dz(q3_z, conv33_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, dx3, .false., NS_Q3_BC3)
+            ! call D1c_MULT_3Dy(q3_y, conv32_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), dx2, .true., NS_Q3_BC2, Yc_to_YcTr_for_D1)
+            ! call D1c_3Dx(q3_x, conv31, n1, xsize(2),xsize(2),xsize(3),xsize(3), dx1, .true., NS_Q3_BC1)
+            ! Not necessary a priori as it does not compute what happens at n1-1
+
+            ! do i=ystart(1),yend(1)
+            !     do k=ystart(3),yend(3)
+
+            !         if (i.eq.n1-1) then
+
+            !             call compute_backward_diff_order_1(q3_y(i,n2m,k), q3_y(i,n2m-1,k), q3_y(i,n2m-2,k), conv32_y(i,n2m,k), Yc, n2m)
+            !             call compute_upward_diff_order_1(q3_y(i,1,k), q3_y(i,2,k), q3_y(i,3,k), conv32_y(i,1,k), Yc, 1)
+
+            !         endif
+            !     enddo
+            ! enddo
+
+            do j=xstart(2),xend(2)
+                do k=xstart(3),xend(3)
+
+                    call compute_backward_diff_order_1(q3_x(n1-1,j,k), q3_x(n1-2,j,k), q3_x(n1-3,j,k), conv31(j,k), Zc, n1-1)
+
+                enddo
+            enddo
+
+            ! transpose everything in X configuration
+            call transpose_z_to_y(conv13_z, conv13_y)
+            call transpose_y_to_x(conv13_y, conv13_x)
+
+            call transpose_z_to_y(conv23_z, conv23_y)
+            call transpose_y_to_x(conv23_y, conv23_x)
+
+            call transpose_z_to_y(conv33_z, conv33_y)
+            call transpose_y_to_x(conv33_y, conv33_x)
+
+            call transpose_y_to_x(conv12_y, conv12_x)
+
+            call transpose_y_to_x(conv22_y, conv22_x)
+
+            call transpose_y_to_x(conv32_y, conv32_x)
+
+            outflow_conv1c(:,:) = - cx1 * conv11(:,:)
+            outflow_conv2c(:,:) = - cx1 * conv21(:,:)
+            outflow_conv3c(:,:) = - cx1 * conv31(:,:)
 
             ! Time advancement
             conv1 = gam*outflow_conv1c + rom*outflow_conv1o
@@ -1354,7 +1750,6 @@ contains
             outflow_conv1o = outflow_conv1c
             outflow_conv2o = outflow_conv2c
             outflow_conv3o = outflow_conv3c
-
 
         end subroutine perform_conv
 
@@ -1416,15 +1811,18 @@ contains
     subroutine perform_RHS()
 
         use boundary_scheme
+        use DRP_IBM
+        use IBM
 
         implicit none
 
         !real*8,dimension(n3)           :: uu
-        real*8,dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))           :: q2q2_y
-        real*8,dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))           :: q3q3_z
-        real*8,dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))           :: q1q1_x
+        real*8,dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))           :: q1q1_x, tmp1_x, tmp2_x, tmp3_x, o2_tmp1_x, o2_tmp2_x, o2_tmp3_x
+        real*8,dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))           :: q2q2_y, tmp1_y, tmp2_y, tmp3_y, o2_tmp1_y, o2_tmp2_y, o2_tmp3_y
+        real*8,dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))           :: q3q3_z, tmp1_z, tmp2_z, tmp3_z, o2_tmp1_z, o2_tmp2_z, o2_tmp3_z
 
-        integer k,i,j, mpi_err, n1e, n2e, n3e
+        integer :: k,i,j, mpi_err, n1e, n2e, n3e
+        integer :: i_IBM_start, i_IBM_end, j_IBM_start, j_IBM_end, k_IBM_start, k_IBM_end
 
         ! VALGRIND
         q1q1_x=0.d0
@@ -1447,20 +1845,36 @@ contains
         RHS2_z=0.d0
         RHS3_z=0.d0
 
-        if (BC3==NOSLIP) call diff_at_wall_3   ! ATTENTION
+        tmp1_z = 0.d0
+        tmp2_z = 0.d0
+        tmp3_z = 0.d0
 
-        call D2c_3Dz(q1_z, RHS1_z, zsize(1),n1e,zsize(2),n2e,n3, diff3_coef, .true., NS_Q1_BC3)
-        call D1s_ACC_3Dz(p13_z, RHS1_z, zsize(1),n1e,zsize(2),n2e,n3, conv3_coef, .false., NS_P13_BC3)
+        o2_tmp1_z = 0.d0
+        o2_tmp2_z = 0.d0
+        o2_tmp3_z = 0.d0
+
+        ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
+        !     call set_antisymmetric_velocity_in_object(Z,Yc,Xc,q1_z,'Z')
+        !     call set_antisymmetric_velocity_in_object(Zc,Y,Xc,q2_z,'Z')
+        !     call set_antisymmetric_velocity_in_object(Zc,Yc,X,q3_z,'Z')
+        ! endif
+
+        ! For RHS1
+        call D2c_3Dz(q1_z, tmp1_z, zsize(1),n1e,zsize(2),n2e,n3, diff3_coef, .true., NS_Q1_BC3)
+        call D1s_ACC_3Dz(p13_z, tmp1_z, zsize(1),n1e,zsize(2),n2e,n3, conv3_coef, .false., NS_P13_BC3)
         ! *********************************** CORR_JO ******************************* !
         ! La D2c_3Dz sur q2 est shifted --> argument .true. (ancienne valeur : false) !
         ! *************************************************************************** !
-        call D2c_3Dz(q2_z, RHS2_z, zsize(1),n1e,zsize(2),n2e,n3, diff3_coef, .true., NS_Q2_BC3)
-        call D2c_3Dz(q3_z, RHS3_z, zsize(1),n1e,zsize(2),n2e,n3, diff3_coef, .false., NS_Q3_BC3)
-        call D1s_ACC_3Dz(p23_z, RHS2_z, zsize(1),n1e,zsize(2),n2e,n3, conv3_coef, .false., NS_P23_BC3)
 
+        ! For RHS2
+        call D2c_3Dz(q2_z, tmp2_z, zsize(1),n1e,zsize(2),n2e,n3, diff3_coef, .true., NS_Q2_BC3)
+        call D1s_ACC_3Dz(p23_z, tmp2_z, zsize(1),n1e,zsize(2),n2e,n3, conv3_coef, .false., NS_P23_BC3)
+
+        ! For RHS3
+        call D2c_3Dz(q3_z, tmp3_z, zsize(1),n1e,zsize(2),n2e,n3, diff3_coef, .false., NS_Q3_BC3)
         call D0s_3Dz(q3_z, q3q3_z, zsize(1),n1e,zsize(2),n2e,n3, NS_Q3_BC3)
         q3q3_z=q3q3_z**2
-        call D1ssh_ACC_3Dz(q3q3_z, RHS3_z, zsize(1),n1e,zsize(2),n2e,n3, conv3_coef, .true., NS_P33_BC3)
+        call D1ssh_ACC_3Dz(q3q3_z, tmp3_z, zsize(1),n1e,zsize(2),n2e,n3, conv3_coef, .true., NS_P33_BC3)
 
         ! ******** CORR_JO ********* !
         ! Suppression de cette ligne !
@@ -1473,6 +1887,167 @@ contains
 !            enddo
 !        enddo
 
+        ! If the IBM is activated then the DRP scheme has to be corrected ...
+        if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
+
+            ! For RHS1
+            call get_ijk_IBM(Z,Yc,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            do i=zstart(1),zend(1)
+                do j=zstart(2),zend(2)
+
+                    if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end)) then
+
+                        tmp1_z(i,j,max(1,k_IBM_start):min(k_IBM_end,n3m)) = 0.d0
+                        call D2c_IBM_O2_3Dz(q1_z(i,j,:),tmp1_z(i,j,:),n3,k_IBM_start,k_IBM_end,diff3_coef)
+                        call D1s_IBM_O2_ACC_3Dz(p13_z(i,j,:),tmp1_z(i,j,:),n3,k_IBM_start,k_IBM_end,conv3_coef)
+
+                    endif
+                enddo
+            enddo
+
+            ! For RHS2
+            call get_ijk_IBM(Zc,Y,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            do i=zstart(1),zend(1)
+                do j=zstart(2),zend(2)
+
+                    if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end)) then
+
+                        tmp2_z(i,j,max(1,k_IBM_start):min(k_IBM_end,n3m)) = 0.d0
+                        call D2c_IBM_O2_3Dz(q2_z(i,j,:),tmp2_z(i,j,:),n3,k_IBM_start,k_IBM_end,diff3_coef)
+                        call D1s_IBM_O2_ACC_3Dz(p23_z(i,j,:),tmp2_z(i,j,:),n3,k_IBM_start,k_IBM_end,conv3_coef)
+
+                    endif
+                enddo
+            enddo
+
+            ! For RHS3
+            call get_ijk_IBM(Zc,Yc,X,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            do i=zstart(1),zend(1)
+                do j=zstart(2),zend(2)
+
+                    if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end)) then
+
+                        tmp3_z(i,j,max(1,k_IBM_start):min(k_IBM_end,n3m)) = 0.d0
+                        q3q3_z(i,j,max(1,k_IBM_start):min(k_IBM_end,n3m)) = 0.d0
+                        call D2c_IBM_O2_3Dz(q3_z(i,j,:),tmp3_z(i,j,:),n3,k_IBM_start,k_IBM_end,diff3_coef)
+                        call D0s_IBM_O2_3Dz(q3_z(i,j,:),q3q3_z(i,j,:),n3,k_IBM_start,k_IBM_end)
+                        q3q3_z(i,j,max(1,k_IBM_start):min(k_IBM_end,n3m))=q3q3_z(i,j,max(1,k_IBM_start):min(k_IBM_end,n3m))**2
+                        call D1ssh_IBM_O2_ACC_3Dz(q3q3_z(i,j,:),tmp3_z(i,j,:),n3,k_IBM_start,k_IBM_end,conv3_coef)
+
+                    endif
+                enddo
+            enddo
+
+
+            ! ! For RHS1
+            ! call D2c_O2_3Dz(q1_z, o2_tmp1_z, zsize(1),n1e,zsize(2),n2e,n3, diff3_coef, .true., NS_Q1_BC3)
+            ! call D1s_O2_ACC_3Dz(p13_z, o2_tmp1_z, zsize(1),n1e,zsize(2),n2e,n3, conv3_coef, .false., NS_P13_BC3)
+
+            ! ! For RHS2
+            ! call D2c_O2_3Dz(q2_z, o2_tmp2_z, zsize(1),n1e,zsize(2),n2e,n3, diff3_coef, .true., NS_Q2_BC3)
+            ! call D1s_O2_ACC_3Dz(p23_z, o2_tmp2_z, zsize(1),n1e,zsize(2),n2e,n3, conv3_coef, .false., NS_P23_BC3)
+
+            ! ! For RHS3
+            ! call D2c_O2_3Dz(q3_z, o2_tmp3_z, zsize(1),n1e,zsize(2),n2e,n3, diff3_coef, .false., NS_Q3_BC3)
+            ! call D0s_O2_3Dz(q3_z, q3q3_z, zsize(1),n1e,zsize(2),n2e,n3, NS_Q3_BC3)
+            ! q3q3_z=q3q3_z**2
+            ! call D1ssh_O2_ACC_3Dz(q3q3_z, o2_tmp3_z, zsize(1),n1e,zsize(2),n2e,n3, conv3_coef, .true., NS_P33_BC3)
+
+            ! ! For RHS1
+            ! call get_ijk_IBM(Z,Yc,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            ! do i=zstart(1),zend(1)
+            !     do j=zstart(2),zend(2)
+            !         do k=zstart(3),zend(3)
+
+            !             if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+            !                 ! call D2c_DRP6_3Dxz(q1_z(i,j,:),tmp1_z(i,j,:),k_IBM_start,k_IBM_end,n3,diff3_coef)
+
+            !                 tmp1_z(i,j,k) = o2_tmp1_z(i,j,k)
+
+            !             endif
+            !         enddo
+            !     enddo
+            ! enddo
+
+            ! ! call get_ijk_IBM(Zc,Yc,X,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            ! ! do i=zstart(1),zend(1)
+            ! !     do j=zstart(2),zend(2)
+
+            ! !             if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+            ! !             call D1s_DRP5_ACC_3Dxz(p13_z(i,j,:),tmp1_z(i,j,:),k_IBM_start,k_IBM_end,n3,conv3_coef)
+
+            ! !         endif
+            ! !     enddo
+            ! ! enddo
+
+            ! ! For RHS2
+            ! call get_ijk_IBM(Zc,Y,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            ! do i=zstart(1),zend(1)
+            !     do j=zstart(2),zend(2)
+            !         do k=zstart(3),zend(3)
+
+            !             if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+            !             ! call D2c_DRP6_3Dxz(q2_z(i,j,:),tmp2_z(i,j,:),k_IBM_start,k_IBM_end,n3,diff3_coef)
+
+            !                 tmp2_z(i,j,k) = o2_tmp2_z(i,j,k)
+
+            !             endif
+            !         enddo
+            !     enddo
+            ! enddo
+
+            ! ! call get_ijk_IBM(Zc,Yc,X,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            ! ! do i=zstart(1),zend(1)
+            ! !     do j=zstart(2),zend(2)
+
+            ! !             if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+            ! !             call D1s_DRP5_ACC_3Dxz(p23_z(i,j,:),tmp2_z(i,j,:),k_IBM_start,k_IBM_end,n3,conv3_coef)
+
+            ! !         endif
+            ! !     enddo
+            ! ! enddo 
+
+            ! ! For RHS3
+            ! call get_ijk_IBM(Zc,Yc,X,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            ! do i=zstart(1),zend(1)
+            !     do j=zstart(2),zend(2)
+            !         do k=zstart(3),zend(3)
+
+            !             if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+            !             ! call D2c_DRP6_3Dxz(q3_z(i,j,:),tmp3_z(i,j,:),k_IBM_start,k_IBM_end,n3,diff3_coef)
+
+            !             ! call D0s_DRP5_3Dxz(q3_z(i,j,:), q3q3_z,k_IBM_start,k_IBM_end,n3)
+            !             ! q3q3_z = q3q3_z**2
+            !             ! call D1ssh_DRP5_ACC_3Dxz(q3q3_z,tmp3_z(i,j,:),k_IBM_start,k_IBM_end,n3,conv3_coef)
+
+            !                 tmp3_z(i,j,k) = o2_tmp3_z(i,j,k)
+
+            !             endif
+            !         enddo
+            !     enddo
+            ! enddo
+
+        endif
+
+        if (BC3==NOSLIP) call diff_at_wall_3   ! ATTENTION
+
+        RHS1_z = RHS1_z + tmp1_z
+        RHS2_z = RHS2_z + tmp2_z
+        RHS3_z = RHS3_z + tmp3_z
+
         ! _______________________________________________________________________________________________________________________
         ! ***********************************************************************************************************************
         ! ****************************** Derivative along the Y direction *******************************************************
@@ -1484,26 +2059,188 @@ contains
         call transpose_z_to_y(RHS2_z, RHS2_y)
         call transpose_z_to_y(RHS3_z, RHS3_y)
 
+        tmp1_y = 0.d0
+        tmp2_y = 0.d0
+        tmp3_y = 0.d0
+
+        o2_tmp1_y = 0.d0
+        o2_tmp2_y = 0.d0
+        o2_tmp3_y = 0.d0
+
         n1e=ysize(1)!(min(n1m, yend(1))-ystart(1))+1
         n3e=ysize(3)!(min(n3m, yend(3))-ystart(3))+1
 
-        if(BC2==NOSLIP) call diff_at_wall_2 ! implicit: NS_Q3_BC2=Dirichlet
+        ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
+        !     call set_antisymmetric_velocity_in_object(Z,Yc,Xc,q1_y,'Y')
+        !     call set_antisymmetric_velocity_in_object(Zc,Y,Xc,q2_y,'Y')
+        !     call set_antisymmetric_velocity_in_object(Zc,Yc,X,q3_y,'Y')
+        ! endif
 
-        call D1c_MULTACC_3Dy(q1_y, RHS1_y, ysize(1),n1e,n2,ysize(3),n3e, diff21_coef, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,1))
-        call D2c_MULTACC_3Dy(q1_y, RHS1_y, ysize(1),n1e,n2,ysize(3),n3e, diff22_coef, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,2))
+        ! For RHS1
+        call D1c_MULTACC_3Dy(q1_y, tmp1_y, ysize(1),n1e,n2,ysize(3),n3e, diff21_coef, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,1))
+        call D2c_MULTACC_3Dy(q1_y, tmp1_y, ysize(1),n1e,n2,ysize(3),n3e, diff22_coef, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,2))
 
-        call D1c_MULTACC_3Dy(q2_y, RHS2_y, ysize(1),n1e,n2,ysize(3),n3e, diff21_coef, .false., NS_Q2_BC2, Y_to_YTr_for_D2(:,1))
-        call D2c_MULTACC_3Dy(q2_y, RHS2_y, ysize(1),n1e,n2,ysize(3),n3e, diff22_coef, .false., NS_Q2_BC2, Y_to_YTr_for_D2(:,2))
+        ! For RHS2
+        call D1c_MULTACC_3Dy(q2_y, tmp2_y, ysize(1),n1e,n2,ysize(3),n3e, diff21_coef, .false., NS_Q2_BC2, Y_to_YTr_for_D2(:,1))
+        call D2c_MULTACC_3Dy(q2_y, tmp2_y, ysize(1),n1e,n2,ysize(3),n3e, diff22_coef, .false., NS_Q2_BC2, Y_to_YTr_for_D2(:,2))
 
-        call D1c_MULTACC_3Dy(q3_y, RHS3_y, ysize(1),n1e,n2,ysize(3),n3e, diff21_coef, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,1))
-        call D2c_MULTACC_3Dy(q3_y, RHS3_y, ysize(1),n1e,n2,ysize(3),n3e, diff22_coef, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,2))
+        ! For RHS3
+        call D1c_MULTACC_3Dy(q3_y, tmp3_y, ysize(1),n1e,n2,ysize(3),n3e, diff21_coef, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,1))
+        call D2c_MULTACC_3Dy(q3_y, tmp3_y, ysize(1),n1e,n2,ysize(3),n3e, diff22_coef, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,2))
 
-        call D1s_MULTACC_3Dy(p12_y, RHS1_y, ysize(1),n1e,n2,ysize(3),n3e, conv2_coef, .false., NS_P12_BC2, Yc_to_YcTr_for_D1)
+        call D1s_MULTACC_3Dy(p12_y, tmp1_y, ysize(1),n1e,n2,ysize(3),n3e, conv2_coef, .false., NS_P12_BC2, Yc_to_YcTr_for_D1)
         call D0s_3Dy(q2_y, q2q2_y, ysize(1),n1e,n2,ysize(3),n3e, NS_Q2_BC2)
         q2q2_y=q2q2_y**2
-        call D1ssh_MULTACC_3Dy(q2q2_y, RHS2_y, ysize(1),n1e,n2,ysize(3),n3e, conv2_coef, .true., NS_P22_BC2, Y_to_YTr_for_D1)
+        call D1ssh_MULTACC_3Dy(q2q2_y, tmp2_y, ysize(1),n1e,n2,ysize(3),n3e, conv2_coef, .true., NS_P22_BC2, Y_to_YTr_for_D1)
 
-        call D1s_MULTACC_3Dy(p23_y, RHS3_y, ysize(1),n1e,n2,ysize(3),n3e, conv2_coef, .false., NS_P23_BC2, Yc_to_YcTr_for_D1)
+        call D1s_MULTACC_3Dy(p23_y, tmp3_y, ysize(1),n1e,n2,ysize(3),n3e, conv2_coef, .false., NS_P23_BC2, Yc_to_YcTr_for_D1)
+
+        ! If the IBM is activated then the DRP scheme has to be corrected ...
+        if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
+
+            ! For RHS1
+            call get_ijk_IBM(Z,Yc,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            do i=ystart(1),yend(1)
+                    do k=ystart(3),yend(3)
+
+                    if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+                        tmp1_y(i,max(1,j_IBM_start):min(j_IBM_end,n2m),k) = 0.d0
+                        call D1c_IBM_O2_MULTACC_3Dy(q1_y(i,:,k),tmp1_y(i,:,k),n2,j_IBM_start,j_IBM_end,diff21_coef,Yc_to_YcTr_for_D2(:,1))
+                        call D2c_IBM_O2_MULTACC_3Dy(q1_y(i,:,k),tmp1_y(i,:,k),n2,j_IBM_start,j_IBM_end,diff22_coef,Yc_to_YcTr_for_D2(:,2))
+                        call D1s_IBM_O2_MULTACC_3Dy(p12_y(i,:,k),tmp1_y(i,:,k),n2,j_IBM_start,j_IBM_end,conv2_coef,Yc_to_YcTr_for_D1)
+
+                    endif
+                enddo
+            enddo
+
+            ! For RHS2
+            call get_ijk_IBM(Zc,Y,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            do i=ystart(1),yend(1)
+                    do k=ystart(3),yend(3)
+
+                    if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+                        tmp2_y(i,max(1,j_IBM_start):min(j_IBM_end,n2m),k) = 0.d0
+                        q2q2_y(i,max(1,j_IBM_start):min(j_IBM_end,n2m),k) = 0.d0
+                        call D1c_IBM_O2_MULTACC_3Dy(q2_y(i,:,k),tmp2_y(i,:,k),n2,j_IBM_start,j_IBM_end,diff21_coef,Y_to_YTr_for_D2(:,1))
+                        call D2c_IBM_O2_MULTACC_3Dy(q2_y(i,:,k),tmp2_y(i,:,k),n2,j_IBM_start,j_IBM_end,diff22_coef,Y_to_YTr_for_D2(:,2))
+
+                        call D0s_IBM_O2_3Dy(q2_y(i,:,k),q2q2_y(i,:,k),n2,j_IBM_start,j_IBM_end)
+                        q2q2_y(i,max(1,j_IBM_start):min(j_IBM_end,n2m),k)=q2q2_y(i,max(1,j_IBM_start):min(j_IBM_end,n2m),k)**2
+                        call D1ssh_IBM_O2_MULTACC_3Dy(q2q2_y(i,:,k),tmp2_y(i,:,k),n2,j_IBM_start,j_IBM_end,conv2_coef,Y_to_YTr_for_D1)
+
+                    endif
+                enddo
+            enddo
+
+            ! For RHS3
+            call get_ijk_IBM(Zc,Yc,X,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            do i=ystart(1),yend(1)
+                    do k=ystart(3),yend(3)
+
+                    if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+                        tmp3_y(i,max(1,j_IBM_start):min(j_IBM_end,n2m),k) = 0.d0
+                        call D1c_IBM_O2_MULTACC_3Dy(q3_y(i,:,k),tmp3_y(i,:,k),n2,j_IBM_start,j_IBM_end,diff21_coef,Yc_to_YcTr_for_D2(:,1))
+                        call D2c_IBM_O2_MULTACC_3Dy(q3_y(i,:,k),tmp3_y(i,:,k),n2,j_IBM_start,j_IBM_end,diff22_coef,Yc_to_YcTr_for_D2(:,2))
+                        call D1s_IBM_O2_MULTACC_3Dy(p23_y(i,:,k),tmp3_y(i,:,k),n2,j_IBM_start,j_IBM_end,conv2_coef,Yc_to_YcTr_for_D1)
+
+                    endif
+                enddo
+            enddo
+
+            ! ! For RHS1
+            ! call D1c_O2_MULTACC_3Dy(q1_y, o2_tmp1_y, ysize(1),n1e,n2,ysize(3),n3e, diff21_coef, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,1))
+            ! call D2c_O2_MULTACC_3Dy(q1_y, o2_tmp1_y, ysize(1),n1e,n2,ysize(3),n3e, diff22_coef, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,2))
+
+            ! ! For RHS2
+            ! call D1c_O2_MULTACC_3Dy(q2_y, o2_tmp2_y, ysize(1),n1e,n2,ysize(3),n3e, diff21_coef, .false., NS_Q2_BC2, Y_to_YTr_for_D2(:,1))
+            ! call D2c_O2_MULTACC_3Dy(q2_y, o2_tmp2_y, ysize(1),n1e,n2,ysize(3),n3e, diff22_coef, .false., NS_Q2_BC2, Y_to_YTr_for_D2(:,2))
+
+            ! ! For RHS3
+            ! call D1c_O2_MULTACC_3Dy(q3_y, o2_tmp3_y, ysize(1),n1e,n2,ysize(3),n3e, diff21_coef, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,1))
+            ! call D2c_O2_MULTACC_3Dy(q3_y, o2_tmp3_y, ysize(1),n1e,n2,ysize(3),n3e, diff22_coef, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,2))
+
+            ! call D1s_O2_MULTACC_3Dy(p12_y, o2_tmp1_y, ysize(1),n1e,n2,ysize(3),n3e, conv2_coef, .false., NS_P12_BC2, Yc_to_YcTr_for_D1)
+            ! call D0s_O2_3Dy(q2_y, q2q2_y, ysize(1),n1e,n2,ysize(3),n3e, NS_Q2_BC2)
+            ! q2q2_y=q2q2_y**2
+            ! call D1ssh_O2_MULTACC_3Dy(q2q2_y, o2_tmp2_y, ysize(1),n1e,n2,ysize(3),n3e, conv2_coef, .true., NS_P22_BC2, Y_to_YTr_for_D1)
+
+            ! call D1s_O2_MULTACC_3Dy(p23_y, o2_tmp3_y, ysize(1),n1e,n2,ysize(3),n3e, conv2_coef, .false., NS_P23_BC2, Yc_to_YcTr_for_D1)
+
+            ! ! For RHS1
+            ! call get_ijk_IBM(Z,Yc,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            ! do i=ystart(1),yend(1)
+            !     do j=ystart(2),yend(2)
+            !         do k=ystart(3),yend(3)
+
+            !             if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+            !             ! call D2c_DRP6_MULT_3Dy(q1_y(i,:,k),tmp1_y(i,:,k),j_IBM_start,j_IBM_end,n2,diff22_coef,Yc_to_YcTr_for_D2(:,2))
+            !             ! call D1c_DRP6_MULTACC_3Dy(q1_y(i,:,k),tmp1_y(i,:,k),j_IBM_start,j_IBM_end,n2,diff21_coef,Yc_to_YcTr_for_D2(:,1))
+
+            !                 tmp1_y(i,j,k) = o2_tmp1_y(i,j,k)
+
+            !             endif
+            !         enddo
+            !     enddo
+            ! enddo
+
+            ! ! For RHS2
+            ! call get_ijk_IBM(Zc,Y,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            ! do i=ystart(1),yend(1)
+            !     do j=ystart(2),yend(2)
+            !         do k=ystart(3),yend(3)
+
+            !             if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+            !             ! call D2c_DRP6_MULT_3Dy(q2_y(i,:,k),tmp2_y(i,:,k),j_IBM_start,j_IBM_end,n2,diff22_coef,Y_to_YTr_for_D2(:,2))
+            !             ! call D1c_DRP6_MULTACC_3Dy(q2_y(i,:,k),tmp2_y(i,:,k),j_IBM_start,j_IBM_end,n2,diff21_coef,Y_to_YTr_for_D2(:,1))
+
+            !             ! call D0s_DRP5_3Dy(q2_y(i,:,k), q2q2_y,j_IBM_start,j_IBM_end,n2)
+            !             ! q2q2_y = q2q2_y**2
+            !             ! call D1ssh_DRP5_MULTACC_3Dy(q2q2_y,tmp2_y(i,:,k),j_IBM_start,j_IBM_end,n2,conv2_coef, Y_to_YTr_for_D1)
+
+            !                 tmp2_y(i,j,k) = o2_tmp2_y(i,j,k)
+
+            !             endif
+            !         enddo
+            !     enddo
+            ! enddo
+
+            ! ! For RHS3
+            ! call get_ijk_IBM(Zc,Yc,X,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            ! do i=ystart(1),yend(1)
+            !     do j=ystart(2),yend(2)
+            !         do k=ystart(3),yend(3)
+
+            !             if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+            !             ! call D2c_DRP6_MULT_3Dy(q3_y(i,:,k),tmp3_y(i,:,k),j_IBM_start,j_IBM_end,n2,diff22_coef,Yc_to_YcTr_for_D2(:,2))
+            !             ! call D1c_DRP6_MULTACC_3Dy(q3_y(i,:,k),tmp3_y(i,:,k),j_IBM_start,j_IBM_end,n2,diff21_coef,Yc_to_YcTr_for_D2(:,1))
+
+            !                 tmp3_y(i,j,k) = o2_tmp3_y(i,j,k)
+
+            !             endif
+            !         enddo
+            !     enddo
+            ! enddo
+
+        endif
+
+        if(BC2==NOSLIP) call diff_at_wall_2 ! implicit: NS_Q3_BC2=Dirichlet
+
+        RHS1_y = RHS1_y + tmp1_y
+        RHS2_y = RHS2_y + tmp2_y
+        RHS3_y = RHS3_y + tmp3_y
+
         ! _______________________________________________________________________________________________________________________
         ! ***********************************************************************************************************************
         ! ****************************** Derivative along the X direction *******************************************************
@@ -1518,20 +2255,170 @@ contains
         call transpose_y_to_x(RHS2_y, RHS2_x)
         call transpose_y_to_x(RHS3_y, RHS3_x)
 
+        tmp1_x = 0.d0
+        tmp2_x = 0.d0
+        tmp3_x = 0.d0
+
+        o2_tmp1_x = 0.d0
+        o2_tmp2_x = 0.d0
+        o2_tmp3_x = 0.d0
+
         n2e=xsize(2)!(min(n2m, xend(2))-xstart(2))+1
         n3e=xsize(3)!(min(n3m, xend(3))-xstart(3))+1
 
-        if((BC1==NOSLIP).or.(BC1==PSEUDO_PERIODIC).or.(BC1==OPEN)) call diff_at_wall_1   ! ATTENTION
+        ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
+        !     call set_antisymmetric_velocity_in_object(Z,Yc,Xc,q1_x,'X')
+        !     call set_antisymmetric_velocity_in_object(Zc,Y,Xc,q2_x,'X')
+        !     call set_antisymmetric_velocity_in_object(Zc,Yc,X,q3_x,'X')
+        ! endif
 
+        ! For RHS1
         call D0s_3Dx(q1_x, q1q1_x, n1,xsize(2),n2e,xsize(3),n3e, NS_Q1_BC1)
         q1q1_x=q1q1_x**2
-        call D1ssh_ACC_3Dx(q1q1_x, RHS1_x, n1,xsize(2),n2e,xsize(3),n3e, conv1_coef, .true., NS_P11_BC1)
-        call D1s_ACC_3Dx(p12_x, RHS2_x, n1,xsize(2),n2e,xsize(3),n3e, conv1_coef, .false., NS_P12_BC1)
-        call D1s_ACC_3Dx(p13_x, RHS3_x, n1,xsize(2),n2e,xsize(3),n3e, conv1_coef, .false., NS_P13_BC1)
+        call D1ssh_ACC_3Dx(q1q1_x, tmp1_x, n1,xsize(2),n2e,xsize(3),n3e, conv1_coef, .true., NS_P11_BC1)
+        call D2c_ACC_3Dx(q1_x, tmp1_x, n1,xsize(2),n2e,xsize(3),n3e, diff1_coef, .false., NS_Q1_BC1)
 
-        call D2c_ACC_3Dx(q1_x, RHS1_x, n1,xsize(2),n2e,xsize(3),n3e, diff1_coef, .false., NS_Q1_BC1)
-        call D2c_ACC_3Dx(q2_x, RHS2_x, n1,xsize(2),n2e,xsize(3),n3e, diff1_coef, .true., NS_Q2_BC1)
-        call D2c_ACC_3Dx(q3_x, RHS3_x, n1,xsize(2),n2e,xsize(3),n3e, diff1_coef, .true., NS_Q3_BC1)
+        ! For RHS2
+        call D1s_ACC_3Dx(p12_x, tmp2_x, n1,xsize(2),n2e,xsize(3),n3e, conv1_coef, .false., NS_P12_BC1)
+        call D2c_ACC_3Dx(q2_x, tmp2_x, n1,xsize(2),n2e,xsize(3),n3e, diff1_coef, .true., NS_Q2_BC1)
+
+        ! For RHS3
+        call D1s_ACC_3Dx(p13_x, tmp3_x, n1,xsize(2),n2e,xsize(3),n3e, conv1_coef, .false., NS_P13_BC1)
+        call D2c_ACC_3Dx(q3_x, tmp3_x, n1,xsize(2),n2e,xsize(3),n3e, diff1_coef, .true., NS_Q3_BC1)
+
+        ! If the IBM is activated then the DRP scheme has to be corrected ...
+        if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
+
+            ! For RHS1
+            call get_ijk_IBM(Z,Yc,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            do j=xstart(2),xend(2)
+                do k=xstart(3),xend(3)
+
+                    if ((j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+                        tmp1_x(max(1,i_IBM_start):min(i_IBM_end,n1m),j,k) = 0.d0
+                        q1q1_x(max(1,i_IBM_start):min(i_IBM_end,n1m),j,k) = 0.d0
+                        call D2c_IBM_O2_3Dx(q1_x(:,j,k),tmp1_x(:,j,k),n1,i_IBM_start,i_IBM_end,diff1_coef)
+                        call D0s_IBM_O2_3Dx(q1_x(:,j,k),q1q1_x(:,j,k),n1,i_IBM_start,i_IBM_end)
+                        q1q1_x(max(1,i_IBM_start):min(i_IBM_end,n1m),j,k)=q1q1_x(max(1,i_IBM_start):min(i_IBM_end,n1m),j,k)**2
+                        call D1ssh_IBM_O2_ACC_3Dx(q1q1_x(:,j,k),tmp1_x(:,j,k),n1,i_IBM_start,i_IBM_end,conv1_coef)
+
+                    endif
+                enddo
+            enddo
+
+            ! For RHS2
+            call get_ijk_IBM(Zc,Y,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            do j=xstart(2),xend(2)
+                do k=xstart(3),xend(3)
+
+                    if ((j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+                        tmp2_x(max(1,i_IBM_start):min(i_IBM_end,n1m),j,k) = 0.d0
+                        call D2c_IBM_O2_3Dx(q2_x(:,j,k),tmp2_x(:,j,k),n1,i_IBM_start,i_IBM_end,diff1_coef)
+                        call D1s_IBM_O2_ACC_3Dx(p12_x(:,j,k),tmp2_x(:,j,k),n1,i_IBM_start,i_IBM_end,conv1_coef)
+
+                    endif
+                enddo
+            enddo
+
+            ! For RHS3
+            call get_ijk_IBM(Zc,Yc,X,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            do j=xstart(2),xend(2)
+                do k=xstart(3),xend(3)
+
+                    if ((j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+                        tmp3_x(max(1,i_IBM_start):min(i_IBM_end,n1m),j,k) = 0.d0
+                        call D2c_IBM_O2_3Dx(q3_x(:,j,k),tmp3_x(:,j,k),n1,i_IBM_start,i_IBM_end,diff1_coef)
+                        call D1s_IBM_O2_ACC_3Dx(p13_x(:,j,k),tmp3_x(:,j,k),n1,i_IBM_start,i_IBM_end,conv1_coef)
+
+                    endif
+                enddo
+            enddo
+
+            ! ! For RHS1
+            ! call D0s_O2_3Dx(q1_x, q1q1_x, n1,xsize(2),n2e,xsize(3),n3e, NS_Q1_BC1)
+            ! q1q1_x=q1q1_x**2
+            ! call D1ssh_O2_ACC_3Dx(q1q1_x, o2_tmp1_x, n1,xsize(2),n2e,xsize(3),n3e, conv1_coef, .true., NS_P11_BC1)
+            ! call D2c_O2_ACC_3Dx(q1_x, o2_tmp1_x, n1,xsize(2),n2e,xsize(3),n3e, diff1_coef, .false., NS_Q1_BC1)
+
+            ! ! For RHS2
+            ! call D1s_O2_ACC_3Dx(p12_x, o2_tmp2_x, n1,xsize(2),n2e,xsize(3),n3e, conv1_coef, .false., NS_P12_BC1)
+            ! call D2c_O2_ACC_3Dx(q2_x, o2_tmp2_x, n1,xsize(2),n2e,xsize(3),n3e, diff1_coef, .true., NS_Q2_BC1)
+
+            ! ! For RHS3
+            ! call D1s_O2_ACC_3Dx(p13_x, o2_tmp3_x, n1,xsize(2),n2e,xsize(3),n3e, conv1_coef, .false., NS_P13_BC1)
+            ! call D2c_O2_ACC_3Dx(q3_x, o2_tmp3_x, n1,xsize(2),n2e,xsize(3),n3e, diff1_coef, .true., NS_Q3_BC1)
+
+            ! ! For RHS1
+            ! call get_ijk_IBM(Z,Yc,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            ! do i=xstart(1),xend(1)
+            !     do j=xstart(2),xend(2)
+            !         do k=xstart(3),xend(3)
+
+            !             if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+            !             ! call D2c_DRP6_3Dxz(q1_x(:,j,k),tmp1_x(:,j,k),i_IBM_start,i_IBM_end,n1,diff1_coef)
+
+            !             ! call D0s_DRP5_3Dxz(q1_x(:,j,k), q1q1_x,i_IBM_start,i_IBM_end,n1)
+            !             ! q1q1_x = q1q1_x**2
+            !             ! call D1ssh_DRP5_ACC_3Dxz(q1q1_x,tmp1_x(:,j,k),i_IBM_start,i_IBM_end,n1,conv1_coef)
+
+            !                 tmp1_x(i,j,k) = o2_tmp1_x(i,j,k)
+
+            !             endif
+            !         enddo
+            !     enddo
+            ! enddo
+
+            ! ! For RHS2
+            ! call get_ijk_IBM(Zc,Y,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            ! do i=xstart(1),xend(1)
+            !     do j=xstart(2),xend(2)
+            !         do k=xstart(3),xend(3)
+
+            !             if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+            !             ! call D2c_DRP6_3Dxz(q2_x(:,j,k),tmp2_x(:,j,k),i_IBM_start,i_IBM_end,n1,diff1_coef)
+
+            !                 tmp2_x(i,j,k) = o2_tmp2_x(i,j,k)
+
+            !             endif
+            !         enddo
+            !     enddo
+            ! enddo
+
+            ! ! For RHS3
+            ! call get_ijk_IBM(Zc,Yc,X,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            ! do i=xstart(1),xend(1)
+            !     do j=xstart(2),xend(2)
+            !         do k=xstart(3),xend(3)
+
+            !             if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+            !                 ! call D2c_DRP6_3Dxz(q3_x(:,j,k),tmp3_x(:,j,k),i_IBM_start,i_IBM_end,n1,diff1_coef)
+
+            !                 tmp3_x(i,j,k) = o2_tmp3_x(i,j,k)
+
+            !             endif
+            !         enddo
+            !     enddo
+            ! enddo
+
+        endif
+
+        if((BC1==NOSLIP).or.(BC1==PSEUDO_PERIODIC).or.(BC1==OPEN)) call diff_at_wall_1   ! ATTENTION
+
+        RHS1_x = RHS1_x + tmp1_x
+        RHS2_x = RHS2_x + tmp2_x
+        RHS3_x = RHS3_x + tmp3_x
 
         return
 
@@ -1545,11 +2432,11 @@ contains
             ! ATTENTION
             do k=xstart(3), min(n3m, xend(3))       !do k=1,n3m
                 do j=xstart(2), min(n2m, xend(2))       !do j=1,n2m
-                    RHS2_x(1,j,k)   =RHS2_x(1,j,k)  +( q2_x(2,j,k)       /3.d0 - q2_x(1,j,k)      + q2_wall10(j,k)*2.d0/3.d0)  /diff1_coef**2
-                    RHS2_x(n1m,j,k) =RHS2_x(n1m,j,k)+( q2_x(n1m-1,j,k)   /3.d0 - q2_x(n1m,j,k)    + q2_wall11(j,k)*2.d0/3.d0 ) /diff1_coef**2
+                    tmp2_x(1,j,k)   =tmp2_x(1,j,k)  +( q2_x(2,j,k)       /3.d0 - q2_x(1,j,k)      + q2_wall10(j,k)*2.d0/3.d0)  /diff1_coef**2
+                    tmp2_x(n1m,j,k) =tmp2_x(n1m,j,k)+( q2_x(n1m-1,j,k)   /3.d0 - q2_x(n1m,j,k)    + q2_wall11(j,k)*2.d0/3.d0 ) /diff1_coef**2
 
-                    RHS3_x(1,j,k)   =RHS3_x(1,j,k)  +( q3_x(2,j,k)       /3.d0 - q3_x(1,j,k)      + q3_wall10(j,k)*2.d0/3.d0 ) /diff1_coef**2
-                    RHS3_x(n1m,j,k) =RHS3_x(n1m,j,k)+( q3_x(n1m-1,j,k)   /3.d0 - q3_x(n1m,j,k)    + q3_wall11(j,k)*2.d0/3.d0)  /diff1_coef**2
+                    tmp3_x(1,j,k)   =tmp3_x(1,j,k)  +( q3_x(2,j,k)       /3.d0 - q3_x(1,j,k)      + q3_wall10(j,k)*2.d0/3.d0 ) /diff1_coef**2
+                    tmp3_x(n1m,j,k) =tmp3_x(n1m,j,k)+( q3_x(n1m-1,j,k)   /3.d0 - q3_x(n1m,j,k)    + q3_wall11(j,k)*2.d0/3.d0)  /diff1_coef**2
                 enddo
             enddo
 
@@ -1574,11 +2461,11 @@ contains
             do k=ystart(3), min(n3m, yend(3))       !do k=1,n3m
                 do i=ystart(1), min(n1m, yend(1))       !do i=1,n1m
 
-                    RHS1_y(i,1,k)=RHS1_y(i,1,k)+( q1_y(i,2,k)*a3_d + q1_y(i,1,k)*a2_d + q1_wall20(i,k)*a1_d)            /diff2_coef**2
-                    RHS1_y(i,n2m,k)=RHS1_y(i,n2m,k)+( q1_y(i,n2m-1,k)*a1_u + q1_y(i,n2m,k)*a2_u + q1_wall21(i,k)*a3_u ) /diff2_coef**2
+                    tmp1_y(i,1,k)=tmp1_y(i,1,k)+( q1_y(i,2,k)*a3_d + q1_y(i,1,k)*a2_d + q1_wall20(i,k)*a1_d)            /diff2_coef**2
+                    tmp1_y(i,n2m,k)=tmp1_y(i,n2m,k)+( q1_y(i,n2m-1,k)*a1_u + q1_y(i,n2m,k)*a2_u + q1_wall21(i,k)*a3_u ) /diff2_coef**2
 
-                    RHS3_y(i,1,k)=RHS3_y(i,1,k)+( q3_y(i,2,k)*a3_d + q3_y(i,1,k)*a2_d + q3_wall20(i,k)*a1_d )           /diff2_coef**2
-                    RHS3_y(i,n2m,k)=RHS3_y(i,n2m,k)+( q3_y(i,n2m-1,k)*a1_u + q3_y(i,n2m,k) *a2_u + q3_wall21(i,k)*a3_u) /diff2_coef**2
+                    tmp3_y(i,1,k)=tmp3_y(i,1,k)+( q3_y(i,2,k)*a3_d + q3_y(i,1,k)*a2_d + q3_wall20(i,k)*a1_d )           /diff2_coef**2
+                    tmp3_y(i,n2m,k)=tmp3_y(i,n2m,k)+( q3_y(i,n2m-1,k)*a1_u + q3_y(i,n2m,k) *a2_u + q3_wall21(i,k)*a3_u) /diff2_coef**2
                 enddo
             enddo
 
@@ -1597,11 +2484,11 @@ contains
 
             do j = zstart(2), min(n2m, zend(2))     !do j=1,n2m
                 do i=zstart(1), min(n1m, zend(1))       !do i=1,n1m
-                    RHS1_z(i,j,1)   =RHS1_z(i,j,1)  +( q1_z(i,j,2)       /3.d0 - q1_z(i,j,1)      + q1_wall30(i,j)*2.d0/3.d0 ) /diff3_coef**2
-                    RHS1_z(i,j,n3m) =RHS1_z(i,j,n3m)+( q1_z(i,j,n3m-1)   /3.d0 - q1_z(i,j,n3m)    + q1_wall31(i,j)*2.d0/3.d0)  /diff3_coef**2
+                    tmp1_z(i,j,1)   =tmp1_z(i,j,1)  +( q1_z(i,j,2)       /3.d0 - q1_z(i,j,1)      + q1_wall30(i,j)*2.d0/3.d0 ) /diff3_coef**2
+                    tmp1_z(i,j,n3m) =tmp1_z(i,j,n3m)+( q1_z(i,j,n3m-1)   /3.d0 - q1_z(i,j,n3m)    + q1_wall31(i,j)*2.d0/3.d0)  /diff3_coef**2
 
-                    RHS2_z(i,j,1)   =RHS2_z(i,j,1)  +( q2_z(i,j,2)       /3.d0 - q2_z(i,j,1)      + q2_wall30(i,j)*2.d0/3.d0)  /diff3_coef**2
-                    RHS2_z(i,j,n3m) =RHS2_z(i,j,n3m)+( q2_z(i,j,n3m-1)   /3.d0 - q2_z(i,j,n3m)    + q2_wall31(i,j)*2.d0/3.d0 ) /diff3_coef**2
+                    tmp2_z(i,j,1)   =tmp2_z(i,j,1)  +( q2_z(i,j,2)       /3.d0 - q2_z(i,j,1)      + q2_wall30(i,j)*2.d0/3.d0)  /diff3_coef**2
+                    tmp2_z(i,j,n3m) =tmp2_z(i,j,n3m)+( q2_z(i,j,n3m-1)   /3.d0 - q2_z(i,j,n3m)    + q2_wall31(i,j)*2.d0/3.d0 ) /diff3_coef**2
                 enddo
             enddo
 
@@ -1628,7 +2515,14 @@ contains
 
         if (IBM_activated) then
 
-            call force_velocity(q1_save2, q2_save2, q3_save2, xsize, vel_term1, vel_term2, vel_term3)
+            if ((interpol_type == IBM_INTERPOL_NONE).or.(interpol_type == SECOND_ORDER_INTERPOL)) then
+                call force_velocity(q1_save2, q2_save2, q3_save2, xsize, vel_term1, vel_term2, vel_term3)
+            else if (interpol_type == ANTISYMMETRIC_INTERPOL) then
+                ! call compute_antisymmetric_velocity(q1_save2, q2_save2, q3_save2, xsize, vel_term1, vel_term2, vel_term3)
+                call get_antisymmetric_velocity_in_object(Zc,Yc,X,q3_x,vel_term3,'X')
+                call get_antisymmetric_velocity_in_object(Zc,Y,Xc,q2_x,vel_term2,'X')
+                call get_antisymmetric_velocity_in_object(Z,Yc,Xc,q1_x,vel_term1,'X')
+            endif
 
             if ((BC1==UNBOUNDED).or.(BC1==FRINGE)) n1s=xstart(1)
             if ((BC1/=UNBOUNDED).and.(BC1/=FRINGE)) n1s=max(2,xstart(1))
@@ -1688,10 +2582,6 @@ contains
 
             if ((BC1==UNBOUNDED).or.(BC1==FRINGE)) n1s=xstart(1)
             if ((BC1/=UNBOUNDED).and.(BC1/=FRINGE)) n1s=max(2,xstart(1))
-            if (BC1==OPEN) then
-                n1s=2
-                n1e=n1-2
-            endif
             n2s=xstart(2)
             n3s=xstart(3)
             do k = n3s, n3e
@@ -1747,12 +2637,101 @@ contains
 
     ! Perform UV, UW, VW at the center of edges
     subroutine perform_velocity_products()
+        use mesh
+        use IBM
+        use DRP_IBM
 
         implicit none
 
         integer k,j,i
+        integer     :: i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end
+        real*8, dimension(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3))   :: tmp12_y
+        real*8, dimension(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3))   :: tmp23_z, tmp13_z
+        real*8, dimension(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3))   :: o2_tmp12_y, o2_tmp23_y
+        real*8, dimension(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3))   :: o2_tmp23_z, o2_tmp13_z
+        real*8, dimension(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3))   :: o2_tmp12_x, o2_tmp13_x
 
         ! X ------------------------------------------------------------------------
+
+        ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
+        !     ! write(*,*) xstart(1), xend(1), xstart(2), xend(2), xstart(3), xend(3)
+        !     ! write(*,*) size(q3_x(:,1,1)), size(q3_x(1,:,1)), size(q3_x(1,1,:))
+        !     call set_antisymmetric_velocity_in_object(Zc,Yc,X,q3_x,'X')
+        !     call set_antisymmetric_velocity_in_object(Zc,Y,Xc,q2_x,'X')
+        ! endif
+
+        ! write(*,*) q3_x(:,10,32)
+        ! write(*,*) q2_x(:,10,32)
+
+        call D0ssh_3Dx(q3_x, p13_x, n1,xsize(2),xsize(2),xsize(3),xsize(3), NS_Q3_BC1)
+        call D0ssh_3Dx(q2_x, p12_x, n1,xsize(2),xsize(2),xsize(3),xsize(3), NS_Q2_BC1)
+
+        if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
+
+            call get_ijk_IBM(Zc,Yc,X,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            do j=xstart(2),xend(2)
+                do k=xstart(3),xend(3)
+
+                    if ((j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+                        call D0ssh_IBM_O2_3Dx(q3_x(:,j,k), p13_x(:,j,k),n1,i_IBM_start,i_IBM_end)
+
+                    endif
+                enddo
+            enddo
+
+            call get_ijk_IBM(Zc,Y,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            do j=xstart(2),xend(2)
+                do k=xstart(3),xend(3)
+
+                    if ((j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+                        call D0ssh_IBM_O2_3Dx(q2_x(:,j,k), p12_x(:,j,k),n1,i_IBM_start,i_IBM_end)
+
+                    endif
+                enddo
+            enddo
+
+            ! call D0ssh_O2_3Dx(q3_x, o2_tmp13_x, n1,xsize(2),xsize(2),xsize(3),xsize(3), NS_Q3_BC1)
+            ! call D0ssh_O2_3Dx(q2_x, o2_tmp12_x, n1,xsize(2),xsize(2),xsize(3),xsize(3), NS_Q2_BC1)
+
+            ! call get_ijk_IBM(Zc,Yc,X,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            ! do i=xstart(1),xend(1)
+            !     do j=xstart(2),xend(2)
+            !         do k=xstart(3),xend(3)
+
+            !             if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+            !                 p13_x(i,j,k) = o2_tmp13_x(i,j,k)
+
+            ! !             call D0ssh_DRP5_3Dxz(q3_x(:,j,k), p13_x(:,j,k),i_IBM_start,i_IBM_end,n1)
+
+            !             endif
+            !         enddo
+            !     enddo
+            ! enddo
+
+            ! call get_ijk_IBM(Zc,Y,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            ! do i=xstart(1),xend(1)
+            !     do j=xstart(2),xend(2)
+            !         do k=xstart(3),xend(3)
+
+            !             if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+            !                 p12_x(i,j,k) = o2_tmp12_x(i,j,k)
+
+            !                 ! call D0ssh_DRP5_3Dxz(q2_x(:,j,k), p12_x(:,j,k),i_IBM_start,i_IBM_end,n1)
+
+            !             endif
+            !         enddo
+            !     enddo
+            ! enddo
+
+        endif
 
         if ((BC1==NOSLIP).or.(BC1==FREESLIP).or.(BC1==PSEUDO_PERIODIC).or.(BC1==OPEN)) then
 
@@ -1768,11 +2747,84 @@ contains
 
         end if
 
-        call D0ssh_3Dx(q3_x, p13_x, n1,xsize(2),xsize(2),xsize(3),xsize(3), NS_Q3_BC1)
-        call D0ssh_3Dx(q2_x, p12_x, n1,xsize(2),xsize(2),xsize(3),xsize(3), NS_Q2_BC1)
-
         ! Y ------------------------------------------------------------------------
         call transpose_x_to_y(p12_x, p12_y)
+
+        ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
+        !     call set_antisymmetric_velocity_in_object(Zc,Yc,X,q3_y,'Y')
+        !     call set_antisymmetric_velocity_in_object(Z,Yc,Xc,q1_y,'Y')
+        ! endif
+
+        call D0ssh_3Dy(q3_y, p23_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), NS_Q3_BC2)
+        ! call D0ssh_MULT_3Dy(q1_y, p12_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), NS_Q1_BC2)
+        call D0ssh_3Dy(q1_y, tmp12_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), NS_Q1_BC2)
+
+        if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
+
+            call get_ijk_IBM(Zc,Yc,X,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            do i=ystart(1),yend(1)
+                do k=ystart(3),yend(3)
+
+                    if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+                        call D0ssh_IBM_O2_3Dy(q3_y(i,:,k), p23_y(i,:,k),n2,j_IBM_start,j_IBM_end)
+
+                    endif
+                enddo
+            enddo
+
+            call get_ijk_IBM(Z,Yc,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            do i=ystart(1),yend(1)
+                do k=ystart(3),yend(3)
+
+                    if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+                        call D0ssh_IBM_O2_3Dy(q1_y(i,:,k), tmp12_y(i,:,k),n2,j_IBM_start,j_IBM_end)
+
+                    endif
+                enddo
+            enddo
+
+            ! call D0ssh_O2_3Dy(q3_y, o2_tmp23_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), NS_Q3_BC2)
+            ! call D0ssh_O2_3Dy(q1_y, o2_tmp12_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), NS_Q1_BC2)
+
+            ! call get_ijk_IBM(Zc,Yc,X,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            ! do i=ystart(1),yend(1)
+            !     do j=ystart(2),yend(2)
+            !         do k=ystart(3),yend(3)
+
+            !             if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+            !                 p23_y(i,j,k) = o2_tmp23_y(i,j,k)
+
+            !                 ! call D0ssh_DRP5_3Dy(q3_y(i,:,k), p23_y(i,:,k),j_IBM_start,j_IBM_end,n2)
+
+            !             endif
+            !         enddo
+            !     enddo
+            ! enddo
+
+            ! call get_ijk_IBM(Z,Yc,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            ! do i=ystart(1),yend(1)
+            !     do  j=ystart(2),yend(2)
+            !         do k=ystart(3),yend(3)
+
+            !             if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+            !                 tmp12_y(i,j,k) = o2_tmp12_y(i,j,k)
+
+            !                 ! call D0ssh_DRP5_3Dy(q1_y(i,:,k), tmp12_y(i,:,k),j_IBM_start,j_IBM_end,n2)
+
+            !             endif
+            !         enddo
+            !     enddo
+            ! enddo
+
+        endif
 
         if ((BC2==NOSLIP).or.(BC2==FREESLIP)) then
 
@@ -1781,16 +2833,17 @@ contains
                     p23_y(i, 1,  k)   =q3_wall20(i, k)
                     p23_y(i, n2, k)   =q3_wall21(i, k)
 
-                    p12_y(i, 1,  k)   =p12_y(i, 1,  k) * q1_wall20(i, k)
-                    p12_y(i, n2, k)   =p12_y(i, n2, k) * q1_wall21(i, k)
+                    ! p12_y(i, 1,  k)   =p12_y(i, 1,  k) * q1_wall20(i, k)
+                    ! p12_y(i, n2, k)   =p12_y(i, n2, k) * q1_wall21(i, k)
+
+                    tmp12_y(i, 1,  k)   = q1_wall20(i, k)
+                    tmp12_y(i, n2, k)   = q1_wall21(i, k)
                 enddo
             enddo
 
         end if
 
-        call D0ssh_3Dy(q3_y, p23_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), NS_Q3_BC2)
-        call D0ssh_MULT_3Dy(q1_y, p12_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), NS_Q1_BC2)
-
+        p12_y = p12_y * tmp12_y
 
         ! Z ------------------------------------------------------------------------
         call transpose_y_to_z(p23_y, p23_z)
@@ -1798,25 +2851,108 @@ contains
         call transpose_x_to_y(p13_x, p13_y)
         call transpose_y_to_z(p13_y, p13_z)
 
+        ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
+        !     call set_antisymmetric_velocity_in_object(Zc,Y,Xc,q2_z,'Z')
+        !     call set_antisymmetric_velocity_in_object(Z,Yc,Xc,q1_z,'Z')
+        ! endif
+
+        ! call D0ssh_MULT_3Dz(q2_z, p23_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, NS_Q2_BC3)
+        ! call D0ssh_MULT_3Dz(q1_z, p13_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, NS_Q1_BC3)
+
+        call D0ssh_3Dz(q2_z, tmp23_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, NS_Q2_BC3)
+        call D0ssh_3Dz(q1_z, tmp13_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, NS_Q1_BC3)
+
+        if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
+
+            call get_ijk_IBM(Zc,Y,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            do i=zstart(1),zend(1)
+                do j=zstart(2),zend(2)
+
+                    if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end)) then
+
+                        call D0ssh_IBM_O2_3Dz(q2_z(i,j,:), tmp23_z(i,j,:),n3,k_IBM_start,k_IBM_end)
+
+                    endif
+                enddo
+            enddo
+
+            call get_ijk_IBM(Z,Yc,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            do i=zstart(1),zend(1)
+                do j=zstart(2),zend(2)
+
+                    if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end)) then
+
+                        call D0ssh_IBM_O2_3Dz(q1_z(i,j,:), tmp13_z(i,j,:),n3,k_IBM_start,k_IBM_end)
+
+                    endif
+                enddo
+            enddo
+
+            ! call D0ssh_O2_3Dz(q2_z, o2_tmp23_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, NS_Q2_BC3)
+            ! call D0ssh_O2_3Dz(q1_z, o2_tmp13_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, NS_Q1_BC3)
+
+            ! call get_ijk_IBM(Zc,Y,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            ! do i=zstart(1),zend(1)
+            !     do j=zstart(2),zend(2)
+            !         do k=zstart(3),zend(3)
+
+            !             if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+            !                 tmp23_z(i,j,k) = o2_tmp23_z(i,j,k)
+
+            !                 ! call D0ssh_DRP5_3Dxz(q2_z(i,j,:), tmp23_z(i,j,:),k_IBM_start,k_IBM_end,n3)
+
+            !             endif
+            !         enddo
+            !     enddo
+            ! enddo
+
+            ! call get_ijk_IBM(Z,Yc,Xc,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
+
+            ! do i=zstart(1),zend(1)
+            !     do j=zstart(2),zend(2)
+            !         do k=zstart(3),zend(3)
+
+            !             if ((i.ge.i_IBM_start).and.(i.le.i_IBM_end).and.(j.ge.j_IBM_start).and.(j.le.j_IBM_end).and.(k.ge.k_IBM_start).and.(k.le.k_IBM_end)) then
+
+            !                 tmp13_z(i,j,k) = o2_tmp13_z(i,j,k)
+
+            !                 ! call D0ssh_DRP5_3Dxz(q1_z(i,j,:), tmp13_z(i,j,:),k_IBM_start,k_IBM_end,n3)
+
+            !             endif
+            !         enddo
+            !     enddo
+            ! enddo
+
+        endif
 
         ! ATTENTION
         if ((BC3==NOSLIP).or.(BC3==FREESLIP)) then
 
             do i=zstart(1), zend(1)
                 do j=zstart(2), zend(2)
-                    p23_z(i, j,  1)   =p23_z(i, j, 1)   * q2_wall30(i, j)
-                    p23_z(i, j, n3)   =p23_z(i, j, n3)  * q2_wall31(i, j)
+                    ! p23_z(i, j,  1)   =p23_z(i, j, 1)   * q2_wall30(i, j)
+                    ! p23_z(i, j, n3)   =p23_z(i, j, n3)  * q2_wall31(i, j)
 
-                    p13_z(i, j,  1)   =p13_z(i, j, 1)   * q1_wall30(i, j)
-                    p13_z(i, j, n3)   =p13_z(i, j, n3)  * q1_wall31(i, j)
+                    ! p13_z(i, j,  1)   =p13_z(i, j, 1)   * q1_wall30(i, j)
+                    ! p13_z(i, j, n3)   =p13_z(i, j, n3)  * q1_wall31(i, j)
+
+                    tmp23_z(i, j,  1)   = q2_wall30(i, j)
+                    tmp23_z(i, j, n3)   = q2_wall31(i, j)
+
+                    tmp13_z(i, j,  1)   = q1_wall30(i, j)
+                    tmp13_z(i, j, n3)   = q1_wall31(i, j)
                 end do
             enddo
 
         end if
         ! ENDATTENTION
 
-        call D0ssh_MULT_3Dz(q2_z, p23_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, NS_Q2_BC3)
-        call D0ssh_MULT_3Dz(q1_z, p13_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, NS_Q2_BC3)
+        p23_z = p23_z * tmp23_z
+        p13_z = p13_z * tmp13_z
 
         return
 
