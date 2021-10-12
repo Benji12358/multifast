@@ -27,7 +27,7 @@ contains
         fexist(4)=.false.
 
         if ((run_ctxt==CONTINUE_FROM_PREVIOUS_RUN).or.(run_ctxt==RECOVERY_A_RUN)) then
-
+            write(*,*) 'here'
             fexist=.true.
 
             call load_fields(recovery_fields_dir, .false., fexist)
@@ -38,37 +38,42 @@ contains
 
         else
 
-            select case (start_source_type)
-                case (NO_SOURCE)
+            if ((start_source_type==NO_SOURCE).or.(reset_scalar_field)) then
 
-                    if (init_type==CLASSIC_INIT) then
+            ! select case (start_source_type)
+            !     case (NO_SOURCE)
 
-                        call generate_fields(sca_x(:,:,:), sca_y(:,:,:), sca_z(:,:,:), -delta_T, delta_T)
+                if (init_type==CLASSIC_INIT) then
 
-                    elseif (init_type==INIT_FROM_FILE) then
+                    call generate_fields(sca_x(:,:,:), sca_y(:,:,:), sca_z(:,:,:), -delta_T, delta_T)
 
-                        call generate_from_file(sca_x(:,:,:), sca_y(:,:,:), sca_z(:,:,:))
+                elseif (init_type==INIT_FROM_FILE) then
 
-                    endif
+                    call generate_from_file(sca_x(:,:,:), sca_y(:,:,:), sca_z(:,:,:))
 
-                case (HDF5_FILE)
+                endif
 
-                    write(tmp_str, "(i10)")start_it
-                    filename="field"//trim(adjustl(tmp_str))
+            else if (start_source_type==HDF5_FILE) then
 
-                    SCALAR_external_fields_path=trim(external_fields_path)//"/3D/"//trim(filename)
+                ! case (HDF5_FILE)
 
-                    if(nrank==0) write(*,*) 'SCALAR_external_fields_path ', trim(SCALAR_external_fields_path)
+                write(tmp_str, "(i10)")start_it
+                filename="field"//trim(adjustl(tmp_str))
 
+                SCALAR_external_fields_path=trim(external_fields_path)//"/3D/"//trim(filename)
 
-                    call load_fields(SCALAR_external_fields_path, start_from_coarse_file, fexist)
-
-                    if (.not. fexist(4)) then
-                        call generate_fields(sca_x(:,:,:), sca_y(:,:,:), sca_z(:,:,:), -delta_T, delta_T)
-                    endif
+                if(nrank==0) write(*,*) 'SCALAR_external_fields_path ', trim(SCALAR_external_fields_path)
 
 
-            end select
+                call load_fields(SCALAR_external_fields_path, start_from_coarse_file, fexist)
+
+                if (.not. fexist(4)) then
+                    call generate_fields(sca_x(:,:,:), sca_y(:,:,:), sca_z(:,:,:), -delta_T, delta_T)
+                endif
+
+
+            ! end select
+            endif
 
         end if
 

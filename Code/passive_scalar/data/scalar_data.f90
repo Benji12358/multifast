@@ -7,6 +7,7 @@ module SCALAR_data
     real*8  :: renprandtl, delta_T, heat_flux
     integer :: SCA_state
     integer :: init_type
+    logical :: reset_scalar_field
 
     real*8,dimension (:,:), allocatable         :: sca_wall10, sca_wall20, sca_wall30
     real*8,dimension (:,:), allocatable         :: sca_wall11, sca_wall21, sca_wall31

@@ -12,18 +12,21 @@ contains
         use SCALAR_data
 
         implicit none
+        integer :: reset_int
 
 
         ! Scalar *********************************************************************************
         open(15,file=trim(COMMON_settings_path)//'scalar.d')
 
         read(15,*) SCA_state
+        read(15,*) reset_int
         read(15,*) init_type ! CLASSIC_INIT=0, INIT_FROM_FILE=1
         read(15,*) SCA_BC1, SCA_BC2, SCA_BC3
         read(15,*) renprandtl
         read(15,*) delta_T
         read(15,*) heat_flux
         heat_flux = heat_flux*h_height
+        reset_scalar_field = (reset_int==1)
 
         close(15)
 
