@@ -4,7 +4,6 @@ module mesh
     implicit none
     integer     :: n1, n2, n3
     integer     :: n1m, n2m, n3m
-    integer     :: n1_fringe, n3_fringe
 
     real*8  :: L1, L2, L3
     real*8  :: stretch_Y

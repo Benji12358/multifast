@@ -39,146 +39,6 @@ module VELOCITY_dao
 
 contains
 
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!      Below lies our implementation that write all variables       !!!!!!!!
-!!!!!!!!               at the cell centered in a single hdf5               !!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-
-  subroutine hdf5output(nstep,time)
-
-    use physical_fields
-    use mesh
-    use DNS_settings
-    use HDF5_IO
-    use VELOCITY_operations
-    use VELOCITY_workspace_view
-    use SCALAR_data
-    implicit none
-
-    type(datafile) :: file
-    integer, intent(in) :: nstep
-    real*8 , intent(in) :: time
-
-    character*500 suffix
-    character*500 filename, path, fnam
-    integer :: error,ppos
-    integer(hsize_t) :: dimsf(3)
-
-    integer :: n1s,n1e,n2s,n2e,n3s,n3e,ierrr,myid
-    real*8, allocatable, dimension(:,:,:)  :: q1c_x, q2c_y, q3c_z, scaC_y
-
-    call mpi_comm_rank(MPI_COMM_WORLD,myid,ierrr)
-
-    allocate(q1c_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-    allocate(q2c_y(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3)))
-    allocate(q3c_z(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3)))
-
-    allocate(scaC_y(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3)))
-
-    ! VALGRIND
-    q1c_x=0.d0
-    q2c_y=0.d0
-    q3c_z=0.d0
-
-    call perform_velocity_at_center(q3_z, q2_y, q1_x, q3c_z, q2c_y, q1c_x)
-
-    dimsf(1:3)=(/nx_global-1,ny_global-1,nz_global-1/)
-
-    path = trim(results_path)//'cell_centered_fields/'
-    call system('mkdir -p '//trim(path))
-                                     
-    write(suffix,'(I0.8)') nstep                                           
-    filename=trim(path)//'fields_'//trim(suffix)//'.h5'
-
-    ! Create and Open HDF5 file
-    call create_file(filename,file)
-
-    ! Write simulation parameters: Re and Mach
-    call h5gcreate_f(file%id,'setup',file%current_group, ierrr)
-    call write_hdf(file,ren,'Re')
-    call h5gclose_f(file%current_group, ierrr)
-
-    ! Write Grid
-    call h5gcreate_f(file%id,'grid',file%current_group,ierrr)
-    call write_hdf(file,nx_global-1,'nx')
-    call write_hdf(file,ny_global-1,'ny')
-    call write_hdf(file,nz_global-1,'nz')
-    call write_hdf(file,time,'time')
-    call write_hdf(file,nstep,'step')
-    call write_hdf(file,Xc,'Xc')
-    call write_hdf(file,Yc,'Yc')
-    call write_hdf(file,Zc,'Zc')
-    call h5gclose_f(file%current_group,ierrr)
-
-    ! Write density,pressure and temperature fields 
-    call h5gcreate_f(file%id,'fields',file%current_group, ierrr)
-
-    if (SCA_state==1) then
-        n1s = ystart(1); n1e=min(yend(1),nx_global-1)
-        n2s = ystart(2); n2e=min(yend(2),ny_global-1)
-        n3s = ystart(3); n3e=min(yend(3),nz_global-1)
-
-        call perform_passive_scalar_at_center(sca_y, scaC_y, delta_T)
-
-        call write_hdf(file,scaC_y(n1s:n1e,n2s:n2e,n3s:n3e),dimsf,'temperature',n1s,n1e,n2s,n2e,n3s,n3e)
-    endif
-
-    n1s = xstart(1); n1e=min(xend(1),nx_global-1)
-    n2s = xstart(2); n2e=min(xend(2),ny_global-1)
-    n3s = xstart(3); n3e=min(xend(3),nz_global-1)
-
-    call write_hdf(file,dp_x(n1s:n1e,n2s:n2e,n3s:n3e),dimsf,'pressure',n1s,n1e,n2s,n2e,n3s,n3e)
-    call h5gclose_f(file%current_group, ierrr)
-
-    ! Write velocity fields
-    call h5gcreate_f(file%id, "fields/velocity",file%current_group, ierrr)
-
-    n1s = xstart(1); n1e=min(xend(1),nx_global-1)
-    n2s = xstart(2); n2e=min(xend(2),ny_global-1)
-    n3s = xstart(3); n3e=min(xend(3),nz_global-1)
-    call write_hdf(file,q1c_x(n1s:n1e,n2s:n2e,n3s:n3e),dimsf,'W',n1s,n1e,n2s,n2e,n3s,n3e)
-
-    n1s = ystart(1); n1e=min(yend(1),nx_global-1)
-    n2s = ystart(2); n2e=min(yend(2),ny_global-1)
-    n3s = ystart(3); n3e=min(yend(3),nz_global-1)
-    call write_hdf(file,q2c_y(n1s:n1e,n2s:n2e,n3s:n3e),dimsf,'V',n1s,n1e,n2s,n2e,n3s,n3e)
-
-    n1s = zstart(1); n1e=min(zend(1),nx_global-1)
-    n2s = zstart(2); n2e=min(zend(2),ny_global-1)
-    n3s = zstart(3); n3e=min(zend(3),nz_global-1)
-    call write_hdf(file,q3c_z(n1s:n1e,n2s:n2e,n3s:n3e),dimsf,'U',n1s,n1e,n2s,n2e,n3s,n3e)
-
-    call h5gclose_f(file%current_group, ierrr)
-
-    ! Close HDF5 file
-    call close_file(file)
-
-    ! Write XDMF file for visualization in Paraview or Visit
-    if (myid==0) then
-      dimsf(1:3)=(/nz_global-1,ny_global-1,nx_global-1/)
-      !write(suffix,'(I0.8)') step
-      !fnam='fields_'//suffix
-      filename='fields_'//suffix
-      call write_xdmf(trim(path),trim(filename),time,dimsf,SCA_state)
-      print '(3A)', '# Written HDF5/XDMF files to disk: ',trim(filename),'.{h5,xmf}'
-    endif
-
-    deallocate(q1c_x)
-    deallocate(q2c_y)
-    deallocate(q3c_z)
-
-    deallocate(scaC_y)
-
-  end subroutine hdf5output
-
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
     ! Export all velocity fields in HDF5 format in individual files
     ! More generic, better than 2decomp format (not generic)
     subroutine write_fields(fields_dir)
@@ -561,7 +421,6 @@ contains
         type(DECOMP_INFO)   :: decomp_XYZ
 !        integer, intent(in)             :: n1c, n2c, n3c        ! Coarse mesh resolution
         real*8, dimension(:,:,:), allocatable   :: u_x_XYZ, v_x_XYZ, w_x_XYZ, dp_x_XYZ
-        integer             :: i
 
         if (fill_from_coarse) then
             ! Coarse field dimensions :
@@ -601,24 +460,9 @@ contains
 
         else
 
-            if (half_length.eq.1) then
+            call decomp_info_init(n1, n2, n3, decomp_XYZ)
 
-                call decomp_info_init(previous_fringe_start, n2, n3, decomp_XYZ)
-                call DAO_read_fields(file, q3_x(:previous_fringe_start,:,:), q2_x(:previous_fringe_start,:,:), q1_x(:previous_fringe_start,:,:), dp_x(:previous_fringe_start,:,:), decomp_XYZ, fexist)
-
-                do i=previous_fringe_start,n1
-                    q1_x(i,:,:) = q1_x(previous_fringe_start,:,:)
-                    q2_x(i,:,:) = q2_x(previous_fringe_start,:,:)
-                    q3_x(i,:,:) = q3_x(previous_fringe_start,:,:)
-                    dp_x(i,:,:) = dp_x(previous_fringe_start,:,:)
-                enddo
-
-            else 
-
-                call decomp_info_init(n1, n2, n3, decomp_XYZ)
-                call DAO_read_fields(file, q3_x, q2_x, q1_x, dp_x, decomp_XYZ, fexist)
-
-            endif
+            call DAO_read_fields(file, q3_x, q2_x, q1_x, dp_x, decomp_XYZ, fexist)
 
             ! Spread to all transpositions
             call transpose_x_to_y(q3_x, q3_y)
@@ -769,9 +613,9 @@ contains
         open(velmax_file_id, file=velmax_file)
 
         do i = 1, n
-            mask1_max(i)=maxval(IBM_mask1_x(i,:,:))
-            mask2_max(i)=maxval(IBM_mask2_x(i,:,:))
-            mask3_max(i)=maxval(IBM_mask3_x(i,:,:))
+            mask1_max(i)=maxval(IBM_mask1(i,:,:))
+            mask2_max(i)=maxval(IBM_mask2(i,:,:))
+            mask3_max(i)=maxval(IBM_mask3(i,:,:))
         end do
 
         do i = 1, n

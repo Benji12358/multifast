@@ -21,7 +21,7 @@ MESH=./mesh
 UTILS=./utils
 
 OBJ=$(DATA)/run_ctxt.o $(DATA)/anim2D.o $(DATA)/workspace_view.o $(DATA)/boundaries.o $(DATA)/DNS_settings.o $(DATA)/IBM_data.o $(DATA)/IBM_settings.o $(MESH)/mesh_settings.o $(MESH)/mesh_generator.o $(DATA)/physical_fields.o $(DATA)/schemes_interface.o \
-			Fields_tools.o $(UTILS)/buffers2d.o subdomains_view.o IO.o schemes_loader.o Poisson_generic_solver.o Poisson_solver.o IBM.o
+			Fields_tools.o $(UTILS)/buffers2d.o subdomains_view.o IO.o schemes_loader.o Poisson_generic_solver.o Poisson_solver.o
 
 
 ./.lib/libcommon.a 	: $(OBJ)

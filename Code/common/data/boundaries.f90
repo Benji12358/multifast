@@ -19,7 +19,7 @@ module boundaries
     integer :: TRANSPORT_Q1S_BC1, TRANSPORT_Q2S_BC2, TRANSPORT_Q3S_BC3
     integer :: TRANSPORT_SCA_BC1, TRANSPORT_SCA_BC2, TRANSPORT_SCA_BC3
 
-    integer, parameter  :: UNBOUNDED=0, FREESLIP=1, NOSLIP=2, OPEN=3, PSEUDO_PERIODIC=4, FRINGE=5
+    integer, parameter  :: UNBOUNDED=0, FREESLIP=1, NOSLIP=2, OPEN=3, PSEUDO_PERIODIC=4
     integer, parameter  :: FIXED_FLUX=6, FIXED_VALUE=7
     integer :: SCA_BC1, SCA_BC2, SCA_BC3
 

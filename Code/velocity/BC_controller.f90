@@ -51,21 +51,6 @@ contains
                 NS_Q2_BC3=periodic
                 NS_Q3_BC3=periodic
 
-            case (FRINGE)
-
-                NS_DEF_BC3=periodic
-                NS_PR_BC3=periodic
-                POISSON_VEL_BC3=periodic
-                POISSON_PR_BC3=periodic
-
-                NS_P13_BC3=periodic
-                NS_P23_BC3=periodic
-                NS_P33_BC3=periodic
-
-                NS_Q1_BC3=periodic
-                NS_Q2_BC3=periodic
-                NS_Q3_BC3=periodic
-
         end select
 
         select case (BC2)
@@ -179,21 +164,6 @@ contains
                 NS_Q2_BC1=Dirichlet
                 NS_Q3_BC1=Dirichlet
 
-            case (FRINGE)
-
-                NS_DEF_BC1=periodic
-                NS_PR_BC1=periodic
-                POISSON_VEL_BC1=periodic
-                POISSON_PR_BC1=periodic
-
-                NS_P11_BC1=periodic
-                NS_P12_BC1=periodic
-                NS_P13_BC1=periodic
-
-                NS_Q1_BC1=periodic
-                NS_Q2_BC1=periodic
-                NS_Q3_BC1=periodic
-
         end select
 
         !write(*,*)'TRANSPORT_Q2S_BC2', TRANSPORT_Q2S_BC2, Dirichlet
@@ -208,6 +178,11 @@ contains
         use decomp_2d
 
         implicit none
+
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2)) :: stream3
+
+        real*8                                                  :: f1(n1), f2(n2), c1, c2
+        integer                                                 :: i, j,temp_test
 
         ! ATTENTION
         if (BC3==NOSLIP) then
@@ -236,6 +211,38 @@ contains
             q1_wall31(zstart(1):zend(1), zstart(2):zend(2))=q1_z(zstart(1):zend(1), zstart(2):zend(2), n3-1)  ! Neumann
 
         end if
+
+        if (1==1) then
+
+            f1=1.d0
+
+            do j=1,n2
+
+                if (mod(n2, 2)==0) then
+                   c2=Yc(n2/2)
+                else
+                    c2=Y((n2-1)/2+1)
+                end if
+
+                f2(j)=(1.d0-((Y(j)-c2)/(0.5d0*L2))**2)
+
+            enddo
+
+            do j = ystart(2),yend(2)
+                do i= ystart(1),yend(1)
+                    stream3(i,j)=f2(j)
+                end do
+            end do
+
+            q3_x(:,:,1) = stream3(:,:) 
+            q2_x(:,:,1) = 0.d0
+            q1_x(:,:,1) = 0.d0
+
+            q3_x(:,:,n3) = stream3(:,:) 
+            q2_x(:,:,n3) = 0.d0
+            q1_x(:,:,n3) = 0.d0
+
+        endif 
 
 
         return
