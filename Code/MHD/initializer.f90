@@ -171,19 +171,26 @@ contains
 
 
     subroutine generate_total_magnetic_field(B001_x, B002_y, B003_z, B001c_y, B002c_y, B003c_y)
+        use COMMON_workspace_view
+
         implicit none
 
+
         real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))  :: B001_x, B001c_x, B1_x
-        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))  :: B002_y, B1_y, B2_y, B3_y
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))  :: B1_y, B2_y, B3_y
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))  :: B_1_file, B_2_file, B_3_file
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))  :: B001_y, B002_y, B003_y
         real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))  :: B003_z, B003c_z, B3_z
         real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))  :: B001c_y, B002c_y, B003c_y
         !real*8 B01max,B02max, B03max,B01max_glob,B02max_glob, B03max_glob
+        !real*8, dimension(
 
         integer :: i,j,k,l,nb,mpi_err,n1e,n3e, n2e, n1s, n2s, n3s
-!        real*8  :: NormB
-        integer :: magnets_nb
-!        character*1 coma
-!        coma=char(44)
+        real*8  :: NormB
+        integer :: magnets_nb,num_rank
+        character*10 tmp_num_rank
+        character*1 coma
+        coma=char(44)
 !
 
 !      B01max=0.d0
@@ -226,6 +233,71 @@ contains
         endif
 
         magnets_nb = 2*magnet_number_pairs  ! obligatoirement pair
+
+        if (B_from_file==1) then
+            if (nrank==0) write(*,*) "B_from_file:", COMMON_settings_path
+            n1m=nx_global
+            n2m=ny_global
+            n3m=nz_global
+            n1e=min(yend(1),n1m)
+            n2e=min(yend(2),n2m)
+            n3e=min(yend(3),n3m)
+            !if (nrank==0) write(*,*) "Reading magnetic field from file", B_file_path
+            call hdf_read_3Dfield(trim(COMMON_settings_path)//'Magnetic_field',B_1_file,"B/B1",n1m, n2m, n3m,&
+                                    & ystart(1), n1e, ystart(2),n2e, ystart(3),n3e)
+            call hdf_read_3Dfield(trim(COMMON_settings_path)//'Magnetic_field',B_2_file,"B/B2",n1m, n2m, n3m,&
+                                    & ystart(1), n1e, ystart(2),n2e, ystart(3),n3e)
+            call hdf_read_3Dfield(trim(COMMON_settings_path)//'Magnetic_field',B_3_file,"B/B3",n1m, n2m, n3m,&
+                                    & ystart(1), n1e, ystart(2),n2e, ystart(3),n3e)
+            !open(15, file = trim(COMMON_settings_path)//'Bx.dat')
+            !   do i=1,n1
+            !        do j=1,n2
+            !            do k=1,n3
+            !                read(15,*) B_x_file(i,j,k)
+            !            end do
+            !        end do
+            !   end do
+            !close(15)
+
+           !open(15, file = trim(COMMON_settings_path)//'By.dat')
+           !    do i=1,n1
+           !         do j=1,n2
+           !             do k=1,n3
+           !                 read(15,*) B_y_file(i,j,k)
+           !             end do
+           !         end do
+           !    end do
+           !close(15)
+
+           !open(15, file = trim(COMMON_settings_path)//'Bz.dat')
+           !    do i=1,n1
+           !         do j=1,n2
+           !             do k=1,n3
+           !                 read(15,*) B_z_file(i,j,k)
+           !             end do
+           !         end do
+           !    end do
+           !close(15)
+
+
+            if (nrank==0) write(*,*) "Reading magnetic field from file"
+            if (nrank==0) write(*,*) "By(2,65,2)",B_2_file(2,65,2)
+
+            B001_y(:,:,:) = B_1_file(:,:,:)
+            B002_y(:,:,:) = B_2_file(:,:,:)
+            B003_y(:,:,:) = B_3_file(:,:,:)
+
+            call transpose_y_to_x(B001_y, B001_x)
+            call transpose_y_to_z(B003_y, B003_z)
+
+
+            n1m=nx_global-1
+            n2m=ny_global-1
+            n3m=nz_global-1
+            n1e=min(yend(1),n1m)
+            n2e=min(yend(2),n2m)
+            n3e=min(yend(3),n3m)
+        endif
 
       ! ****************************************** CORR_JO ***************************************** !
       ! ATTENTION modifier generate_fields_1_magnet pour calculer le champ dans chaque transposition !
@@ -307,33 +379,35 @@ contains
     call hdf_add_3Dfield('Magnetic_field', B001c_y(n1s:n1e,n2s:n2e,n3s:n3e), "B/B1", n1m, n2m, n3m, n1s, n1e, n2s, n2e, n3s, n3e)
     call hdf_add_3Dfield('Magnetic_field', B002c_y(n1s:n1e,n2s:n2e,n3s:n3e), "B/B2", n1m, n2m, n3m, n1s, n1e, n2s, n2e, n3s, n3e)
     call hdf_add_3Dfield('Magnetic_field', B003c_y(n1s:n1e,n2s:n2e,n3s:n3e), "B/B3", n1m, n2m, n3m, n1s, n1e, n2s, n2e, n3s, n3e)
+!    do num_rank=0,nproc-1
+!      if(nrank==num_rank) then
+!        write(tmp_num_rank, "(i0)")nrank
+!            open(28,file='Magnetic_field_'//trim(tmp_num_rank)//'.plt')
 
 
-!            open(28,file='Magnetic_field.plt')
-!
-!
 !             write(28,10)' TITLE = "Magnetic Field"'
 !             write(28,10)' VARIABLES = "X","Y","Z","B1","B2","B3","NormB"'
 !             write(28,11) 'ZONE T = "Mag"',coma,'I=',n3-1,coma,'J=',n2-1,coma,'K=',n1-1,coma,'DATAPACKING=POINT'
-!
-!    ! ************ Champs 3D  **************
+
+    ! ************ Champs 3D  **************
 !         n1e=min(n1-1, yend(1))
 !         n3e=min(n3-1, yend(3))
-!
+
 !         do i = ystart(1), n1e
 !          do j = 1, n2-1
 !            do k = ystart(3), n3e
-!
+
 !             NormB = dsqrt(((B001c_y(i,j,k))**2 +(B002c_y(i,j,k))**2 + (B003c_y(i,j,k))**2))
-!    !
+    !
 !             write(28,*)Xc(k),Yc(j),Zc(i),B001c_y(i,j,k),B002c_y(i,j,k),B003c_y(i,j,k),NormB
-!
-!            enddo
-!           enddo
-!          enddo
-!
-!          close(28)
-!
+
+      !      enddo
+      !     enddo
+      !    enddo
+
+      !    close(28)
+      !  endif
+      !enddo
 !       10 format(a)
 !       11 format(a,a,a,i4,a,a,i3,a,a,i3,a,a)
 !       12 format(a,a,a,i4,a,a,i3,a,a)

@@ -43,6 +43,11 @@ contains
         read(15,*) (mag_array(n)%magnet_center_x,n=1,magnet_nb)  ! WARNING *pi in subroutine generate_fields_1_magnet
         read(15,*) (mag_array(n)%magnet_center_z,n=1,magnet_nb)  ! WARNING *pi in subroutine generate_fields_1_magnet
         read(15,*) (mag_array(n)%magnet_center_y,n=1,magnet_nb)  !
+
+        read(15,*)
+        read(15,*) B_from_file
+        !read(15,*) B_file_path
+
         read(15,*)
         read(15,*) nexport_MHD  ! frequency of data export concerning MHD (gradP.dat, meanJ.dat ...)
         read(15,*) MHD_export_3D ! exporting fields (Elec_curr), 0:OFF 1:ON

@@ -121,7 +121,6 @@ contains
      real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)) :: gradphi3_z
      real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)) :: phi_z
      integer, save :: cpt=1
-
      integer :: i,k
 
 !    open(154, file='MHDEBUG2', position='append')
@@ -155,10 +154,11 @@ contains
     end if
  !    TRANSPORT_SCA_BC1 = periodic
      call transpose_y_to_x(phi_y, phi_x)
+
+
      n2e=(min(n2m, xend(2))-xstart(2))+1 !borne x
      n3e=(min(n3m, xend(3))-xstart(3))+1 !borne x
      call D1ssh_3Dx(phi_x, gradphi1_x, n1,xsize(2),n2e,xsize(3),n3e, dx1, .true., periodic)
-
 
 
 !    write(154,*) 'point B_sumgradphi2_y', cpt, sum(gradphi2_y)

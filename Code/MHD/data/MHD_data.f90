@@ -6,7 +6,7 @@ module MHD_data
     real*8                                    :: Magnetic_field_unit_vector_x, Magnetic_field_unit_vector_y , Magnetic_field_unit_vector_z
     real*8,dimension (:,:,:), allocatable     :: phi_x, phi_y, phi_z
     real*8                                    :: Stuart_number,Hartmann_number, delta_B,smooth, num_period
-    integer                                   :: nexport_MHD, layer_type, MHD_export_3D
+    integer                                   :: nexport_MHD, layer_type, MHD_export_3D, B_from_file
 
     real*8, dimension(:,:,:), allocatable     :: fb1_MHD_x, fb2_MHD_x, fb3_MHD_x
     real*8,dimension (:,:,:), allocatable     :: gradphi1_x, gradphi2_y, gradphi3_z
@@ -16,6 +16,8 @@ module MHD_data
     real*8,dimension (:,:,:), allocatable     :: B01c_y, B02c_y, B03c_y
     real*8,dimension (:,:,:), allocatable     :: A1_x, A1_y, A2_y, A3_y, A3_z
     real*8,dimension (:,:,:), allocatable     :: RHS_z,RHS_z2
+
+    !character(200)                            :: B_file_path
 
     type magnet_array
         integer  :: magnet_wall_location

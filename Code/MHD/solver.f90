@@ -27,22 +27,27 @@ contains
 !    use poisson_interface, solve_Poisson_ORL => solve_Poisson
 !    use poisson_020_solver
         use operators_tools
+        use hdf5_io
 !    use operators_tools_tests
         use numerical_methods_settings
         use poisson_020_solver, ORL_solve_Poisson=>solve_Poisson
         use poisson_interface, LAMB_solve_Poisson=>solve_Poisson
+        use workspace_view, only: results3D_path
 
       implicit none
       integer, save   :: nbcall=1
       integer, intent(in)   :: ntime
       logical, intent(in)   :: last_substep
-      integer :: i,j, k, c2
+      integer :: i,j, k, c2, num_rank
       integer :: n1s, n1e, n2s,n2e, n3s,n3e
       real*8 :: fb1_MHD_tot, intg_fb1_x,intg_fb2_x,intg_fb3_x, Mean_J, Mean_J_span
-      real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: q1_x, fb1_x, fb2_x, fb3_x
-      real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: q2_y
+      real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: q1_x, fb1_x, fb2_x, fb3_x, RHS_x
+      real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: q2_y, RHS_y, ucrossB1_y,ucrossB3_y,Norm_y
+      real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: gradphi1_y,gradphi3_y
       real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)) :: q3_z
 ! Tecplot Output
+      character*10 tmp_str, tmp_num_rank
+      character*200 absolute_path,elec_curr_path
       real*8 NormFB
       character*1 coma
       coma=char(44)
@@ -111,12 +116,131 @@ contains
 
          call perform_gradphi(RHS_z,gradphi1_x,gradphi2_y,gradphi3_z)
 
+        !absolute_path='/bettik/capognam/DNS/WORKSPACE/Codes/DNS/&
+        !                &MULTIFAST_MHD_v2/TMP/CANAL_carre_lam_mhd_14401070/'
 !
+
 !************************************* Compute the MHD Body Force ****************************************
         call MHD_Body_Force(gradphi1_x, gradphi2_y, gradphi3_z, ucrossB1_x, ucrossB2_y, ucrossB3_z, fb1_x, fb2_x, fb3_x, Mean_J, Mean_J_span)
 !        call add_action(fb1_MHD_x, fb2_MHD_x, fb3_MHD_x,ntime)
 !*************************************************************************************************************
 !
+
+        if(mod(ntime,nexport_MHD).eq.0) then
+            write(tmp_str, "(i0)")ntime
+            elec_curr_path=trim(results3D_path)//'field'//trim(tmp_str)
+            n1e=min(n1-1, yend(1))
+            n3e=min(n3-1, yend(3))
+            call transpose_z_to_y(RHS_z, RHS_y)
+            call hdf_write_3Dfield(trim(elec_curr_path)//'/Phi', RHS_y, 'Phi', n1-1, n2-1, n3-1, ystart(1), n1e, 1, n2-1, ystart(3), n3e)
+            
+            call transpose_x_to_y(ucrossB1_x, ucrossB1_y)
+            call transpose_z_to_y(ucrossB3_z, ucrossB3_y)
+            do i = ystart(1), n1e
+               do j = 1, n2-1
+                  do k = ystart(3), n3e
+                    Norm_y(i,j,k) = dsqrt(((ucrossB1_y(i,j,k))**2 +(ucrossB2_y(i,j,k))**2 + (ucrossB3_y(i,j,k))**2))
+                  enddo
+               enddo
+            enddo
+            
+            call hdf_write_3Dfield(trim(elec_curr_path)//'/UcrossB', ucrossB1_y, 'UcrossB1', &
+                                    &n1-1, n2-1, n3-1, ystart(1), n1e, 1, n2-1, ystart(3), n3e)
+            call hdf_add_3Dfield(trim(elec_curr_path)//'/UcrossB', ucrossB2_y, 'UcrossB2', &
+                                    &n1-1, n2-1, n3-1, ystart(1), n1e, 1, n2-1, ystart(3), n3e)
+            call hdf_add_3Dfield(trim(elec_curr_path)//'/UcrossB', ucrossB3_y, 'UcrossB3', &
+                                    &n1-1, n2-1, n3-1, ystart(1), n1e, 1, n2-1, ystart(3), n3e)
+            call hdf_add_3Dfield(trim(elec_curr_path)//'/UcrossB', Norm_y, 'Norm', &
+                                    &n1-1, n2-1, n3-1, ystart(1), n1e, 1, n2-1, ystart(3), n3e)
+            
+            call transpose_x_to_y(gradphi1_x, gradphi1_y)
+            call transpose_z_to_y(gradphi3_z, gradphi3_y)
+            do i = ystart(1), n1e
+                do j = 1, n2-1
+                    do k = ystart(3), n3e
+                        Norm_y(i,j,k) = dsqrt(((gradphi1_y(i,j,k))**2 +(gradphi2_y(i,j,k))**2 + (gradphi3_y(i,j,k))**2))
+                    enddo
+                enddo
+            enddo
+            call hdf_write_3Dfield(trim(elec_curr_path)//'/GradPhi', gradphi1_y, 'GradPhi1', &
+                                    &n1-1, n2-1, n3-1, ystart(1), n1e, 1, n2-1, ystart(3), n3e)
+            call hdf_add_3Dfield(trim(elec_curr_path)//'/GradPhi', gradphi2_y, 'GradPhi2', &
+                                    &n1-1, n2-1, n3-1, ystart(1), n1e, 1, n2-1, ystart(3), n3e)
+            call hdf_add_3Dfield(trim(elec_curr_path)//'/GradPhi', gradphi3_y, 'GradPhi3', &
+                                    &n1-1, n2-1, n3-1, ystart(1), n1e, 1, n2-1, ystart(3), n3e)
+            call hdf_add_3Dfield(trim(elec_curr_path)//'/GradPhi', Norm_y, 'Norm', &
+                                    &n1-1, n2-1, n3-1, ystart(1), n1e, 1, n2-1, ystart(3), n3e)
+            
+            !open(28,file=trim(absolute_path)//trim(results3D_path)//&
+            !                &'field'//trim(tmp_str)//'/Electric_Potential.plt')
+            !do num_rank=0,nproc-1
+            !if(nrank==num_rank) then
+            !    write(tmp_str, "(i0)")ntime
+            !    write(tmp_num_rank, "(i0)")nrank
+            !    open(28,file=trim(results3D_path)//'field'//trim(tmp_str)//'/Phi_'//trim(tmp_num_rank)//'.plt')
+            !         write(*,*)trim(results3D_path)//'field'//trim(tmp_str)//'/Electric_Potential.plt'
+            !         write(28,10)' TITLE = "Electric Potential"'
+            !         write(28,10)' VARIABLES = "X","Y","Z","phi"'
+            !         write(28,11) 'ZONE T = "Mag"',coma,'I=',1,coma,'J=',n2-1,coma,'K=',n1-1,coma,'DATAPACKING=POINT'
+
+            ! ************ Champs 3D  **************
+            !     n1e=min(n1-1, yend(1))
+            !     n3e=min(n3-1, yend(3))
+            !    call transpose_z_to_y(RHS_z, RHS_y)
+            !     do i = ystart(1), n1e
+            !        do j = 1, n2-1
+            !            do k = ystart(3), n3e
+            !               write(28,*)Xc(k),Yc(j),Zc(i),RHS_y(i,j,k)
+            !        enddo
+            !       enddo
+            !      enddo
+
+            !      close(28)
+
+         !open(29,file=trim(results3D_path)//'field'//trim(tmp_str)//'/UcrossB_'//trim(tmp_num_rank)//'.plt')
+         !    write(29,10)' TITLE = "UcrossB "'
+         !    write(29,10)' VARIABLES = "X","Y","Z","UcrossB1","UcrossB2","UcrossB3","Norm"'
+         !    write(29,11) 'ZONE T="Mag"',coma,'I=',n3-1,coma,'J=',n2m,coma,'K=',n1-1,coma,'DATAPACKING=POINT'
+         !    call transpose_x_to_y(ucrossB1_x, ucrossB1_y)
+         !    call transpose_z_to_y(ucrossB3_z, ucrossB3_y)
+         !do i = ystart(1), n1e
+         !  do j = 1, n2-1
+         !     do k = ystart(3), n3e
+
+         !       NormFB = dsqrt(((ucrossB1_y(i,j,k))**2 +(ucrossB2_y(i,j,k))**2 + (ucrossB3_y(i,j,k))**2))
+         !       write(29,*)Xc(k),Yc(j),Zc(i),ucrossB1_y(i,j,k),ucrossB2_y(i,j,k),ucrossB3_y(i,j,k),NormFB
+         !   enddo
+         !  enddo
+         ! enddo
+
+         ! close(29)
+
+              !open(30,file=trim(absolute_path)//trim(results3D_path)//'field'//trim(tmp_str)//'/GradPhi.plt')
+         !     open(30,file=trim(results3D_path)//'field'//trim(tmp_str)//'/GradPhi_'//trim(tmp_num_rank)//'.plt')
+         !        write(30,10)' TITLE = "GradPhi "'
+         !        write(30,10)' VARIABLES = "X","Y","Z","GradPhi1","GradPhi2","GradPhi3","Norm"'
+         !        write(30,11) 'ZONE T="Mag"',coma,'I=',1,coma,'J=',n2m,coma,'K=',n1-1,coma,'DATAPACKING=POINT'
+         !        call transpose_x_to_y(gradphi1_x, gradphi1_y)
+         !        call transpose_z_to_y(gradphi3_z, gradphi3_y)
+        ! ************ Champs 3D  **************
+
+         !do i = ystart(1), n1e
+         !  do j = 1, n2-1
+         !     do k = ystart(3), n3e
+
+         !       NormFB = dsqrt(((gradphi1_y(i,j,k))**2 +(gradphi2_y(i,j,k))**2 + (gradphi3_y(i,j,k))**2))
+         !       write(30,*)Xc(k),Yc(j),Zc(i),gradphi1_y(i,j,k),gradphi2_y(i,j,k),gradphi3_y(i,j,k),NormFB
+
+         !       enddo
+         !      enddo
+         !     enddo
+
+         !     close(30)
+        !endif
+        !enddo
+      end if
+
+
 !
 !              intg_fb1_x=0.d0
 !              intg_fb2_x=0.d0
@@ -188,26 +312,6 @@ contains
 
 !      close(29)
 
-!      open(30,file='GradPhi.plt')
-!     write(30,10)' TITLE = "GradPhi "'
-!     write(30,10)' VARIABLES = "X","Y","Z","GradPhi1","GradPhi2","GradPhi3","Norm"'
-!     write(30,11) 'ZONE T="Mag"',coma,'I=',n3-1,coma,'J=',n2m,coma,'K=',n1-1,coma,'DATAPACKING=POINT'
-
-! ************ Champs 3D  **************
-
-!     do i= zstart(1), min(n1m, zend(1))   !do i=1,n1m
-!      do j = zstart(2), min(n2m, zend(2))
-!         do k=1,n3m
-
-!         NormFB = dsqrt(((gradphi1_x(i,j,k))**2 +(gradphi2_y(i,j,k))**2 + (gradphi3_z(i,j,k))**2))
-!
-!         write(30,*)Xc(k),Yc(j),Zc(i),gradphi1_x(i,j,k),gradphi2_y(i,j,k),gradphi3_z(i,j,k),NormFB
-
-!        enddo
-!       enddo
-!      enddo
-
-!      close(30)
 
 
    10 format(a)
