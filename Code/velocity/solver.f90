@@ -15,6 +15,8 @@ module VELOCITY_solver
     use decomp_2d
     use mpi
 
+    use MHD_data, only:MHD_state
+
     implicit none
 
     ! Only update_velocity is callable from the outside
@@ -347,13 +349,30 @@ contains
             !endif
         endif
 
+        ! If MHD used, external forces have to be added for before the computation of the pressure gradient
+        if (MHD_state.ne.0) then
+            RHS1_x = RHS1_x + Fext1
+            RHS2_x = RHS2_x + Fext2
+            RHS3_x = RHS3_x + Fext3
+        endif
+
         ! The mean pressure gradient is performed so as to fullfill the flow rate conservation
-        if (streamwise==3)  then
-            call perform_mean_gradP3(mean_grad_P3)
-            mean_grad_P1=0.d0
-        elseif (streamwise==1)  then
-            call perform_mean_gradP1(mean_grad_P1)
-            mean_grad_P3=0.d0
+        if (MHD_state.eq.0) then
+            if (streamwise==3)  then
+                call perform_mean_gradP3(mean_grad_P3)
+                mean_grad_P1=0.d0
+            elseif (streamwise==1)  then
+                call perform_mean_gradP1(mean_grad_P1)
+                mean_grad_P3=0.d0
+            endif
+        else
+            if (streamwise==3) then
+                call perform_mean_gradP3_MHD(dP_streamwise)
+                call perform_mean_gradP1_MHD(dP_spanwise)
+            elseif(streamwise==1) then
+                call perform_mean_gradP3_MHD(dP_spanwise)
+                call perform_mean_gradP1_MHD(dP_streamwise)
+            endif
         endif
 
         RHS1_x =  RHS1_x - mean_grad_P1
@@ -363,9 +382,13 @@ contains
         ! RHS=(Non linear terms + Diffusive terms)
         ! PreviousRHS = RHS(n-1)
         ! Obtention of û*, v*, w*
-        RHS1_x = RHS1_x + Fext1
-        RHS2_x = RHS2_x + Fext2
-        RHS3_x = RHS3_x + Fext3
+
+        ! If MHD not used, external forces are added after computation of pressure gradient
+        if (MHD_state.eq.0) then
+            RHS1_x = RHS1_x + Fext1
+            RHS2_x = RHS2_x + Fext2
+            RHS3_x = RHS3_x + Fext3
+        endif
 
         ! Store velocity at the current time step for support of an external force.
         ! The arrays "q" will be erased by the current estimation of velocity at n+1 (in the coupling process)
@@ -647,6 +670,79 @@ contains
 
             mean_grad_P1=s1tot_glob/(2.d0*L1*L3*ren)
 
+
+            return
+        end subroutine
+
+        subroutine perform_mean_gradP1_MHD(mean_grad_P1)
+
+
+            implicit none
+
+            real*8, intent(out) :: mean_grad_P1
+
+            real*8 s1tot
+            integer k,i,j, mpi_err, n1e, n2e, n3e
+
+            s1tot=0.d0
+
+            ! ********************** WARNING ************************* !
+            ! Integral should be effectuated on CELL CENTERED variable !
+            ! ************* Here, RHS3 is FACE CENTERED ************** !
+            ! ******* But it is ok for periodic condition ************ !
+            ! ******************************************************** !
+
+            do k=xstart(3), min(n3m, xend(3))   !do k=1,n3m
+                do j=xstart(2), min(n2m, xend(2))   !do j=1,n2m
+
+                    do i=1,n1m
+                        s1tot=s1tot + RHS1_x(i,j,k)*dx1*dx3*cell_size_Y(j)
+                    enddo
+
+                enddo
+            enddo
+
+            call MPI_ALLREDUCE (s1tot, mean_grad_P1, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+
+            mean_grad_P1=mean_grad_P1/(L1*L2*L3)
+
+            return
+        end subroutine
+
+
+        ! Same as perform_mean_gradP1 but for the direction 3 as flow direction
+
+        subroutine perform_mean_gradP3_MHD(mean_grad_P3)
+
+            implicit none
+
+            real*8, intent(out) :: mean_grad_P3
+
+            real*8 s3tot
+            integer k,i,j, mpi_err, n1e, n2e, n3e
+
+            s3tot=0.d0
+
+            ! ********************** WARNING ************************* !
+            ! Integral should be effectuated on CELL CENTERED variable !
+            ! ************* Here, RHS3 is FACE CENTERED ************** !
+            ! ******* But it is ok for periodic condition ************ !
+            ! ******************************************************** !
+
+
+            do k=xstart(3), min(n3m, xend(3))   !do k=1,n3m
+                do j=xstart(2), min(n2m, xend(2))   !do j=1,n2m
+
+                    do i=1,n1m
+                        s3tot=s3tot + RHS3_x(i,j,k)*dx1*dx3*cell_size_Y(j)
+                    enddo
+
+                enddo
+            enddo
+
+            call MPI_ALLREDUCE (s3tot, mean_grad_P3, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+
+            mean_grad_P3 = mean_grad_P3/(L1*L2*L3)
 
             return
         end subroutine
@@ -979,26 +1075,29 @@ contains
             ! call set_antisymmetric_velocity_in_object(Zc,Y,Xc,q2_x,'X')
             ! call set_antisymmetric_velocity_in_object(Zc,Yc,X,q3_x,'X')
         endif
+
+        if (IBM_activated) then
     
-        max_q1 = maxval(q1_x)
-        min_q1 = minval(q1_x)
-        max_q2 = maxval(q2_x)
-        min_q2 = minval(q2_x)
-        max_q3 = maxval(q3_x)
-        min_q3 = minval(q3_x)
+            max_q1 = maxval(q1_x)
+            min_q1 = minval(q1_x)
+            max_q2 = maxval(q2_x)
+            min_q2 = minval(q2_x)
+            max_q3 = maxval(q3_x)
+            min_q3 = minval(q3_x)
 
-        call MPI_ALLREDUCE (max_q1, max_glob_q1, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
-        call MPI_ALLREDUCE (max_q2, max_glob_q2, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
-        call MPI_ALLREDUCE (max_q3, max_glob_q3, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
+            call MPI_ALLREDUCE (max_q1, max_glob_q1, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
+            call MPI_ALLREDUCE (max_q2, max_glob_q2, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
+            call MPI_ALLREDUCE (max_q3, max_glob_q3, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
 
-        call MPI_ALLREDUCE (min_q1, min_glob_q1, 1, MPI_DOUBLE_PRECISION , MPI_MIN , MPI_COMM_WORLD , mpi_err)
-        call MPI_ALLREDUCE (min_q2, min_glob_q2, 1, MPI_DOUBLE_PRECISION , MPI_MIN , MPI_COMM_WORLD , mpi_err)
-        call MPI_ALLREDUCE (min_q3, min_glob_q3, 1, MPI_DOUBLE_PRECISION , MPI_MIN , MPI_COMM_WORLD , mpi_err)
+            call MPI_ALLREDUCE (min_q1, min_glob_q1, 1, MPI_DOUBLE_PRECISION , MPI_MIN , MPI_COMM_WORLD , mpi_err)
+            call MPI_ALLREDUCE (min_q2, min_glob_q2, 1, MPI_DOUBLE_PRECISION , MPI_MIN , MPI_COMM_WORLD , mpi_err)
+            call MPI_ALLREDUCE (min_q3, min_glob_q3, 1, MPI_DOUBLE_PRECISION , MPI_MIN , MPI_COMM_WORLD , mpi_err)
 
-        if (nrank==0) then
-            write(*,*) 'q1 velocity', max_glob_q1, min_glob_q1, maxloc(q1_x), minloc(q1_x)
-            write(*,*) 'q2 velocity', max_glob_q2, min_glob_q2, maxloc(q2_x), minloc(q2_x)
-            write(*,*) 'q3 velocity', max_glob_q3, min_glob_q3, maxloc(q3_x), minloc(q3_x)
+            if (nrank==0) then
+                write(*,*) 'q1 velocity', max_glob_q1, min_glob_q1, maxloc(q1_x), minloc(q1_x)
+                write(*,*) 'q2 velocity', max_glob_q2, min_glob_q2, maxloc(q2_x), minloc(q2_x)
+                write(*,*) 'q3 velocity', max_glob_q3, min_glob_q3, maxloc(q3_x), minloc(q3_x)
+            endif
         endif
 
         contains
@@ -2578,7 +2677,7 @@ contains
                 end do
             end do
 
-        else
+        else if (MHD_state.eq.0) then ! MHD is not used
 
             if ((BC1==UNBOUNDED).or.(BC1==FRINGE)) n1s=xstart(1)
             if ((BC1/=UNBOUNDED).and.(BC1/=FRINGE)) n1s=max(2,xstart(1))
@@ -2626,6 +2725,58 @@ contains
                 do j = n2s, n2e
                     do i = n1s, n1e
                         q3_x(i,j,k) = q3_save2(i,j,k) + NSTERMS3(i,j,k) + Fext3(i,j,k)
+                    end do
+                end do
+            end do
+
+        else ! MHD is activated, either active or passive
+
+            if ((BC1==UNBOUNDED).or.(BC1==FRINGE)) n1s=xstart(1)
+            if ((BC1/=UNBOUNDED).and.(BC1/=FRINGE)) n1s=max(2,xstart(1))
+            n2s=xstart(2)
+            n3s=xstart(3)
+            do k = n3s, n3e
+                do j = n2s, n2e
+                    do i = n1s, n1e
+                        q1_x(i,j,k) = q1_save2(i,j,k) + NSTERMS1(i,j,k)
+                    end do
+                end do
+            end do
+
+
+            if (BC2==UNBOUNDED) n2s=xstart(2)
+            if (BC2/=UNBOUNDED) n2s=max(2,xstart(2))
+            ! On ne touche que q2[2..n1-2]
+            if (BC1==OPEN) then
+                n1s=2
+                n1e=n1-2
+            endif
+
+            n3s=xstart(3)
+
+            do k = n3s, n3e
+                do j = n2s, n2e
+                    do i = n1s, n1e
+                        q2_x(i,j,k) = q2_save2(i,j,k) + NSTERMS2(i,j,k)
+                    end do
+                end do
+            end do
+
+            if (BC3==UNBOUNDED) n3s=xstart(3)
+            if (BC3/=UNBOUNDED) n3s=max(2,xstart(3))
+
+            ! On ne touche que q3[2..n1-2]
+            if (BC1==OPEN) then
+                n1s=2
+                n1e=n1-2
+            endif
+
+            n2s=xstart(2)
+
+            do k = n3s, n3e
+                do j = n2s, n2e
+                    do i = n1s, n1e
+                        q3_x(i,j,k) = q3_save2(i,j,k) + NSTERMS3(i,j,k)
                     end do
                 end do
             end do
