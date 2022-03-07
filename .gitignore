@@ -28,8 +28,8 @@
 *.out
 
 # Simulations inputs and results
-Simulations/*
-TMP/*
+#Simulations/*
+#TMP/*
 TEST_*
 DNS_*
 Code/multiFAST
