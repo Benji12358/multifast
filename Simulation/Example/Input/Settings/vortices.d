@@ -1,0 +1,5 @@
+3	vort_dir (Orientation)
+0. 0. 0. 	x1vs, hvort, x3vs (starting point)
+0.	Lvort (vortex length)
+0.0	dvort (vortex diameter)
+0.0	Urot (rotation velocity)

@@ -1,0 +1,12 @@
+<?xml version="1.0" ?>
+<!DOCTYPE Xdmf SYSTEM "Xdmf.dtd">
+<Xdmf xmlns:xi="http://www.w3.org/2003/XInclude" Version="2.2">
+
+<Information Name="SampleLocation" Value="4"/>
+
+<Domain>
+
+
+<Grid  Name="TimeSeries"  GridType="Collection"  CollectionType="Temporal">
+<Time  TimeType="HyperSlab">
+<DataItem  Format="XML"  NumberType="Float"  Dimensions="3">

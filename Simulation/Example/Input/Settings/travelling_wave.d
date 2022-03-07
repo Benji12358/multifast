@@ -1,0 +1,6 @@
+0		twave_on(1:ON 0:OFF)	(Defined in module twave-settings in file Code/common/data&datas/DNS_settings.f90)
+0		inner_units(1:ON 0:OFF)	(Defined in module twave-settings in file Code/common/data&datas/DNS_settings.f90)
+180		Re_tau (steady_case)	(Defined in module twave-settings in file Code/common/data&datas/DNS_settings.f90)
+0.15		Amplitude				(Defined in module boundaries in file Code/common/data&datas/boundaries.f90)
+1.66		kappa					(All these parameters are read by subroutine read_twave_settings in Code/velocity/IO.f90)
+0.16		omega					(An interface was made in IVELOCITY_IO_settings in file Code/velocity/interfaces.f90)
