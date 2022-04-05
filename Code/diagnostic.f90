@@ -53,7 +53,7 @@ contains
 
 
         if(MAXVAL(vmax)>MAX_VEL)    error_flag=MAX_VELOCITY_IO_REACHED
-        if(div_max>MAX_DIV)         error_flag=MAX_DIV_REACHED
+        ! if(div_max>MAX_DIV)         error_flag=MAX_DIV_REACHED
 
         select case (error_flag)
 

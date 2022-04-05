@@ -142,6 +142,13 @@ contains
         if (nrank==0) write(*,*)'div_min_glob', div_min_glob
         if (nrank==0) write(*,*)'div_max_glob', div_max_glob
 
+        ! write(*,*) 'div_min_val', minval(div_z)
+        ! write(*,*) 'div_min_loc', minloc(div_z)
+        ! write(*,*) 'div_max_val', maxval(div_z)
+        ! write(*,*) 'div_max_loc', maxloc(div_z)
+
+        ! write(*,*) 'div_z ici', div_z(:,10,10)
+
         return
 
     end subroutine

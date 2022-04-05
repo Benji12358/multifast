@@ -851,10 +851,11 @@ contains
 
         use run_ctxt_data
         use physical_fields, only: dP_streamwise, dP_spanwise
-        use VELOCITY_solver, only: Fext1, Fext3
+        use VELOCITY_solver, only: Fext1, Fext3, mean_grad_P1, mean_grad_P3
         use DNS_settings, only:streamwise
         use mesh
         use mpi
+        use MHD_data, only:MHD_state
 
         implicit none
 
@@ -894,12 +895,82 @@ contains
         call MPI_ALLREDUCE (Fspan, stot, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpierr)
         Fspan=stot/(L1*L2*L3)
 
-        if(nrank==0) then
-            open(3698, file="gradP.dat", position="append")
-            write(3698,*) ntime, t, -dP_streamwise +Fstream, -dP_streamwise, -dP_spanwise+ Fspan, -dP_spanwise
-            close(3698)
+        if (MHD_state.eq.0) then
+
+            if(nrank==0) then
+                open(3698, file="gradP.dat", position="append")
+                write(3698,*) ntime, t, mean_grad_P3, mean_grad_P1
+                close(3698)
+            endif
+
+        else
+
+            if(nrank==0) then
+                open(3698, file="gradP.dat", position="append")
+                write(3698,*) ntime, t, -dP_streamwise +Fstream, -dP_streamwise, -dP_spanwise+ Fspan, -dP_spanwise
+                close(3698)
+            endif
+
         endif
 
     end subroutine export_gradP
+
+    subroutine export_flowrate
+
+        use run_ctxt_data
+        use physical_fields, only: q1_x
+        use mesh
+        use mpi
+        use FRINGE_data, only: use_fringe, n_fringe_start
+
+        implicit none
+
+        integer :: j, k, mpierr
+        real*8  :: flowrate_in, flowrate_in_glob, flowrate_fringe_in, flowrate_fringe_in_glob, flowrate_out, flowrate_out_glob
+
+        flowrate_in=0.d0
+        flowrate_out=0.d0
+        flowrate_fringe_in_glob = 0.d0
+
+        do k=xstart(3),min(xend(3),n3-1)
+            do j=xstart(2),min(xend(2),n2-1)
+
+                flowrate_in = flowrate_in + q1_x(1,j,k)*(Y(j+1)-Y(j))*dx3
+
+                flowrate_out = flowrate_out + q1_x(n1m,j,k)*(Y(j+1)-Y(j))*dx3
+
+            enddo
+        enddo
+
+        call MPI_ALLREDUCE(flowrate_in, flowrate_in_glob, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpierr)
+        flowrate_in_glob=flowrate_in_glob/(L3*L2)
+
+        call MPI_ALLREDUCE(flowrate_out, flowrate_out_glob, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpierr)
+        flowrate_out_glob=flowrate_out_glob/(L3*L2)
+
+        if (use_fringe) then
+
+            flowrate_fringe_in=0.d0
+
+            do k=xstart(3),min(xend(3),n3-1)
+                do j=xstart(2),min(xend(2),n2-1)
+
+                    flowrate_fringe_in = flowrate_fringe_in + q1_x(n_fringe_start,j,k)*(Y(j+1)-Y(j))*dx3
+
+                enddo
+            enddo
+
+            call MPI_ALLREDUCE(flowrate_fringe_in, flowrate_fringe_in_glob, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpierr)
+            flowrate_fringe_in_glob=flowrate_fringe_in_glob/(L3*L2)
+
+        endif
+
+        if(nrank==0) then
+            open(3698, file="flowrate.dat", position="append")
+            write(3698,*) ntime, t, flowrate_in_glob, flowrate_fringe_in_glob, flowrate_out_glob
+            close(3698)
+        endif
+
+    end subroutine export_flowrate
 
 end module VELOCITY_log_writer

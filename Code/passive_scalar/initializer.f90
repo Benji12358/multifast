@@ -9,36 +9,135 @@ module SCALAR_field_generator
 contains
 
     subroutine generate_fields(sca_x, sca_y, sca_z, sca_down, sca_up)
+        use physical_fields, only: q1_y, q3_y 
+        use mesh, only: Yc
+        use mpi
+        use DNS_settings, only: ren, streamwise
         implicit none
         real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))  :: sca_x
         real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))  :: sca_y
         real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))  :: sca_z
         real*8                                                                      :: sca_down, sca_up
+        real*8                                                                      :: rentau_loc, rentau
+        logical                                                 :: pair_n2
+        real*8                                                  :: pr
 
         real*8  :: delta
 
         integer i, j, k
+        integer mpi_err
 
         delta=sca_up-sca_down
 
         sca_y=0.d0
 
-        do k = ystart(3), min(n3-1, yend(3))
-            do i = ystart(1), min(n1-1, yend(1))
-                do j = 1, n2-1
-                    sca_y(i,j,k)=sca_down+(Yc(j)/L2)*delta
-                    !sca_y(i,j,k)=0.d0
+        if (init_type==KAWAMURA_INIT) then
+
+            if (streamwise==3) then
+
+                do i = ystart(1), min(n1-1, yend(1))
+                    do k = ystart(3), min(n3-1, yend(3))
+
+                        rentau_loc = rentau_loc + dsqrt(ren * q3_y(i,1,k)/Yc(1))
+                        rentau_loc = rentau_loc + dsqrt(ren * q3_y(i,n2-1,k)/Yc(1))
+
+                    enddo
+                enddo
+
+                call MPI_ALLREDUCE (rentau_loc, rentau, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+
+                rentau=rentau/dfloat(2*n1m*n3m)
+
+                do k = ystart(3), min(n3-1, yend(3))
+                    do i = ystart(1), min(n1-1, yend(1))
+
+                        sca_y(i,:,k)=( renprandtl / rentau ) * q3_y(i,:,k)
+
+                    end do
+                end do
+                
+            elseif (streamwise==1) then
+
+                ! do i = ystart(1), min(n1-1, yend(1))
+                !     do k = ystart(3), min(n3-1, yend(3))
+
+                !         rentau_loc = rentau_loc + dsqrt(ren * q1_y(i,1,k)/Yc(1))
+                !         rentau_loc = rentau_loc + dsqrt(ren * q1_y(i,n2-1,k)/Yc(1))
+
+                !     enddo
+                ! enddo
+
+                ! call MPI_ALLREDUCE (rentau_loc, rentau, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+
+                ! rentau=rentau/dfloat(2*n1m*n3m)
+
+                ! do k = ystart(3), min(n3-1, yend(3))
+                !     do i = ystart(1), min(n1-1, yend(1))
+
+                !         sca_y(i,:,k)=( renprandtl / rentau ) * q1_y(i,:,k)
+
+                !     end do
+                ! end do
+
+                pair_n2 = (mod(n2, 2)==0)
+                pr = renprandtl/ren
+
+                do j=ystart(2),n2/2
+                    sca_y(:,j,:) = pr*dsqrt(2*ren) * (1/8.d0 * Yc(j) **4 - 1/2.d0 * Yc(j) **3 + Yc(j))
+                    sca_y(:,n2-j,:) = pr*dsqrt(2*ren) * (1/8.d0 * Yc(j) **4 - 1/2.d0 * Yc(j) **3 + Yc(j))
+                enddo
+
+                if (.not.pair_n2) then
+                    j=n2/2+1
+                    sca_y(:,j,:) = pr*dsqrt(2*ren) * (1/8.d0 * Yc(j) **4 - 1/2.d0 * Yc(j) **3 + Yc(j))
+                endif
+
+                ! write(*,*) 'theta^+', sca_y(1,:,1)
+
+            endif
+
+        else if (init_type==CONSTANT_HEAT_FLUX) then
+
+            pair_n2 = (mod(n2, 2)==0)
+
+            do j=ystart(2),n2/2
+                sca_y(:,j,:) = sca_down+(Yc(j)/L2)*delta
+                sca_y(:,n2-j,:) = sca_down+(Yc(j)/L2)*delta
+            enddo
+
+            if (.not.pair_n2) then
+                j=n2/2+1
+                sca_y(:,j,:) = sca_down+(Yc(j)/L2)*delta
+            endif
+
+        else
+
+            do k = ystart(3), min(n3-1, yend(3))
+                do i = ystart(1), min(n1-1, yend(1))
+                    do j = 1, n2-1
+                        sca_y(i,j,k)=sca_down+(Yc(j)/L2)*delta
+                        !sca_y(i,j,k)=0.d0
+                    end do
                 end do
             end do
-        end do
+
+        endif
 
 		if(nrank==0) write(*,*)'SCALAR_generate_fields: Tinf Tsup', sca_down, sca_up, delta
 
         sca_wall10=0.d0
         sca_wall11=0.d0
 
-        sca_wall20=sca_down
-        sca_wall21=sca_up
+        if (init_type==KAWAMURA_INIT) then
+            sca_wall20=0.d0
+            sca_wall21=0.d0
+        else if (init_type==CONSTANT_HEAT_FLUX) then
+            sca_wall20=sca_down
+            sca_wall21=sca_down
+        else
+            sca_wall20=sca_down
+            sca_wall21=sca_up
+        endif
 
         sca_wall30=0.d0
         sca_wall31=0.d0

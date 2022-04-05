@@ -9,7 +9,7 @@ DNS_PATH=$(CODES_PATH)/DNS/DNS4.0
 UTILITIES=$(DNS_PATH)/Code/Utilities
 MISCELLANEOUS_INC=-I $(UTILITIES)/Miscellaneous/include
 
-OBJ=check.o DRP_D0s.o DRP_D1s.o DRP_D1c.o DRP_D2c.o DRP_IBM.o O2_D0s.o O2_D1s.o O2_D1c.o O2_D2c.o \
+OBJ=check.o DRP_D0s.o DRP_D1s.o DRP_D1c.o DRP_D2c.o O2_D0s.o O2_D1s.o O2_D1c.o O2_D2c.o \
 CPT.o CPT_D0s.o CPT_D1s.o CPT_D1c.o CPT_D2c.o
 
 all: check

@@ -241,6 +241,48 @@ contains
         return
     end subroutine
 
+
+    subroutine apply_BC3_ibm
+
+        use IBM_data
+        use mesh 
+        use boundaries
+
+        implicit none
+
+        ! ATTENTION
+        if (BC3==NOSLIP) then
+
+            q3_wall30_ibm(zstart_ibm_fcm(1):zend_ibm_fcm(1), zstart_ibm_fcm(2):zend_ibm_fcm(2))=0.d0
+            q2_wall30_ibm(zstart_ibm_fcm(1):zend_ibm_fcm(1), zstart_ibm_fcm(2):zend_ibm_fcm(2))=0.d0
+            q1_wall30_ibm(zstart_ibm_fcm(1):zend_ibm_fcm(1), zstart_ibm_fcm(2):zend_ibm_fcm(2))=0.d0
+
+            if (k_start_ibm_2nd_fc.eq.1) q3_z_ibm(zstart_ibm_fcm(1):zend_ibm_fcm(1), zstart_ibm_fcm(2):zend_ibm_fcm(2), 1) = 0.d0
+
+            q3_wall31_ibm(zstart_ibm_fcm(1):zend_ibm_fcm(1), zstart_ibm_fcm(2):zend_ibm_fcm(2))=0.d0
+            q2_wall31_ibm(zstart_ibm_fcm(1):zend_ibm_fcm(1), zstart_ibm_fcm(2):zend_ibm_fcm(2))=0.d0
+            q1_wall31_ibm(zstart_ibm_fcm(1):zend_ibm_fcm(1), zstart_ibm_fcm(2):zend_ibm_fcm(2))=0.d0
+            if (k_end_ibm_2nd_fc.eq.n3_ibm) q3_z_ibm(zstart_ibm_fcm(1):zend_ibm_fcm(1), zstart_ibm_fcm(2):zend_ibm_fcm(2), n3_ibm) = 0.d0
+
+        end if
+
+        ! ATTENTION
+        if (BC3==FREESLIP) then
+
+            q3_wall30_ibm(zstart_ibm_fcm(1):zend_ibm_fcm(1), zstart_ibm_fcm(2):zend_ibm_fcm(2))=0.d0                                             ! No penetration
+            if (k_start_ibm_2nd_fc.eq.1) q2_wall30_ibm(zstart_ibm_fcm(1):zend_ibm_fcm(1), zstart_ibm_fcm(2):zend_ibm_fcm(2))=q2_z_ibm(zstart_ibm_fcm(1):zend_ibm_fcm(1), zstart_ibm_fcm(2):zend_ibm_fcm(2), 1)     ! Neumann
+            if (k_start_ibm_2nd_fc.eq.1) q1_wall30_ibm(zstart_ibm_fcm(1):zend_ibm_fcm(1), zstart_ibm_fcm(2):zend_ibm_fcm(2))=q1_z_ibm(zstart_ibm_fcm(1):zend_ibm_fcm(1), zstart_ibm_fcm(2):zend_ibm_fcm(2), 1)     ! Neumann
+
+            q3_wall31_ibm(zstart_ibm_fcm(1):zend_ibm_fcm(1), zstart_ibm_fcm(2):zend_ibm_fcm(2))=0.d0                                             ! No penetration
+            if (k_end_ibm_2nd_fc.ge.(n3_ibm-1)) q2_wall31_ibm(zstart_ibm_fcm(1):zend_ibm_fcm(1), zstart_ibm_fcm(2):zend_ibm_fcm(2))=q2_z_ibm(zstart_ibm_fcm(1):zend_ibm_fcm(1), zstart_ibm_fcm(2):zend_ibm_fcm(2), n3_ibm-1)  ! Neumann
+            if (k_end_ibm_2nd_fc.ge.(n3_ibm-1)) q1_wall31_ibm(zstart_ibm_fcm(1):zend_ibm_fcm(1), zstart_ibm_fcm(2):zend_ibm_fcm(2))=q1_z_ibm(zstart_ibm_fcm(1):zend_ibm_fcm(1), zstart_ibm_fcm(2):zend_ibm_fcm(2), n3_ibm-1)  ! Neumann
+
+        end if
+
+
+        return
+    end subroutine
+
     subroutine apply_BC2
 
         use mesh
@@ -412,6 +454,51 @@ contains
         return
     end subroutine
 
+    subroutine apply_BC2_ibm
+
+        use IBM_data
+        use mesh 
+        use boundaries
+
+        implicit none
+
+        integer :: k,i, s
+        integer :: s_xst, s_xen, s_zst, s_zen
+        real*8  :: amp,kappa,omega
+        real*8  :: cf_amp,cf_kappa,cf_omega
+
+
+        if (BC2==NOSLIP) then
+
+            q3_wall20_ibm(ystart_ibm_fcm(1):yend_ibm_fcm(1), ystart_ibm_fcm(3):yend_ibm_fcm(3)) =0.d0
+            q2_wall20_ibm(ystart_ibm_fcm(1):yend_ibm_fcm(1), ystart_ibm_fcm(3):yend_ibm_fcm(3)) =0.d0
+            if (j_start_ibm_2nd_fc.eq.1) q2_y_ibm(ystart_ibm_fcm(1):yend_ibm_fcm(1), 1, ystart_ibm_fcm(3):yend_ibm_fcm(3))   =0.d0
+            q1_wall20_ibm(ystart_ibm_fcm(1):yend_ibm_fcm(1), ystart_ibm_fcm(3):yend_ibm_fcm(3)) =0.d0
+
+            q3_wall21_ibm(ystart_ibm_fcm(1):yend_ibm_fcm(1), ystart_ibm_fcm(3):yend_ibm_fcm(3)) =0.d0
+            q2_wall21_ibm(ystart_ibm_fcm(1):yend_ibm_fcm(1), ystart_ibm_fcm(3):yend_ibm_fcm(3)) =0.d0
+            if (j_end_ibm_2nd_fc.eq.n2_ibm) q2_y_ibm(ystart_ibm_fcm(1):yend_ibm_fcm(1), n2_ibm, ystart_ibm_fcm(3):yend_ibm_fcm(3))  =0.d0
+            q1_wall21_ibm(ystart_ibm_fcm(1):yend_ibm_fcm(1), ystart_ibm_fcm(3):yend_ibm_fcm(3)) =0.d0
+
+        endif
+
+        ! ATTENTION
+        if (BC2==FREESLIP) then
+
+            if (j_start_ibm_2nd_fc.eq.1) q3_wall20_ibm(ystart_ibm_fcm(1):yend_ibm_fcm(1), ystart_ibm_fcm(3):yend_ibm_fcm(3))=q3_y_ibm(ystart_ibm_fcm(1):yend_ibm_fcm(1), 1, ystart_ibm_fcm(3):yend_ibm_fcm(3))       ! Neumann
+            q2_wall20_ibm(ystart_ibm_fcm(1):yend_ibm_fcm(1), ystart_ibm_fcm(3):yend_ibm_fcm(3))=0.d0                                                ! No penetration
+            if (j_start_ibm_2nd_fc.eq.1) q1_wall20_ibm(ystart_ibm_fcm(1):yend_ibm_fcm(1), ystart_ibm_fcm(3):yend_ibm_fcm(3))=q1_y_ibm(ystart_ibm_fcm(1):yend_ibm_fcm(1), 1, ystart_ibm_fcm(3):yend_ibm_fcm(3))       ! Neumann
+
+            if (j_end_ibm_2nd_fc.ge.(n2_ibm-1)) q3_wall21_ibm(ystart_ibm_fcm(1):yend_ibm_fcm(1), ystart_ibm_fcm(3):yend_ibm_fcm(3))=q3_y_ibm(ystart_ibm_fcm(1):yend_ibm_fcm(1), n2_ibm-1, ystart_ibm_fcm(3):yend_ibm_fcm(3))    ! Neumann
+            q2_wall21_ibm(ystart_ibm_fcm(1):yend_ibm_fcm(1), ystart_ibm_fcm(3):yend_ibm_fcm(3))=0.d0                                                ! No penetration
+            if (j_end_ibm_2nd_fc.ge.(n2_ibm-1)) q1_wall21_ibm(ystart_ibm_fcm(1):yend_ibm_fcm(1), ystart_ibm_fcm(3):yend_ibm_fcm(3))=q1_y_ibm(ystart_ibm_fcm(1):yend_ibm_fcm(1), n2_ibm-1, ystart_ibm_fcm(3):yend_ibm_fcm(3))    ! Neumann
+
+        end if
+
+
+        return
+    end subroutine
+
     subroutine apply_BC1
 
         use mesh
@@ -450,6 +537,45 @@ contains
             q3_wall11(xstart(2):xend(2), xstart(3):xend(3))=q3_x(n1-1, xstart(2):xend(2), xstart(3):xend(3))  ! Neumann
             q2_wall11(xstart(2):xend(2), xstart(3):xend(3))=q2_x(n1-1, xstart(2):xend(2), xstart(3):xend(3))  ! Neumann
             q1_wall11(xstart(2):xend(2), xstart(3):xend(3))=0.d0                                             ! No penetration
+
+        end if
+
+
+        return
+    end subroutine
+
+    subroutine apply_BC1_ibm
+
+        use IBM_data
+        use mesh 
+        use boundaries
+
+        implicit none
+
+        ! ATTENTION
+        if (BC1==NOSLIP) then
+
+            q3_wall10_ibm(xstart_ibm_fcm(2):xend_ibm_fcm(2), xstart_ibm_fcm(3):xend_ibm_fcm(3)) =0.d0
+            q2_wall10_ibm(xstart_ibm_fcm(2):xend_ibm_fcm(2), xstart_ibm_fcm(3):xend_ibm_fcm(3)) =0.d0
+            q1_wall10_ibm(xstart_ibm_fcm(2):xend_ibm_fcm(2), xstart_ibm_fcm(3):xend_ibm_fcm(3)) =0.d0
+            if (i_start_ibm_2nd_fc.eq.1) q1_x_ibm(1, xstart_ibm_fcm(2):xend_ibm_fcm(2), xstart_ibm_fcm(3):xend_ibm_fcm(3))   =0.d0
+
+            q3_wall11_ibm(xstart_ibm_fcm(2):xend_ibm_fcm(2), xstart_ibm_fcm(3):xend_ibm_fcm(3)) =0.d0
+            q2_wall11_ibm(xstart_ibm_fcm(2):xend_ibm_fcm(2), xstart_ibm_fcm(3):xend_ibm_fcm(3)) =0.d0
+            q1_wall11_ibm(xstart_ibm_fcm(2):xend_ibm_fcm(2), xstart_ibm_fcm(3):xend_ibm_fcm(3)) =0.d0
+            if (i_end_ibm_2nd_fc.eq.n1_ibm) q1_x_ibm(n1_ibm, xstart_ibm_fcm(2):xend_ibm_fcm(2), xstart_ibm_fcm(3):xend_ibm_fcm(3))  =0.d0
+
+        end if
+
+        if (BC1==FREESLIP) then
+
+            if (i_start_ibm_2nd_fc.eq.1) q3_wall10_ibm(xstart_ibm_fcm(2):xend_ibm_fcm(2), xstart_ibm_fcm(3):xend_ibm_fcm(3))=q3_x_ibm(1, xstart_ibm_fcm(2):xend_ibm_fcm(2), xstart_ibm_fcm(3):xend_ibm_fcm(3))     ! Neumann
+            if (i_start_ibm_2nd_fc.eq.1) q2_wall10_ibm(xstart_ibm_fcm(2):xend_ibm_fcm(2), xstart_ibm_fcm(3):xend_ibm_fcm(3))=q2_x_ibm(1, xstart_ibm_fcm(2):xend_ibm_fcm(2), xstart_ibm_fcm(3):xend_ibm_fcm(3))     ! Neumann
+            q1_wall10_ibm(xstart_ibm_fcm(2):xend_ibm_fcm(2), xstart_ibm_fcm(3):xend_ibm_fcm(3))=0.d0                                             ! No penetration
+
+            if (i_end_ibm_2nd_fc.ge.(n1_ibm-1)) q3_wall11_ibm(xstart_ibm_fcm(2):xend_ibm_fcm(2), xstart_ibm_fcm(3):xend_ibm_fcm(3))=q3_x_ibm(n1_ibm-1, xstart_ibm_fcm(2):xend_ibm_fcm(2), xstart_ibm_fcm(3):xend_ibm_fcm(3))  ! Neumann
+            if (i_end_ibm_2nd_fc.ge.(n1_ibm-1)) q2_wall11_ibm(xstart_ibm_fcm(2):xend_ibm_fcm(2), xstart_ibm_fcm(3):xend_ibm_fcm(3))=q2_x_ibm(n1_ibm-1, xstart_ibm_fcm(2):xend_ibm_fcm(2), xstart_ibm_fcm(3):xend_ibm_fcm(3))  ! Neumann
+            q1_wall11_ibm(xstart_ibm_fcm(2):xend_ibm_fcm(2), xstart_ibm_fcm(3):xend_ibm_fcm(3))=0.d0                                             ! No penetration
 
         end if
 

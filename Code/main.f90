@@ -164,55 +164,51 @@ contains
             vel_term3=0.d0
         endif
 
-        if (streamwise==1) then
+        allocate(IBM_mask1_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+        IBM_mask1_x=0.d0
+        allocate(flow_rate_IBM(n1))
+        flow_rate_IBM=0.d0
+        allocate(kin1_IBM(n1))
+        kin1_IBM=0.d0
+        allocate(kin2_IBM(n1))
+        kin2_IBM=0.d0
+        allocate(kin3_IBM(n1))
+        kin3_IBM=0.d0
+        allocate(q1max_IBM(n1))
+        q1max_IBM=0.d0
+        allocate(q2max_IBM(n1))
+        q2max_IBM=0.d0
+        allocate(q3max_IBM(n1))
+        q3max_IBM=0.d0
+        allocate(prmax_IBM(n1))
+        prmax_IBM=0.d0
+        allocate(q1min_IBM(n1))
+        q1min_IBM=0.d0
+        allocate(q2min_IBM(n1))
+        q2min_IBM=0.d0
+        allocate(q3min_IBM(n1))
+        q3min_IBM=0.d0
+        allocate(prmin_IBM(n1))
+        prmin_IBM=0.d0
 
-            allocate(IBM_mask1_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-            IBM_mask1_x=0.d0
-            allocate(flow_rate_IBM(n1))
-            flow_rate_IBM=0.d0
-            allocate(kin1_IBM(n1))
-            kin1_IBM=0.d0
-            allocate(kin2_IBM(n1))
-            kin2_IBM=0.d0
-            allocate(kin3_IBM(n1))
-            kin3_IBM=0.d0
-            allocate(q1max_IBM(n1))
-            q1max_IBM=0.d0
-            allocate(q2max_IBM(n1))
-            q2max_IBM=0.d0
-            allocate(q3max_IBM(n1))
-            q3max_IBM=0.d0
-            allocate(prmax_IBM(n1))
-            prmax_IBM=0.d0
-            allocate(q1min_IBM(n1))
-            q1min_IBM=0.d0
-            allocate(q2min_IBM(n1))
-            q2min_IBM=0.d0
-            allocate(q3min_IBM(n1))
-            q3min_IBM=0.d0
-            allocate(prmin_IBM(n1))
-            prmin_IBM=0.d0
+        ! IBM_mask1_x is used even when IBM is not activated and is always allocated
+        if (IBM_activated) then
+            allocate(IBM_mask2_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+            IBM_mask2_x=0.d0
+            allocate(IBM_mask3_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+            IBM_mask3_x=0.d0
 
-            ! IBM_mask1_x is used even when IBM is not activated and is always allocated
-            if (IBM_activated) then
-                allocate(IBM_mask2_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-                IBM_mask2_x=0.d0
-                allocate(IBM_mask3_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-                IBM_mask3_x=0.d0
+            if (interpol_type==ANTISYMMETRIC_INTERPOL) then
 
-                if (interpol_type==ANTISYMMETRIC_INTERPOL) then
+                allocate(IBM_modulation_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+                IBM_modulation_x = 0.d0
+                allocate(IBM_modulation_y(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+                IBM_modulation_y = 0.d0
+                allocate(IBM_modulation_z(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+                IBM_modulation_z = 0.d0
+            endif
 
-                    allocate(IBM_modulation_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-                    IBM_modulation_x = 0.d0
-                    allocate(IBM_modulation_y(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-                    IBM_modulation_y = 0.d0
-                    allocate(IBM_modulation_z(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-                    IBM_modulation_z = 0.d0
-                endif
-
-            end if
-
-        endif
+        end if
 
 
         ! Bubble_parallel_data
@@ -611,6 +607,13 @@ program main
 
     call CORE_initialize
 
+    if (IBM_activated) then
+        call IBM_setup
+    else
+        IBM_mask1_x=0.d0
+        ibm_volume=0.d0
+    endif
+    
     call VELOCITY_initialize
     if (SCA_state/=0) call SCALAR_initialize
     if (MHD_state/=0) call MHD_initialize
@@ -636,11 +639,6 @@ program main
 
 
 
-    if (IBM_activated) then
-        call IBM_setup
-    else
-        IBM_mask1_x=0.d0
-    endif
 
 
 ! ***********************************************************************************
@@ -674,6 +672,7 @@ program main
 
         ! Save pressure gradient in TMP directory
         if (mod(ntime, save_gradP_frequency).eq.0) call VELOCITY_IO_write_gradP
+        if (mod(ntime, save_gradP_frequency).eq.0) call VELOCITY_IO_write_flowrate
 
         ! Save velocity in Results directory------------------------------------------------------
         if(mod(ntime, save_3D_frequency).eq.0) then
@@ -687,8 +686,8 @@ program main
             call VELOCITY_IO_write_fields(ntime)
             if (SCA_state==1) call SCALAR_IO_write_fields(ntime)
             if ((MHD_state/=0).and.(MHD_export_3D.eq.1)) call MHD_IO_write_fields(ntime)
-            if (use_fringe) call FRINGE_IO_write_fields(ntime)
-            call CELL_CENTERED_IO_WRITE_FIELDS(ntime,t)
+            ! if (use_fringe) call FRINGE_IO_write_fields(ntime)
+            ! call CELL_CENTERED_IO_WRITE_FIELDS(ntime,t)
         endif
 
         ! Animation2D -----------------------------------------------------------------------------

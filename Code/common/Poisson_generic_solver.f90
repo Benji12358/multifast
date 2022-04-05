@@ -2665,7 +2665,7 @@ module poisson_interface
     USE decomp_2d
     implicit none
 
-    public :: poisson_init, solve_Poisson
+    public :: poisson_init, solve_Poisson, solve_Poisson_ibm
 contains
 
 
@@ -3024,5 +3024,50 @@ contains
         call transpose_y_to_z(pr_EDT_y, pr_EDT_z, ph_111)
 
     end subroutine solve_Poisson
+
+    subroutine solve_Poisson_ibm(RHS_z_ibm, pr_EDT_z_ibm)
+        use IBM_data, only:n1_ibm,n2_ibm,n3_ibm
+        USE decomp_2d
+        USE poisson_generic_solver
+        implicit none
+        real(mytype), dimension(:,:,:), intent(in)      :: RHS_z_ibm
+        real(mytype), dimension(:,:,:), intent(out)     :: pr_EDT_z_ibm
+
+        integer     :: i,j,k
+        real(mytype), dimension(:,:,:), allocatable, save :: pr_EDT_x_ibm, pr_EDT_y_ibm, pp3_ibm
+
+
+        TYPE(DECOMP_INFO), save :: ph_111_ibm  ! decomposition object
+        TYPE(DECOMP_INFO), save :: ph_000_ibm  ! decomposition object
+
+        pr_EDT_z_ibm=RHS_z_ibm
+
+        write(*,*) 'generic'
+
+        if (.not. allocated(pp3_ibm)) then
+
+            call decomp_info_init(n1_ibm, n2_ibm, n3_ibm, ph_111_ibm)
+            call decomp_info_init(n1_ibm-1,n2_ibm-1,n3_ibm-1,ph_000_ibm)
+
+            allocate (pr_EDT_x_ibm(ph_111_ibm%xst(1):ph_111_ibm%xen(1),ph_111_ibm%xst(2):ph_111_ibm%xen(2),ph_111_ibm%xst(3):ph_111_ibm%xen(3)))
+            allocate (pr_EDT_y_ibm(ph_111_ibm%yst(1):ph_111_ibm%yen(1),ph_111_ibm%yst(2):ph_111_ibm%yen(2),ph_111_ibm%yst(3):ph_111_ibm%yen(3)))
+            allocate (pp3_ibm(ph_000_ibm%zst(1):ph_000_ibm%zen(1),ph_000_ibm%zst(2):ph_000_ibm%zen(2),ph_000_ibm%zst(3):ph_000_ibm%zen(3)))
+
+        end if
+
+        call transpose_z_to_y(pr_EDT_z_ibm, pr_EDT_y_ibm, ph_111_ibm)
+        call transpose_y_to_x(pr_EDT_y_ibm, pr_EDT_x_ibm, ph_111_ibm)
+        call convert_111_to_000(pr_EDT_x_ibm, pp3_ibm, n1_ibm-1, n2_ibm-1, n3_ibm-1, 1, 1, 1)
+
+        call decomp_2d_poisson_stg(pp3_ibm)
+
+        call convert_000_to_111(pp3_ibm, pr_EDT_x_ibm, n1_ibm-1, n2_ibm-1, n3_ibm-1, 1, 1, 1)
+        pr_EDT_z_ibm=0.d0
+        pr_EDT_y_ibm=0.d0
+        pp3_ibm=0.d0
+        call transpose_x_to_y(pr_EDT_x_ibm, pr_EDT_y_ibm, ph_111_ibm)
+        call transpose_y_to_z(pr_EDT_y_ibm, pr_EDT_z_ibm, ph_111_ibm)
+
+    end subroutine solve_Poisson_ibm
 
 end module poisson_interface

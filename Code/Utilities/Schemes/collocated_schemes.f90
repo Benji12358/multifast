@@ -4515,7 +4515,7 @@ contains
         enddo
 
         call apply_d1s_twice(d1s_scheme, f1, df1_calc, N, dx, shifted)
-        call apply_d1s_twice (d1s_scheme, f2, df2_calc, N, dx, shifted)
+        call apply_d1s_twice(d1s_scheme, f2, df2_calc, N, dx, shifted)
 
         i=N/2
         scale_factor=(2.d0/L)**2

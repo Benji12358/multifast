@@ -157,8 +157,6 @@ contains
         sp_decomp%zst(2):sp_decomp%zen(2), &
         sp_decomp%zst(3):sp_decomp%zen(3))   :: Fxz_hat_z
 
-
-
         call dfftw_plan_dft_r2c_1d(plan, n3m, rin_z(:), cout_z(:), FFTW_ESTIMATE)
 
         !do j = 1, n2m
@@ -534,7 +532,7 @@ contains
             if(nrank==0) write(MATRIX_FILE,"(10E25.15)")(C(4,j), j=-4,5)
 
 
-            ! j=5-------------------------------------------------------
+            ! j=5_to_n_max-4-------------------------------------------------------
             geomA_coeffs=0.d0
 
             C(5,:)=0.d0
@@ -939,8 +937,6 @@ contains
 
         call real_to_spectral(qcap_z, xz_modes_x, sp_decomp)
 
-
-
         call transpose_x_to_y(xz_modes_x, xz_modes_y, sp_decomp)
 
         if ((sp_decomp%yst(1)==1).and.(sp_decomp%yst(3)==1)) then
@@ -948,7 +944,6 @@ contains
         endif
 
         call solve_poisson_in_fourier_space(xz_modes_y)
-
 
 
         call transpose_y_to_x(xz_modes_y, xz_modes_x, sp_decomp)

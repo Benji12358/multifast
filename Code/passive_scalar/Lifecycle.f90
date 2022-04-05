@@ -43,7 +43,7 @@ contains
             ! select case (start_source_type)
             !     case (NO_SOURCE)
 
-                if (init_type==CLASSIC_INIT) then
+                if ((init_type==CLASSIC_INIT).or.(init_type==KAWAMURA_INIT).or.(init_type==CONSTANT_HEAT_FLUX)) then
 
                     call generate_fields(sca_x(:,:,:), sca_y(:,:,:), sca_z(:,:,:), -delta_T, delta_T)
 

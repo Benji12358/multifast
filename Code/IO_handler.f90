@@ -74,6 +74,7 @@ contains
             use mesh
 
             implicit none
+            integer     :: pi_scale_flag
 
             ! Computational domain *******************************************************************
             open(15,file=trim(COMMON_settings_path)//'computational_domain.d')
@@ -81,6 +82,7 @@ contains
             read(15,*) n1,n2,n3
             read(15,*) L3, L2, L1
             read(15,*) stretch_Y, mesh_type
+            read(15,*) pi_scale_flag
 
             close(15)
     
@@ -88,8 +90,12 @@ contains
             n2m=n2-1                !number of normal cells
             n3m=n3-1                !number of streamwise cells
 
-            L1=L1*pi       !spanwise size of the whole calcul box
-            L3=L3*pi       !streamwise size of the whole calcul box
+            if (pi_scale_flag.eq.1) then
+                L1=L1*pi        !spanwise size of the whole calcul box
+                L3=L3*pi        !streamwise size of the whole calcul box
+            else
+                L1=L1           !spanwise size of the whole calcul box
+                L3=L3           !streamwise size of the whole calcul box
 
         end subroutine read_domain_settings
 
@@ -193,20 +199,39 @@ contains
             use mesh
 
             implicit none
-            integer :: IBM_activated_int
+            integer :: IBM_activated_int, i
 
             ! IBM **********************************************************************************
             open(15,file=trim(COMMON_settings_path)//'IBM.d')
 
             read(15,*) IBM_activated_int
+            read(15,*) ren_tau_ibm
+            read(15,*) number_of_objects
             read(15,*) interpol_type
             read(15,'(a)') obj_file_path  ! path of the read field  file (cha.rea)
-            read(15,*) body_x1, body_x2, body_x3
-            read(15,*) body_scale_x1, body_scale_x2, body_scale_x3
-            close(15)
+            read(15,*)
 
-            ! body_scale_x3 = L3/2.d0
-            ! body_x3 = L3/2.d0
+            allocate(body_x1(number_of_objects))
+            body_x1 = 0.d0
+            allocate(body_x2(number_of_objects))
+            body_x2 = 0.d0
+            allocate(body_x3(number_of_objects))
+            body_x3 = 0.d0
+
+            allocate(body_scale_x1(number_of_objects))
+            body_scale_x1 = 0.d0
+            allocate(body_scale_x2(number_of_objects))
+            body_scale_x2 = 0.d0
+            allocate(body_scale_x3(number_of_objects))
+            body_scale_x3 = 0.d0
+
+            do i=1,number_of_objects
+                read(15,*) body_x1(i), body_x2(i), body_x3(i)
+                read(15,*) body_scale_x1(i), body_scale_x2(i), body_scale_x3(i)
+                read(15,*)
+            enddo
+
+            close(15)
 
             IBM_activated=(IBM_activated_int==1)
 
@@ -400,6 +425,7 @@ contains
 
             implicit none
             integer :: s
+            integer :: i
 
             if (nrank==0) then
 
@@ -515,8 +541,11 @@ contains
                 if (IBM_activated) then
                     write(*,*) 'IBM activated ? -YES'
                     write(*,*) '...... OBJECT file   :', trim(obj_file_path)
-                    write(*,*) '...... Body position :', 'X1=', body_x1, "X2=",body_x2, "X3=", body_x3
-                    write(*,*) '...... Scale         :', 'X1=', body_scale_x1, "X2=",body_scale_x2, "X3=", body_scale_x3
+                    do i=1,number_of_objects
+                        write(*,*) '.......Body n° ', i
+                        write(*,*) '...... Body position :', 'X1=', body_x1(i), "X2=",body_x2(i), "X3=", body_x3(i)
+                        write(*,*) '...... Scale         :', 'X1=', body_scale_x1(i), "X2=",body_scale_x2(i), "X3=", body_scale_x3(i)
+                    enddo
                 else
                     write(*,*) 'IBM activated ? -NO'
                 end if

@@ -1461,10 +1461,105 @@ contains
 !
     end subroutine add_noise_rand_sin_new
 
+    subroutine clear_velocity_IBM()
+        use IBM_settings
+
+        use mpi
+        use decomp_2d
+
+        implicit none
+
+        integer             :: i,j,k,n
+
+
+        do n=1,number_of_objects
+
+            if (object_in_current_proc_y_q3(n)) then
+
+                do i=ystart_ibm_q3(n,1), yend_ibm_q3(n,1)
+                    do j=j_start_obj_q3(n),j_end_obj_q3(n)
+                        do k=ystart_ibm_q3(n,3), yend_ibm_q3(n,3)
+
+                            ! remove upward term and add backward term
+                            q3_y(i,j,k) = 0.d0
+
+                        enddo
+                    enddo
+                enddo
+
+            endif
+
+            if (object_in_current_proc_y_q2(n)) then
+
+                do i=ystart_ibm_q2(n,1), yend_ibm_q2(n,1)
+                    do j=j_start_obj_q2(n),j_end_obj_q2(n)
+                        do k=ystart_ibm_q2(n,3), yend_ibm_q2(n,3)
+
+                            ! remove upward term and add backward term
+                            q2_y(i,j,k) = 0.d0
+
+                        enddo
+                    enddo
+                enddo
+
+            endif
+
+            if (object_in_current_proc_y_q1(n)) then
+
+                do i=ystart_ibm_q1(n,1), yend_ibm_q1(n,1)
+                    do j=j_start_obj_q1(n),j_end_obj_q1(n)
+                        do k=ystart_ibm_q1(n,3), yend_ibm_q1(n,3)
+
+                            ! remove upward term and add backward term
+                            q1_y(i,j,k) = 0.d0
+
+                        enddo
+                    enddo
+                enddo
+
+            endif
+
+        enddo
+
+        return
+
+!
+    end subroutine clear_velocity_IBM
+
+    subroutine compute_initial_flowrate()
+        use IBM_settings
+        use mesh
+
+        use mpi
+        use decomp_2d
+
+        implicit none
+
+        integer             :: i,j,k,n,mpi_err
+        real*8              :: ut1
+
+        ! Perform the flowrate at the inlet...
+        ut1=0.d0
+        do k=xstart(3),min(xend(3),n3-1)
+            do j=xstart(2),min(xend(2),n2-1)
+                ut1=ut1+q1_x(1,j,k)*(Y(j+1)-Y(j))*dx3
+            enddo
+        enddo
+
+        call MPI_ALLREDUCE(ut1, initial_flowrate, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
+        initial_flowrate=initial_flowrate/(L3*L2)
+
+        if (nrank.eq.0) write(*,*) 'initial flowrate:', initial_flowrate
+
+        return
+
+    end subroutine compute_initial_flowrate
+
 
 
     subroutine init_turbulent_field(intensity)
         use COMMON_workspace_view, only: COMMON_snapshot_path
+        use IBM_settings
         implicit none
         real*8, intent(in)      :: intensity
 
@@ -1475,6 +1570,8 @@ contains
 
         !call add_noise(intensity)
         if(intensity/=0.d0) call add_noise_rand_sin_new(intensity)   ! to do/check
+
+        if (IBM_activated) call clear_velocity_IBM
 
 
         ! Transpose data in 2D-decomposition stencil
@@ -1489,6 +1586,8 @@ contains
 
         call transpose_y_to_x(q2_y, q2_x)
         call transpose_y_to_z(q2_y, q2_z)
+
+        call compute_initial_flowrate
 
         ! The final 3D field are exported for checking purposes
         call create_snapshot(COMMON_snapshot_path, "INITIALIZATION", q1_y, "W", 2)
