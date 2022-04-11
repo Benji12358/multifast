@@ -851,7 +851,7 @@ contains
 
         use run_ctxt_data
         use physical_fields, only: dP_streamwise, dP_spanwise
-        use VELOCITY_solver, only: Fext1, Fext3, mean_grad_P1, mean_grad_P3
+        use VELOCITY_solver, only: Fext1, Fext3, mean_grad_P1, mean_grad_P3, mean_grad_P1_viscous
         use DNS_settings, only:streamwise
         use mesh
         use mpi
@@ -899,7 +899,7 @@ contains
 
             if(nrank==0) then
                 open(3698, file="gradP.dat", position="append")
-                write(3698,*) ntime, t, mean_grad_P3, mean_grad_P1
+                write(3698,*) ntime, t, mean_grad_P3, mean_grad_P1, mean_grad_P1_viscous
                 close(3698)
             endif
 

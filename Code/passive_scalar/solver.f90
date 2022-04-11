@@ -205,9 +205,15 @@ contains
         end subroutine set_time_coeffs
 
         subroutine next_scalar
+            use IBM_data
+            use IBM_settings
+            use IBM
+
             implicit none
             integer :: i,j,k
             integer :: n1s, n1e, n2s,n2e, n3s,n3e
+            real*8, dimension(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3)) :: sca_term
+            real*8  :: RHSi
 
             if (BC1==OPEN) then
                 n1s=max(2, ystart(1))
@@ -222,17 +228,38 @@ contains
             n3s=ystart(3)
             n3e=min(n3-1, yend(3))
 
-            do k = n3s, n3e
-                do j = n2s, n2e
-                    do i = n1s, n1e
-                        sca_y(i,j,k)=sca_y(i,j,k)+dt*gam*(RHS1(i,j,k)+RHS2(i,j,k)+source_term(i,j,k))+dt*rom*(previousRHS1(i,j,k)+previousRHS2(i,j,k)+previoussource_term(i,j,k))
+            if (IBM_activated) then
 
-                        ! sca_y(i,j,k)=sca_y(i,j,k)+dt*(gam*RHS1(i,j,k)+rom*previousRHS1(i,j,k))+dt*(gam*RHS2(i,j,k)+rom*previousRHS2(i,j,k))
-                        !if (sca_y(i,j,k)<0) sca_y(i,j,k)=0.d0
-                        !if (sca_y(i,j,k)>1) sca_y(i,j,k)=1.d0
+                if ((interpol_type == IBM_INTERPOL_NONE).or.(interpol_type == SECOND_ORDER_INTERPOL)) then
+                    call force_temperature(sca_y, ysize, sca_term, delta_T)
+                endif
+
+                do k = n3s, n3e
+                    do j = n2s, n2e
+                        do i = n1s, n1e
+
+                            RHSi = dt*gam*(RHS1(i,j,k)+RHS2(i,j,k)+source_term(i,j,k))+dt*rom*(previousRHS1(i,j,k)+previousRHS2(i,j,k)+previoussource_term(i,j,k))
+                            sca_y(i,j,k)=sca_y(i,j,k) + RHSi + IBM_maskcc_y(i,j,k)*(-RHSi + sca_term(i,j,k))
+
+                        end do
                     end do
                 end do
-            end do
+
+            else
+
+                do k = n3s, n3e
+                    do j = n2s, n2e
+                        do i = n1s, n1e
+                            sca_y(i,j,k)=sca_y(i,j,k)+dt*gam*(RHS1(i,j,k)+RHS2(i,j,k)+source_term(i,j,k))+dt*rom*(previousRHS1(i,j,k)+previousRHS2(i,j,k)+previoussource_term(i,j,k))
+
+                            ! sca_y(i,j,k)=sca_y(i,j,k)+dt*(gam*RHS1(i,j,k)+rom*previousRHS1(i,j,k))+dt*(gam*RHS2(i,j,k)+rom*previousRHS2(i,j,k))
+                            !if (sca_y(i,j,k)<0) sca_y(i,j,k)=0.d0
+                            !if (sca_y(i,j,k)>1) sca_y(i,j,k)=1.d0
+                        end do
+                    end do
+                end do
+
+            endif
 
         end subroutine next_scalar
 

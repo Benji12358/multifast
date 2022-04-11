@@ -197,6 +197,11 @@ contains
             IBM_mask2_x=0.d0
             allocate(IBM_mask3_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
             IBM_mask3_x=0.d0
+            allocate(IBM_maskcc_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+            IBM_maskcc_x=0.d0
+            allocate(IBM_maskcc_y(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3)))
+            IBM_maskcc_y=0.d0
+
 
             if (interpol_type==ANTISYMMETRIC_INTERPOL) then
 

@@ -13,6 +13,7 @@ module schemes_interface
     use d2c_schemes
     use d0s_schemes
     use d1s_schemes
+    use d1s_schemes_ibm
     implicit none
 
     procedure(D1c_ExpCtr_O2Fp0), pointer  ::  D1c, D2c
@@ -21,6 +22,7 @@ module schemes_interface
     procedure(D1c_ExpCtr_O2Fp0_MULT_ACC), pointer  ::  D1c_MULT_ACC, D2c_MULT_ACC
 
     procedure(D0s_ExpCtr_O2Fp0), pointer  ::  D0s, D1s
+    procedure(D1s_ExpCtr_O2Fp0_ibm), pointer  ::  D1s_ibm
 
     procedure(D0s_ExpCtr_O2Fp0_MULT), pointer  :: D0s_MULTbyHimself
     procedure(D1s_ExpCtr_O2Fp0_MULT), pointer  ::  D1s_MULT

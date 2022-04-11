@@ -284,6 +284,7 @@ module poisson_020_solver
     real*8,dimension(:,:), allocatable :: lapY_matrix
     real*8,dimension(:, :, :, :), allocatable::lap_matrix_ik
     real*8, dimension(:), allocatable   :: k2eq1, k2eq3
+    real*8, dimension(:,:,:), allocatable   :: k2eq1_x, k2eq3_z, k2eq1_y, k2eq3_y
 
 
     type(decomp_info) :: sp_decomp
@@ -814,6 +815,7 @@ contains
     end subroutine
 
     subroutine init
+        use IBM_settings
 
         implicit none
 
@@ -824,12 +826,46 @@ contains
 
         allocate(lapY_matrix(n2,-kl:ku))
         allocate(lap_matrix_ik(sp_decomp%yst(1):sp_decomp%yen(1),sp_decomp%yst(3):sp_decomp%yen(3),n2-1,-kl:ku))
-        allocate(k2eq1(n1))
-        allocate(k2eq3(n3))
+
+        allocate(k2eq1_y(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3)))
+        allocate(k2eq3_y(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3)))
+        allocate(k2eq1_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+        allocate(k2eq3_z(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3)))
+
+        ! if (IBM_activated) then
+
+        !     call perform_K2eq_for_ik_ibm
+
+        !     call transpose_x_to_y(k2eq1_x,k2eq1_y)
+        !     call transpose_z_to_y(k2eq3_z,k2eq3_y)
+
+        ! else
+        
+            allocate(k2eq1(n1))
+            allocate(k2eq3(n3))
+
+            call perform_K2eq_for_ik
+
+        !     do j=sp_decomp%xst(2),sp_decomp%xen(2)
+        !         do k=sp_decomp%xst(3),sp_decomp%xen(3)
+        !             k2eq1_x(:,j,k) = k2eq1(:)
+        !         enddo
+        !     enddo
+
+        !     do j=sp_decomp%zst(2),sp_decomp%zen(2)
+        !         do i=sp_decomp%zst(1),sp_decomp%zen(1)
+        !             k2eq3_z(i,j,:) = k2eq3(:)
+        !         enddo
+        !     enddo
+
+        !     call transpose_x_to_y(k2eq1_x,k2eq1_y)
+        !     call transpose_z_to_y(k2eq3_z,k2eq3_y)
+
+        ! endif
+
 
         call prepare_lapY_matrix
 
-        call perform_K2eq_for_ik
 
         ! Zero wave number i, k ----------------------------------
         if (sp_decomp%yst(1)==1) then
@@ -843,6 +879,7 @@ contains
                 do j=2,n2m
                     lap_matrix_ik(1,1,j,-kl:-1)=lapY_matrix(j,-kl:-1)
                     lap_matrix_ik(1,1,j,0)=lapY_matrix(j,0)-k2eq1(1)-k2eq3(1)
+                    ! lap_matrix_ik(1,1,j,0)=lapY_matrix(j,0)-k2eq1_y(1,j,1)-k2eq3_y(1,j,1)
                     lap_matrix_ik(1,1,j,1:ku)=lapY_matrix(j,1:ku)
                 enddo
 
@@ -858,6 +895,7 @@ contains
 
                     lap_matrix_ik(i,1,j,-kl:-1)=lapY_matrix(j,-kl:-1)
                     lap_matrix_ik(i,1,j,0)=lapY_matrix(j,0)-k2eq1(i)-k2eq3(1)
+                    ! lap_matrix_ik(i,1,j,0)=lapY_matrix(j,0)-k2eq1_y(i,j,1)-k2eq3_y(i,j,1)
                     lap_matrix_ik(i,1,j,1:ku)=lapY_matrix(j,1:ku)
 
                 enddo
@@ -872,6 +910,7 @@ contains
 
                     lap_matrix_ik(i,k,j,-kl:-1)=lapY_matrix(j,-kl:-1)
                     lap_matrix_ik(i,k,j,0)=lapY_matrix(j,0)-k2eq1(i)-k2eq3(k)
+                    ! lap_matrix_ik(i,k,j,0)=lapY_matrix(j,0)-k2eq1_y(i,j,k)-k2eq3_y(i,j,k)
                     lap_matrix_ik(i,k,j,1:ku)=lapY_matrix(j,1:ku)
 
                 enddo
@@ -890,7 +929,7 @@ contains
 
             implicit none
 
-      include 'fftw3.f'
+            include 'fftw3.f'
             integer k,i
 
             do k=1,n3m
@@ -899,6 +938,115 @@ contains
 
             do i=1,n1m
                 k2eq1(i)=K2eq_of_D1s_twice(D1s, n1, i, L1/PI, .true.)
+            enddo
+
+            return
+
+        end subroutine
+
+        subroutine perform_K2eq_for_ik_ibm
+
+            use mathematical_constants
+            use d2c_from_d1s
+            use schemes_interface
+            use IBM_data, only: IBM_mask3_x, IBM_maskcc_x, IBM_mask1_x
+            use decomp_2d
+            use IBM, only: get_n_start_IBM
+
+            implicit none
+
+            include 'fftw3.f'
+            integer k,i,j,k0,i0
+            real*8, dimension(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3)) :: tmp_y
+            real*8, dimension(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3)) :: IBM_mask3_z, IBM_maskcc_z
+
+            integer :: n_objects_q3, n_objects_cc, n_objects_q1
+            integer, dimension(number_of_objects) :: n_re_tot_q3,n_re_tot_cc,n_re_tot_q1
+            integer, dimension(:), allocatable :: n_re_q3,n_re_cc,n_re_q1
+
+            call transpose_x_to_y(IBM_mask3_x,tmp_y)
+            call transpose_y_to_z(tmp_y,IBM_mask3_z)
+
+            call transpose_x_to_y(IBM_maskcc_x,tmp_y)
+            call transpose_y_to_z(tmp_y,IBM_maskcc_z)
+
+            k0=1
+            do i=zstart(1),zend(1)
+                do j=zstart(2),zend(2)
+
+                    ! first, get objects bounds in X3 direction to correct the computation of derivatives
+                    call get_n_start_IBM(IBM_mask3_z(i,j,:),n3,n_re_tot_q3,n_objects_q3)
+                    call get_n_start_IBM(IBM_maskcc_z(i,j,:),n3,n_re_tot_cc,n_objects_cc)
+
+                    if (nrank.eq.0) write(*,*) 'n_objects_q3', n_objects_q3
+                    if (nrank.eq.0) write(*,*) 'n_objects_cc', n_objects_cc
+
+                    ! allocate the array of start indices
+                    ! /!\ if there is no object on the probe, we initialize this array with dimension 1
+                    ! for q3 position variables
+                    if (n_objects_q3.eq.0) then
+                        allocate(n_re_q3(1))
+                        n_re_q3 = 0
+                    else
+                        allocate(n_re_q3(n_objects_q3))
+                        n_re_q3 = n_re_tot_q3(1:n_objects_q3)
+                    endif
+
+                    ! for cell center variables
+                    if (n_objects_cc.eq.0) then
+                        allocate(n_re_cc(1))
+                        n_re_cc = 0
+                    else
+                        allocate(n_re_cc(n_objects_cc))
+                        n_re_cc = n_re_tot_cc(1:n_objects_cc)
+                    endif
+
+                    do k=1,n3m
+                        k2eq3_z(i,j,k) = K2eq_of_D1s_twice_ibm(D1s_ibm, n3, k, L3/PI, .true., n_re_q3, n_objects_q3, n_re_cc, n_objects_cc)
+                    enddo
+
+                    deallocate(n_re_q3)
+                    deallocate(n_re_cc)
+
+                enddo
+            enddo
+
+            i0=1
+            do k=xstart(3),xend(3)
+                do j=xstart(2),xend(2)
+
+                    ! first, get objects bounds in X3 direction to coorect the computation of derivatives
+                    call get_n_start_IBM(IBM_mask1_x(:,j,k),n1,n_re_tot_q1,n_objects_q1)
+                    call get_n_start_IBM(IBM_maskcc_x(:,j,k),n1,n_re_tot_cc,n_objects_cc)
+
+                    ! allocate the array of start indices
+                    ! /!\ if there is no object on the probe, we initialize this array with dimension 1
+                    ! for q3 position variables
+                    if (n_objects_q1.eq.0) then
+                        allocate(n_re_q1(1))
+                        n_re_q1 = 0
+                    else
+                        allocate(n_re_q1(n_objects_q1))
+                        n_re_q1 = n_re_tot_q1(1:n_objects_q1)
+                    endif
+
+                    ! for cell center variables
+                    if (n_objects_cc.eq.0) then
+                        allocate(n_re_cc(1))
+                        n_re_cc = 0
+                    else
+                        allocate(n_re_cc(n_objects_cc))
+                        n_re_cc = n_re_tot_cc(1:n_objects_cc)
+                    endif
+
+                    do i=1,n1m
+                        k2eq1_x(i,j,k) = K2eq_of_D1s_twice_ibm(D1s_ibm, n1, i, L1/PI, .true., n_re_q1, n_objects_q1, n_re_cc, n_objects_cc)
+                    enddo
+
+                    deallocate(n_re_q1)
+                    deallocate(n_re_cc)
+
+                enddo
             enddo
 
             return

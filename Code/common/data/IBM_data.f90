@@ -2,7 +2,7 @@ module IBM_data
     use decomp_2d, only:DECOMP_INFO
 
     implicit none
-    real*8, dimension(:,:,:), allocatable   :: IBM_mask1_x, IBM_mask2_x, IBM_mask3_x
+    real*8, dimension(:,:,:), allocatable   :: IBM_mask1_x, IBM_mask2_x, IBM_mask3_x, IBM_maskcc_x, IBM_maskcc_y
     real*8, dimension(:,:,:), allocatable   :: IBM_modulation_x, IBM_modulation_y, IBM_modulation_z
     real*8, dimension(:,:,:), allocatable   :: vel_term1, vel_term2, vel_term3
     real*8                                  :: q_bound(3)

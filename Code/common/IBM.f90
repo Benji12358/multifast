@@ -1149,6 +1149,9 @@ contains
             call perform_mask(vertex, faces, nb_vertex, nb_faces, IBM_mask3_x, n1, &
             n2,xstart(2),xend(2), n3,xstart(3),xend(3), X1c, X2c, X3, 1.d0)
 
+            call perform_mask(vertex, faces, nb_vertex, nb_faces, IBM_maskcc_x, n1, &
+            n2,xstart(2),xend(2), n3,xstart(3),xend(3), X1c, X2c, X3c, 1.d0)
+
             call get_ijk_IBM(X1, X2c, X3c,i_start_obj_q1(i),i_end_obj_q1(i),j_start_obj_q1(i),j_end_obj_q1(i),k_start_obj_q1(i),k_end_obj_q1(i))
             call get_ijk_IBM(X1c, X2, X3c,i_start_obj_q2(i),i_end_obj_q2(i),j_start_obj_q2(i),j_end_obj_q2(i),k_start_obj_q2(i),k_end_obj_q2(i))
             call get_ijk_IBM(X1c, X2c, X3,i_start_obj_q3(i),i_end_obj_q3(i),j_start_obj_q3(i),j_end_obj_q3(i),k_start_obj_q3(i),k_end_obj_q3(i))
@@ -1212,6 +1215,8 @@ contains
             call extrapolate_mask_fine_mesh_ibm
 
         endif
+
+        call transpose_x_to_y(IBM_maskcc_x,IBM_maskcc_y)
 
         ! FOR DEBUGGING, export the mask array in snapshot directory
         call create_stretch_snapshot(COMMON_snapshot_path, "IBM", IBM_mask1_x, "mask1", 1, X1,X2c,X3c)
@@ -1437,6 +1442,47 @@ contains
         call transpose_y_to_x(q3_y_ibm, q3_x_ibm, decomp_fine)
 
     end subroutine from_coarse_to_fine_velocity
+
+    subroutine force_temperature(sca_y, sz, sca_term, deltaT)
+
+        implicit none
+        integer, dimension(3), intent(in)           :: sz
+        real*8, intent(in)                          :: deltaT
+        real*8, dimension(:,:,:), intent(in)        :: sca_y
+        real*8, dimension(:,:,:), intent(out)       :: sca_term
+
+        select case (interpol_type)
+
+            case (IBM_INTERPOL_NONE, SECOND_ORDER_INTERPOL)
+                call no_interpol
+
+            case default
+
+        end select
+
+    contains
+
+        subroutine no_interpol() !sca_term correspond au terme (sca^(n+1) - sca^n )/dt
+            use mesh, only: n2
+            implicit none
+            integer ::   i,j,k
+
+            do k=1, sz(3)
+                do i=1, sz(1)
+                    do j=1, n2/2
+                        sca_term(i,j,k) = ( -deltaT - sca_y(i,j,k) )
+                    enddo
+
+
+                    do j=n2/2+1,n2
+                        sca_term(i,j,k) = ( deltaT - sca_y(i,j,k) )
+                    enddo
+                enddo
+            enddo
+
+        end subroutine no_interpol
+
+    end subroutine force_temperature
 
     subroutine force_velocity(q1, q2, q3, sz, vel_term1, vel_term2, vel_term3)
 
@@ -2504,6 +2550,52 @@ contains
         end do
 
     end subroutine get_ijk_IBM
+
+    ! return bounds of the object, depending on the location of the variable
+    subroutine get_n_start_IBM(mask_ibm,n,n_IBM_start,n_objects)
+
+        use mesh, only:n1,n2,n3
+        use snapshot_writer
+        use COMMON_workspace_view
+
+        implicit none
+        real*8, dimension(:), intent(in)                        :: mask_ibm
+        integer                                                 :: index
+        integer, intent(in)                                     :: n
+        integer, intent(inout)                                  :: n_objects
+        integer, dimension(number_of_objects), intent(inout)    :: n_IBM_start
+
+        !if (dir=='X') then
+        !    allocate(array_1D(n1))
+        !    array_1D = mask_ibm(:,j0,k0)
+        !elseif (dir=='Z') then
+        !    allocate(array_1D(n3))
+        !    array_1D = mask_ibm(i0,j0,:)
+        !endif
+
+        ! The idea is to go through the probe, and check the rising edges of an object
+        ! To do so, we check the difference of two consecutives nodes for the ibm_mask
+        ! This difference is equal to 0 in the flowfield and in the object
+        ! For a rising edge, it is equal to 1 and for a falling edge, it is equal to -1
+
+        n_objects = 1
+
+        if (mask_ibm(1).gt.(0.d0)) then
+            n_IBM_start(n_objects) = 1
+            n_objects = n_objects + 1
+        endif
+
+        do index = 2, n
+            if ((mask_ibm(index)-mask_ibm(index-1)).gt.(0.d0)) then
+                n_IBM_start(n_objects) = index
+                n_objects = n_objects + 1
+            endif
+        end do
+
+        ! because n_objects was initialized to 1, we have to remove 1
+        n_objects = n_objects - 1
+
+    end subroutine get_n_start_IBM
 
     ! return the local decomposition of the IBM object with its own meshes
     subroutine decomp_objet_among_procs(xstart_ibm, xend_ibm, ystart_ibm, yend_ibm, zstart_ibm, zend_ibm, & 

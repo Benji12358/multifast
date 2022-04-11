@@ -96,6 +96,7 @@ contains
             else
                 L1=L1           !spanwise size of the whole calcul box
                 L3=L3           !streamwise size of the whole calcul box
+            endif
 
         end subroutine read_domain_settings
 

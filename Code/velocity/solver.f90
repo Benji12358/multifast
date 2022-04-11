@@ -22,7 +22,7 @@ module VELOCITY_solver
 
     ! Only update_velocity is callable from the outside
     public :: update_velocity, init, save_state, update_multiphysics_velocity, add_action_x, add_action_z, substract_action
-    public :: Fext1, Fext2, Fext3, mean_grad_P1, mean_grad_P3
+    public :: Fext1, Fext2, Fext3, mean_grad_P1, mean_grad_P3, mean_grad_P1_viscous
     public :: finalize
 
     private
@@ -32,7 +32,7 @@ module VELOCITY_solver
     logical     :: previousRHS_are_available=.false.
 
     ! Mean pressure gradient, used for both cases, with IBM and without IBM
-    real*8              :: mean_grad_P1, mean_grad_P3
+    real*8              :: mean_grad_P1, mean_grad_P3, mean_grad_P1_viscous
 
     ! Navier-stokes equation coefficients
     real*8      :: diff21_coef, diff22_coef
@@ -548,7 +548,10 @@ contains
             endif
         endif
 
-        if (IBM_activated) call correct_gradP(mean_grad_P1)
+        if (IBM_activated) then
+            mean_grad_P1_viscous = mean_grad_P1
+            call correct_gradP(mean_grad_P1)
+        endif
 
         if (nrank==0) write(*,*) 'mean_grad_P1', mean_grad_P1
 
@@ -3538,7 +3541,7 @@ contains
             do k = n3s, n3e
                 do j = n2s, n2e
                     do i = n1s, n1e
-                        RHS1i = NSTERMS1(i,j,k) + Fext1(i, j, k)
+                        RHS1i = NSTERMS1(i,j,k) !+ Fext1(i, j, k)
                         q1_x(i,j,k) = q1_save_x(i,j,k) + RHS1i + IBM_mask1_x(i,j,k)*(-RHS1i + vel_term1(i,j,k))
                     end do
                 end do
@@ -3558,7 +3561,7 @@ contains
             do k = n3s, n3e
                 do j = n2s, n2e
                     do i = n1s, n1e
-                        RHS2i = NSTERMS2(i,j,k) + Fext2(i, j, k)
+                        RHS2i = NSTERMS2(i,j,k) !+ Fext2(i, j, k)
                         q2_x(i,j,k) = q2_save_x(i,j,k) + RHS2i + IBM_mask2_x(i,j,k)*(-RHS2i + vel_term2(i,j,k))
                     end do
                 end do
@@ -3578,7 +3581,7 @@ contains
             do k = n3s, n3e
                 do j = n2s, n2e
                     do i = n1s, n1e
-                        RHS3i = NSTERMS3(i,j,k) + Fext3(i, j, k)
+                        RHS3i = NSTERMS3(i,j,k) !+ Fext3(i, j, k)
                         q3_x(i,j,k) = q3_save_x(i,j,k) + RHS3i + IBM_mask3_x(i,j,k)*(-RHS3i + vel_term3(i,j,k))
                     end do
                 end do
@@ -3593,7 +3596,7 @@ contains
             do k = n3s, n3e
                 do j = n2s, n2e
                     do i = n1s, n1e
-                        q1_x(i,j,k) = q1_save_x(i,j,k) + NSTERMS1(i,j,k) + Fext1(i,j,k)
+                        q1_x(i,j,k) = q1_save_x(i,j,k) + NSTERMS1(i,j,k) !+ Fext1(i,j,k)
                     end do
                 end do
             end do
@@ -3612,7 +3615,7 @@ contains
             do k = n3s, n3e
                 do j = n2s, n2e
                     do i = n1s, n1e
-                        q2_x(i,j,k) = q2_save_x(i,j,k) + NSTERMS2(i,j,k) + Fext2(i,j,k)
+                        q2_x(i,j,k) = q2_save_x(i,j,k) + NSTERMS2(i,j,k) !+ Fext2(i,j,k)
                     end do
                 end do
             end do
@@ -3631,7 +3634,7 @@ contains
             do k = n3s, n3e
                 do j = n2s, n2e
                     do i = n1s, n1e
-                        q3_x(i,j,k) = q3_save_x(i,j,k) + NSTERMS3(i,j,k) + Fext3(i,j,k)
+                        q3_x(i,j,k) = q3_save_x(i,j,k) + NSTERMS3(i,j,k) !+ Fext3(i,j,k)
                     end do
                 end do
             end do
