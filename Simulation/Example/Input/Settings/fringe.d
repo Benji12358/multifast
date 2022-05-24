@@ -1,5 +1,5 @@
-1		fringe_state 0: no fringe ; 1: fringe activated (if fringe is activated, activate at least one BC to 5 in global.d)
-0.5	fringe_length (in percentage of L_streamwise
+0		fringe_state 0: no fringe ; 1: fringe activated (if fringe is activated, activate at least one BC to 5 in global.d)
+0.25	fringe_length (in percentage of L_streamwise
 0.5		delta_rise (in percentage of L_fringe)
 0.15		delta_fall (in percentage of L_fringe)
 10		delta_activation
