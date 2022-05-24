@@ -3042,8 +3042,6 @@ contains
 
         pr_EDT_z_ibm=RHS_z_ibm
 
-        write(*,*) 'generic'
-
         if (.not. allocated(pp3_ibm)) then
 
             call decomp_info_init(n1_ibm, n2_ibm, n3_ibm, ph_111_ibm)

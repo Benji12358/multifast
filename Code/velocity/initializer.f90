@@ -1571,7 +1571,7 @@ contains
         !call add_noise(intensity)
         if(intensity/=0.d0) call add_noise_rand_sin_new(intensity)   ! to do/check
 
-        if (IBM_activated) call clear_velocity_IBM
+        ! if (IBM_activated) call clear_velocity_IBM
 
 
         ! Transpose data in 2D-decomposition stencil

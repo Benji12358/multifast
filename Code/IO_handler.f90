@@ -1797,8 +1797,8 @@ contains
         character(10)           :: tmp_str
         integer                 :: i,j
 
-        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))  :: IBM_mask1_y, IBM_mask2_y, IBM_mask3_y
-        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))  :: IBM_mask1_z, IBM_mask2_z, IBM_mask3_z
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))  :: IBM_mask1_y!, IBM_mask2_y, IBM_mask3_y
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))  :: IBM_mask1_z, IBM_mask2_z!, IBM_mask3_z
 
         integer         :: k,s, xdmf_id, ierr, anim_id
 

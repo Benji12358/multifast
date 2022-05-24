@@ -106,10 +106,8 @@ contains
         use mpi
         use schemes_interface
         use IBM
-
-        use COMMON_workspace_view, only: COMMON_snapshot_path
-        use snapshot_writer
-        use HDF5_IO
+        use numerical_methods_settings, only: schemes_configuration
+        use schemes_loader
 
         implicit none
         real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)), intent(in)    :: q3_z
@@ -138,40 +136,17 @@ contains
 
         call D1s_3Dx(q1_x, div1_x, n1,xsize(2),n2e,xsize(3),n3e, dx1, .false., POISSON_VEL_BC1)
 
-        ! if (IBM_activated) then
-
-        !     do n=1,number_of_objects
-
-        !         if (object_in_current_proc_x_q1(n)) then
-
-        !             do i=i_start_obj_q1(n)-5, i_start_obj_q1(n)
-        !                 do j=xstart_ibm_q1(n,2), xend_ibm_q1(n,2)
-        !                     do k=xstart_ibm_q1(n,3), xend_ibm_q1(n,3)
-
-        !                         ! remove upward term and add backward term
-        !                         div1_x(i,j,k) = div1_x(i,j,k) - (1.d0/dx1) * ( q1_x(i+1,j,k) - q1_x(i,j,k) ) + (1.d0/dx1) * ( q1_x(i-1,j,k) - q1_x(i,j,k) ) 
-
-        !                     enddo
-        !                 enddo
-        !             enddo
-
-        !         endif
-
-        !     enddo
-
-        ! endif
-
         ! Y orientation ---------------------------------------------------------
 
         div2_y=0.d0
         n1e=(min(n1m, yend(1))-ystart(1))+1
         n3e=(min(n3m, yend(3))-ystart(3))+1
 
-        if (use_generic_poisson) then
+        if ((use_generic_poisson).or.(schemes_configuration.eq.O2_SCHEMES)) then
 
             call D1s_MULT_3Dy(q2_y, div2_y, ysize(1),n1e,n2,ysize(3),n3e, dx2, .false., POISSON_VEL_BC2, Yc_to_YcTr_for_D1)
 
-        else    ! ONLY FOR CHANNEL FLOWS
+        else    !ONLY FOR CHANNEL FLOWS
 
             do k=ystart(3), min(n3m, yend(3))   !do k=1,n3m
                 do i=ystart(1), min(n1m, yend(1))   !do i=1,n1m
@@ -191,41 +166,12 @@ contains
 
         call D1s_ACC_3Dz(q3_z, div3_z, zsize(1),n1e,zsize(2),n2e,n3, dx3, .false., POISSON_VEL_BC3)
 
-        ! if (IBM_activated) then
-
-        !     do n=1,number_of_objects
-
-        !         if (object_in_current_proc_z_q3(n)) then
-
-        !             if (k_start_obj_q3(n).gt.1) then
-
-        !                 do k=max(1,k_start_obj_q3(n)-5), k_start_obj_q3(n)
-        !                     do j=zstart_ibm_q3(n,2), zend_ibm_q3(n,2)
-        !                         do i=zstart_ibm_q3(n,1), zend_ibm_q3(n,1)
-
-        !                             ! remove upward term and add backward term
-        !                             div3_z(i,j,k) = div3_z(i,j,k) - (1.d0/dx3) * ( q3_z(i,j,k+1) - q3_z(i,j,k) ) + (1.d0/dx3) * ( q3_z(i,j,k-1) - q3_z(i,j,k) ) 
-
-        !                         enddo
-        !                     enddo
-        !                 enddo
-
-        !             endif
-
-        !         endif
-
-        !     enddo
-
-        ! endif
-
         call transpose_x_to_y(div1_x, div1_y)
         call transpose_y_to_z(div1_y, div1_z)
 
         call transpose_y_to_z(div2_y, div2_z)
 
         div_z=div1_z+div2_z+div3_z
-
-        ! write(*,*) 'div_z', div_z(:,10,10)
 
         if (present(divy_mean)) then
 
@@ -240,6 +186,152 @@ contains
         return
 
     end subroutine perform_divergence
+
+    subroutine perform_source_term(q_z, q3_z, q2_y, q1_x)
+        use numerical_methods_settings
+        use snapshot_writer
+        use mpi
+        use schemes_interface
+        use IBM
+
+        implicit none
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)), intent(in)    :: q3_z
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent(in)    :: q2_y
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in)    :: q1_x
+
+        real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))              :: div1_x
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)), intent(out) :: q_z
+
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))              :: div3_z, div2_z, div1_z
+
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))   :: div2_y, div1_y
+
+        integer k,j,i,n, i0, i1, j0, j1, k0, k1, k_bef
+
+        div1_x=0.d0
+        div2_y=0.d0
+        div3_z=0.d0
+
+        do n=1,number_of_objects
+
+            ! X - direction
+            if (object_in_current_proc_x_q1(n)) then
+
+                i0 = i_start_obj_q1(n)
+                i1 = i_end_obj_q1(n)
+                j0 = j_start_obj_q1(n)
+                j1 = j_end_obj_q1(n)
+                k0 = k_start_obj_q1(n)
+                k1 = k_end_obj_q1(n)
+
+                do j=xstart_ibm_q1(n,2), xend_ibm_q1(n,2)
+                    do k=xstart_ibm_q1(n,3), xend_ibm_q1(n,3)
+
+                        if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) then
+
+                            div1_x(i1,j,k) = -q1_x(i1,j,k)/dx1
+                            div1_x(i1-1,j,k) = q1_x(i1,j,k)/dx1
+
+                            div1_x(i0-1,j,k) = -q1_x(i0,j,k)/dx1
+                            div1_x(i0,j,k) = q1_x(i0,j,k)/dx1
+
+                        endif
+
+                    enddo
+                enddo
+
+            endif
+
+            ! Y - direction
+            if (object_in_current_proc_y_q2(n)) then
+
+                i0 = i_start_obj_q2(n)
+                i1 = i_end_obj_q2(n)
+                j0 = j_start_obj_q2(n)
+                j1 = j_end_obj_q2(n)
+                k0 = k_start_obj_q2(n)
+                k1 = k_end_obj_q2(n)
+
+                if (j0.le.1) then
+
+                    do i=ystart_ibm_q2(n,1), yend_ibm_q2(n,1)
+                        do k=ystart_ibm_q2(n,3), yend_ibm_q2(n,3)
+
+                            if ((i.ge.i0).and.(i.le.i1).and.(k.ge.k0).and.(k.le.k1)) then
+
+                                div2_y(i,j1,k) = (-q2_y(i,j1,k)/dx2) * Yc_to_YcTr_for_D1(j1)
+                                div2_y(i,j1-1,k) = (q2_y(i,j1,k)/dx2) * Yc_to_YcTr_for_D1(j1-1)
+
+                            endif
+
+                        enddo
+                    enddo
+
+                endif
+
+                if (j1.ge.(n2-1)) then
+
+                    do i=ystart_ibm_q2(n,1), yend_ibm_q2(n,1)
+                        do k=ystart_ibm_q2(n,3), yend_ibm_q2(n,3)
+
+                            if ((i.ge.i0).and.(i.le.i1).and.(k.ge.k0).and.(k.le.k1)) then
+
+                                div2_y(i,j0-1,k) = (-q2_y(i,j0,k)/dx2) * Yc_to_YcTr_for_D1(j0-1)
+                                div2_y(i,j0,k) = (+q2_y(i,j0,k)/dx2) * Yc_to_YcTr_for_D1(j0)
+
+                            endif
+
+                        enddo
+                    enddo
+
+                endif
+
+            endif
+
+            ! Z - direction
+            if (object_in_current_proc_z_q3(n)) then
+
+                i0 = i_start_obj_q3(n)
+                i1 = i_end_obj_q3(n)
+                j0 = j_start_obj_q3(n)
+                j1 = j_end_obj_q3(n)
+                k0 = k_start_obj_q3(n)
+                k1 = k_end_obj_q3(n)
+
+                ! then, with edge at k1
+                k_bef=k0-1
+                if (k0.eq.1) k_bef=n3-1
+
+                do i=zstart_ibm_q3(n,1), zend_ibm_q3(n,1)
+                    do j=zstart_ibm_q3(n,2), zend_ibm_q3(n,2)
+
+                        if ((j.ge.j0).and.(j.le.j1).and.(i.ge.i0).and.(i.le.i1)) then
+
+                            div3_z(i,j,k1) = -q3_z(i,j,k1)/dx3
+                            div3_z(i,j,k1-1) = q3_z(i,j,k1)/dx3
+
+                            div3_z(i,j,k_bef) = -q3_z(i,j,k0)/dx3
+                            div3_z(i,j,k0) = +q3_z(i,j,k0)/dx3
+
+                        endif
+
+                    enddo
+                enddo
+
+            endif            
+
+        enddo
+
+        call transpose_x_to_y(div1_x, div1_y)
+        call transpose_y_to_z(div1_y, div1_z)
+
+        call transpose_y_to_z(div2_y, div2_z)
+
+        q_z=div1_z+div2_z+div3_z
+
+        return
+
+    end subroutine perform_source_term
 
 
     ! subroutine perform_divergence_ibm(div_z_ibm, q3_z, q2_y, q1_x)

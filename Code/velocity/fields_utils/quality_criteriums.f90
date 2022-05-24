@@ -55,8 +55,10 @@ contains
 
     subroutine perform_stability(q3_z, q2_y, q1_x, cflmax, div_max, div_diff, div_mean)
 
-        use physical_fields, only:q3_y
+        use physical_fields, only:q3_y, source_term
         use VELOCITY_operations
+        use IBM_settings, only: IBM_activated
+        use IBM_data, only: IBM_mask1_x, IBM_mask2_y, IBM_mask3_z, IBM_mask_boundscc_z
 
         implicit none
 
@@ -102,8 +104,6 @@ contains
 
         cflmax=cflmax_glob*dt
 
-
-
         div_max=-100000.d0
         div_min=100000.d0
         div_sum=0.d0
@@ -111,6 +111,16 @@ contains
         div_x=0.d0
 
         call perform_divergence(div_z, q3_z, q2_y, q1_x)
+
+        ! write(*,*) 'we are here'
+
+        ! source_term = 0.d0
+        ! ! if (IBM_activated) call perform_divergence(source_term, IBM_mask3_z*q3_z, IBM_mask2_y*q2_y, IBM_mask1_x*q1_x)
+        ! if (IBM_activated) call perform_source_term(source_term, IBM_mask3_z*q3_z, IBM_mask2_y*q2_y, IBM_mask1_x*q1_x)
+
+        div_z = div_z - source_term
+        ! if (IBM_activated) div_z = div_z*(1.d0-IBM_mask_boundscc_z)
+
 
         do k=1, n3m
             do j=zstart(2), min(n2m, zend(2))

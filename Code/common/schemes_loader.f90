@@ -193,6 +193,7 @@ contains
         D0s                 =>  D0s_ExpCtr_O0Fp5
         D0s_MULTbyHimself   =>  D0s_ExpCtr_O0Fp5_MULT
         D1s                 =>  D1s_ExpCtr_O0Fp5
+        ! D1s_ibm             =>  D1s_ExpCtr_O2Fp0_ibm
         D1s_ACC             =>  D1s_ExpCtr_O0Fp5_ACC
         D1s_MULT            =>  D1s_ExpCtr_O0Fp5_MULT
         D1s_MULT_ACC        =>  D1s_ExpCtr_O0Fp5_MULT_ACC

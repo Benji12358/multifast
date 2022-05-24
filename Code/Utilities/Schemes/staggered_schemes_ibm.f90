@@ -6,10 +6,10 @@ implicit none
 
 contains
 
-    subroutine D1s_ExpCtr_O2Fp0_ibm(f, d1f, n_max, h, shifted, n_start_ibm, n_objects)
+    subroutine D1s_ExpCtr_O2Fp0_ibm(f, d1f, n_max, h, shifted, n_start_ibm, n_end_ibm, n_objects)
 
         implicit none
-        integer, intent(in)                 :: n_max, n_objects, n_start_ibm(:)
+        integer, intent(in)                 :: n_max, n_objects, n_start_ibm(:), n_end_ibm(:)
         logical, intent(in)                 :: shifted
         real(kind=8), intent(in)            :: h, f(:)
         real(kind=8), intent(out)           :: d1f(:)
@@ -51,6 +51,12 @@ contains
 
                     enddo
 
+                    do i=n_start_ibm(n),min(n_end_ibm(n),n_max)
+
+                        d1f(i)= 0
+
+                    enddo
+
                 enddo
 
             else
@@ -77,6 +83,12 @@ contains
                         ith_following = ith_following-1
                         if (ith.le.0) ith=n_max-1
                         if (ith_following.le.0) ith_following=n_max-1
+
+                    enddo
+
+                    do i=n_start_ibm(n),min(n_end_ibm(n),n_max)
+
+                        d1f(i)= 0
 
                     enddo
 

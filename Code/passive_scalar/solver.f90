@@ -212,6 +212,7 @@ contains
             implicit none
             integer :: i,j,k
             integer :: n1s, n1e, n2s,n2e, n3s,n3e
+            real*8, dimension(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)) :: sca_term_x
             real*8, dimension(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3)) :: sca_term
             real*8  :: RHSi
 
@@ -230,16 +231,16 @@ contains
 
             if (IBM_activated) then
 
-                if ((interpol_type == IBM_INTERPOL_NONE).or.(interpol_type == SECOND_ORDER_INTERPOL)) then
-                    call force_temperature(sca_y, ysize, sca_term, delta_T)
-                endif
+                call transpose_y_to_x(sca_y, sca_x)
+                call compute_antisymmetric_temperature(sca_x, xsize, sca_term_x, delta_T)
+                call transpose_x_to_y(sca_term_x, sca_term)
 
                 do k = n3s, n3e
                     do j = n2s, n2e
                         do i = n1s, n1e
 
                             RHSi = dt*gam*(RHS1(i,j,k)+RHS2(i,j,k)+source_term(i,j,k))+dt*rom*(previousRHS1(i,j,k)+previousRHS2(i,j,k)+previoussource_term(i,j,k))
-                            sca_y(i,j,k)=sca_y(i,j,k) + RHSi + IBM_maskcc_y(i,j,k)*(-RHSi + sca_term(i,j,k))
+                            sca_y(i,j,k)=sca_y(i,j,k) + RHSi + IBM_mask_boundscc_y(i,j,k)*(-RHSi + sca_term(i,j,k))
 
                         end do
                     end do
@@ -260,6 +261,36 @@ contains
                 end do
 
             endif
+
+            ! if (IBM_activated) then
+
+            !     call transpose_y_to_x(sca_y, sca_x)
+            !     call compute_antisymmetric_temperature(sca_x, xsize, sca_term_x, delta_T)
+            !     call transpose_x_to_y(sca_term_x, sca_term)
+
+            !     ! do k = n3s, n3e
+            !     !     do j = n2s, n2e
+            !     !         do i = n1s, n1e
+
+            !     !             sca_y(i,j,k)= (1.d0 - IBM_mask_boundscc_y(i,j,k)) * sca_y(i,j,k) + IBM_mask_boundscc_y(i,j,k)*sca_term(i,j,k)
+
+            !     !         end do
+            !     !     end do
+            !     ! end do
+
+            !     do k = n3s, n3e
+            !         do j = n2s, n2e
+            !             do i = n1s, n1e
+
+            !                 sca_y(i,j,k)= (1.d0 - IBM_maskcc_y(i,j,k)) * sca_y(i,j,k) + IBM_maskcc_y(i,j,k)*sca_term(i,j,k)
+
+            !             end do
+            !         end do
+            !     end do
+
+            ! endif
+
+            ! endif
 
         end subroutine next_scalar
 

@@ -4527,7 +4527,7 @@ contains
     end function
 
     ! only for periodic case
-    subroutine apply_d1s_twice_ibm(d1s_scheme, f, d2f, n_max, h, shifted, n_re_fc, n_objects_fc, n_re_cc, n_objects_cc)
+    subroutine apply_d1s_twice_ibm(d1s_scheme, f, d2f, n_max, h, shifted, n_re_fc, n_fe_fc, n_objects_fc, n_re_cc, n_fe_cc, n_objects_cc)
 
         implicit none
         integer :: i, n_max
@@ -4539,9 +4539,9 @@ contains
         real(kind=8) d2f(n_max), d2f0(n_max+1), d1f(n_max)
         real(kind=8) f(n_max)
         integer :: n_objects_fc, n_objects_cc
-        integer, dimension(:) :: n_re_fc, n_re_cc
+        integer, dimension(:) :: n_re_fc, n_re_cc, n_fe_fc, n_fe_cc
 
-        call d1s_scheme(f, d1f, n_max, h, shifted, n_re_fc, n_objects_fc)
+        call d1s_scheme(f, d1f, n_max, h, shifted, n_re_fc, n_fe_fc, n_objects_fc)
 
         if (shifted) then
             d1f_shifted=.false.
@@ -4549,13 +4549,13 @@ contains
             d1f_shifted=.true.
         end if
 
-        call d1s_scheme(d1f, d2f, n_max, h, d1f_shifted, n_re_cc, n_objects_cc)
+        call d1s_scheme(d1f, d2f, n_max, h, d1f_shifted, n_re_cc, n_fe_cc, n_objects_cc)
 
         return
 
     end subroutine
 
-    real(kind=8) function K2eq_of_d1s_twice_ibm(d1s_scheme, N, k0, L, shifted, n_re_fc, n_objects_fc, n_re_cc, n_objects_cc)
+    real(kind=8) function K2eq_of_d1s_twice_ibm(d1s_scheme, N, k0, L, shifted, n_re_fc, n_fe_fc, n_objects_fc, n_re_cc, n_fe_cc, n_objects_cc)
 
         implicit none
         real(kind=8) :: dx, PI, L, scale_factor
@@ -4564,7 +4564,7 @@ contains
         logical :: shifted
         real(kind=8)  x(N),f1(N), f2(N), df1_calc(N), df2_calc(N)
         integer :: n_objects_fc, n_objects_cc
-        integer, dimension(:) :: n_re_fc, n_re_cc
+        integer, dimension(:) :: n_re_fc, n_re_cc,n_fe_fc, n_fe_cc
 
         PI=3.141592653589793238462643d0
         k=k0-1
@@ -4579,8 +4579,8 @@ contains
             f2(i)=dsin(k*x(i))
         enddo
 
-        call apply_d1s_twice_ibm(d1s_scheme, f1, df1_calc, N, dx, shifted, n_re_fc, n_objects_fc, n_re_cc, n_objects_cc)
-        call apply_d1s_twice_ibm(d1s_scheme, f2, df2_calc, N, dx, shifted, n_re_fc, n_objects_fc, n_re_cc, n_objects_cc)
+        call apply_d1s_twice_ibm(d1s_scheme, f1, df1_calc, N, dx, shifted, n_re_fc, n_fe_fc, n_objects_fc, n_re_cc, n_fe_cc, n_objects_cc)
+        call apply_d1s_twice_ibm(d1s_scheme, f2, df2_calc, N, dx, shifted, n_re_fc, n_fe_fc, n_objects_fc, n_re_cc, n_fe_cc, n_objects_cc)
 
         i=N/2
         scale_factor=(2.d0/L)**2

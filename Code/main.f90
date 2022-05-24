@@ -201,16 +201,22 @@ contains
             IBM_maskcc_x=0.d0
             allocate(IBM_maskcc_y(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3)))
             IBM_maskcc_y=0.d0
+            allocate(IBM_mask_boundscc_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+            IBM_mask_boundscc_x = 0.d0
+            allocate(IBM_mask_boundscc_y(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3)))
+            IBM_mask_boundscc_y = 0.d0
+            allocate(IBM_mask_boundscc_z(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3)))
+            IBM_mask_boundscc_z = 0.d0
 
 
             if (interpol_type==ANTISYMMETRIC_INTERPOL) then
 
-                allocate(IBM_modulation_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-                IBM_modulation_x = 0.d0
-                allocate(IBM_modulation_y(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-                IBM_modulation_y = 0.d0
-                allocate(IBM_modulation_z(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-                IBM_modulation_z = 0.d0
+                allocate(IBM_mask_bounds1_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+                IBM_mask_bounds1_x = 0.d0
+                allocate(IBM_mask_bounds2_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+                IBM_mask_bounds2_x = 0.d0
+                allocate(IBM_mask_bounds3_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+                IBM_mask_bounds3_x = 0.d0
             endif
 
         end if
@@ -613,7 +619,7 @@ program main
     call CORE_initialize
 
     if (IBM_activated) then
-        call IBM_setup
+        call IBM_setup(SCA_state)
     else
         IBM_mask1_x=0.d0
         ibm_volume=0.d0

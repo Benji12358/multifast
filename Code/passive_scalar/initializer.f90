@@ -13,6 +13,9 @@ contains
         use mesh, only: Yc
         use mpi
         use DNS_settings, only: ren, streamwise
+        use IBM_settings, only: IBM_activated
+        use COMMON_workspace_view, only: COMMON_snapshot_path
+        use snapshot_writer, only: create_snapshot
         implicit none
         real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3))  :: sca_x
         real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))  :: sca_y
@@ -142,8 +145,13 @@ contains
         sca_wall30=0.d0
         sca_wall31=0.d0
 
+        ! if (IBM_activated) call clear_temperature_IBM(sca_down, sca_up)
+
         call transpose_y_to_x(sca_y, sca_x)
         call transpose_y_to_z(sca_y, sca_z)
+
+        ! The final 3D field are exported for checking purposes
+        call create_snapshot(COMMON_snapshot_path, "INITIALIZATION", sca_y, "sca", 2)
 
     end subroutine generate_fields
 
@@ -204,5 +212,46 @@ contains
         sca_wall31=0.d0
 
     end subroutine generate_from_file
+
+    subroutine clear_temperature_IBM(sca_down, sca_up)
+        use IBM_settings
+
+        use mpi
+        use decomp_2d
+
+        implicit none
+
+        integer             :: i,j,k,n
+        real*8              :: sca_down, sca_up
+
+
+        do n=1,number_of_objects
+
+            if (object_in_current_proc_y_q2(n)) then
+
+                do i=ystart_ibm_q2(n,1), yend_ibm_q2(n,1)
+                    do j=j_start_obj_q2(n),j_end_obj_q2(n)
+                        do k=ystart_ibm_q2(n,3), yend_ibm_q2(n,3)
+
+                        if (j.le.n2/2) then
+                            sca_y(i,j,k) = sca_down
+
+                        else
+                            sca_y(i,j,k) = sca_up
+
+                        endif
+
+                        enddo
+                    enddo
+                enddo
+
+            endif
+
+        enddo
+
+        return
+
+!
+    end subroutine clear_temperature_IBM
 
 end module SCALAR_field_generator

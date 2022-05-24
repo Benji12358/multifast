@@ -228,6 +228,12 @@ contains
         file_path=trim(fields_dir)//"/P"
         call hdf_write_3Dfield(file_path, dp_x(:,:,:), "P", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
 
+        ! file_path=trim(fields_dir)//"/source_term"
+        ! call hdf_write_3Dfield(file_path, source_term(:,:,:), "source_term", nx_global, ny_global, nz_global, zstart(1),zend(1),zstart(2),zend(2),zstart(3),zend(3))
+
+        ! file_path=trim(fields_dir)//"/divu_z"
+        ! call hdf_write_3Dfield(file_path, divu_z(:,:,:), "divu_z", nx_global, ny_global, nz_global, zstart(1),zend(1),zstart(2),zend(2),zstart(3),zend(3))
+
 !        file_path=trim(fields_dir)//"/void"
 !        call hdf_write_3Dfield(file_path, void_x(:,:,:), "void", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
 

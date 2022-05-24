@@ -280,11 +280,14 @@ module poisson_020_solver
 
     implicit none
 
-    integer, parameter   :: kl=5,ku=5
+    ! integer, parameter   :: kl=5,ku=5
+    ! integer, parameter   :: kl=1,ku=1
+    integer   :: kl,ku
     real*8,dimension(:,:), allocatable :: lapY_matrix
     real*8,dimension(:, :, :, :), allocatable::lap_matrix_ik
     real*8, dimension(:), allocatable   :: k2eq1, k2eq3
-    real*8, dimension(:,:,:), allocatable   :: k2eq1_x, k2eq3_z, k2eq1_y, k2eq3_y
+    real*8, dimension(:,:,:), allocatable   :: k2eq1_x, k2eq3_z, k2eq1_y, k2eq3_y, k2eq1_z
+    real*8, dimension(:,:,:), allocatable   :: tmp_k2eq1_x, tmp_k2eq3_z, tmp_k2eq1_y, tmp_k2eq1_z
 
 
     type(decomp_info) :: sp_decomp
@@ -301,6 +304,8 @@ contains
         use d2c_from_d1s
         use mesh
         use irregular_derivative_coefficients
+        use numerical_methods_settings, only: schemes_configuration
+        use schemes_loader
 
         use workspace_view, only: lapY_file
 
@@ -341,10 +346,21 @@ contains
             call fill_LapY_from_file(n2m-2, lapY_matrix(2:n2m-1,-kl:ku))
 
         else
-            call perform_lapY(n2m-2, dx2, lapY_matrix(2:n2m-1,-kl:ku),       &
-            Yc_to_YcTr_for_D1(2:n2m-1), Y_to_YTr_for_D1(2:n2m))
 
-        end if
+            if (schemes_configuration.eq.O2_SCHEMES) then
+
+                call perform_lapY_O2(n2m-2, dx2, lapY_matrix(2:n2m-1,-kl:ku),       &
+                Yc_to_YcTr_for_D1(2:n2m-1), Y_to_YTr_for_D1(2:n2m))
+
+            else
+
+                call perform_lapY(n2m-2, dx2, lapY_matrix(2:n2m-1,-kl:ku),       &
+                Yc_to_YcTr_for_D1(2:n2m-1), Y_to_YTr_for_D1(2:n2m))
+
+
+            endif
+
+        endif
 
         !write(*,*)'Cmatrix'
         !do i = 2, n2m
@@ -536,7 +552,6 @@ contains
             ! j=5_to_n_max-4-------------------------------------------------------
             geomA_coeffs=0.d0
 
-            C(5,:)=0.d0
             A=0.d0
             B=0.d0
             A_size=0
@@ -554,6 +569,8 @@ contains
             B=A(-1,:)
 
             do i = 5, n_max-4
+
+                C(i,:)=0.d0
 
                 geomA_coeffs(-3)=GC_at_df(i-2)
                 geomA_coeffs(-2)=GC_at_df(i-1)
@@ -739,7 +756,62 @@ contains
 
         end subroutine
 
+        subroutine perform_lapY_O2(n_max, h, C, GC_at_f, GC_at_df)
 
+            use d2c_from_d1s
+
+            implicit none
+            integer :: i, n_max, j
+
+            real*8 h, geomB_coeff
+            integer A_size, B_size
+            real *8 GC_at_f(n_max)
+            real *8 GC_at_df(n_max+1)
+            real*8 A(-1:1), B(-1:1), C(n_max, -1:1), geomA_coeffs(-1:1)
+
+            integer, parameter  :: MATRIX_FILE=98
+
+            geomB_coeff=1.d0
+
+            open(MATRIX_FILE, file="matrix_coeffs")
+
+            ! j=1 to n_max-------------------------------------------------------
+            geomA_coeffs=0.d0
+
+            A=0.d0
+            B=0.d0
+
+            A(1) =  1.d0 / h
+            A(-1)=-A(1)
+
+            B=A
+
+            A_size = 1
+            B_size = 1
+
+            do i = 1, n_max
+
+                C(i,:) = 0.d0
+                geomA_coeffs(-1)=GC_at_df(i)
+                geomA_coeffs(1)=GC_at_df(i+1)
+                geomB_coeff=GC_at_f(i)
+
+                geomB_coeff=GC_at_f(i)
+
+                ! In contrary of general routine using DRP, here, we use set_d2c_coeffs and not set_d2c_coeffs3
+                call set_d2c_coeffs(A(-1:1), B(-1:1), C(i,-1:1),     &
+                    A_size, B_size, geomA_coeffs(-1:1), geomB_coeff)
+
+                if(nrank==0) write(MATRIX_FILE,"(11E25.15)")(C(i,j), j=-1,1)
+
+            end do
+            ! ---------------------------------------------------------------------
+
+            close(MATRIX_FILE)
+
+            return
+
+        end subroutine
 
 
         subroutine fill_LapY_from_file(n_max, C)
@@ -816,10 +888,20 @@ contains
 
     subroutine init
         use IBM_settings
+        use numerical_methods_settings
+        use schemes_loader
 
         implicit none
 
         integer n3mh,k,i,j
+
+        if (schemes_configuration.eq.O2_SCHEMES) then
+            kl = 1
+            ku = 1
+        else
+            kl = 5
+            ku = 5
+        endif
 
         n3mh=n3m/2+1
         call decomp_info_init(n1, n2, n3mh, sp_decomp)
@@ -827,17 +909,34 @@ contains
         allocate(lapY_matrix(n2,-kl:ku))
         allocate(lap_matrix_ik(sp_decomp%yst(1):sp_decomp%yen(1),sp_decomp%yst(3):sp_decomp%yen(3),n2-1,-kl:ku))
 
-        allocate(k2eq1_y(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3)))
-        allocate(k2eq3_y(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3)))
-        allocate(k2eq1_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
-        allocate(k2eq3_z(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3)))
+        allocate(tmp_k2eq1_y(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3)))
+        allocate(tmp_k2eq1_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
+        allocate(tmp_k2eq3_z(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3)))
+        allocate(tmp_k2eq1_z(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3)))
 
-        ! if (IBM_activated) then
+
+        allocate(k2eq1_z(sp_decomp%zst(1):sp_decomp%zen(1),sp_decomp%zst(2):sp_decomp%zen(2),sp_decomp%zst(3):sp_decomp%zen(3)))
+        allocate(k2eq3_z(sp_decomp%zst(1):sp_decomp%zen(1),sp_decomp%zst(2):sp_decomp%zen(2),sp_decomp%zst(3):sp_decomp%zen(3)))
+        allocate(k2eq1_y(sp_decomp%yst(1):sp_decomp%yen(1),sp_decomp%yst(2):sp_decomp%yen(2),sp_decomp%yst(3):sp_decomp%yen(3)))
+        allocate(k2eq3_y(sp_decomp%yst(1):sp_decomp%yen(1),sp_decomp%yst(2):sp_decomp%yen(2),sp_decomp%yst(3):sp_decomp%yen(3)))
+        allocate(k2eq1_x(sp_decomp%xst(1):sp_decomp%xen(1),sp_decomp%xst(2):sp_decomp%xen(2),sp_decomp%xst(3):sp_decomp%xen(3)))
+
+        ! if (IBM_activated.and.(schemes_configuration.eq.O2_SCHEMES).and.(.false.)) then
 
         !     call perform_K2eq_for_ik_ibm
 
-        !     call transpose_x_to_y(k2eq1_x,k2eq1_y)
-        !     call transpose_z_to_y(k2eq3_z,k2eq3_y)
+        !     call transpose_x_to_y(tmp_k2eq1_x,tmp_k2eq1_y)
+        !     call transpose_y_to_z(tmp_k2eq1_y,tmp_k2eq1_z)
+
+        !     do i=sp_decomp%zst(1),sp_decomp%zen(1)
+        !         do j=sp_decomp%zst(2),sp_decomp%zen(2)
+        !             k2eq1_z(i,j,:) = tmp_k2eq1_z(i,j,sp_decomp%zst(3):sp_decomp%zen(3))
+        !             k2eq3_z(i,j,:) = tmp_k2eq3_z(i,j,sp_decomp%zst(3):sp_decomp%zen(3))
+        !         enddo
+        !     enddo
+
+        !     call transpose_z_to_y(k2eq1_z,k2eq1_y,sp_decomp)
+        !     call transpose_z_to_y(k2eq3_z,k2eq3_y,sp_decomp)
 
         ! else
         
@@ -846,20 +945,20 @@ contains
 
             call perform_K2eq_for_ik
 
-        !     do j=sp_decomp%xst(2),sp_decomp%xen(2)
-        !         do k=sp_decomp%xst(3),sp_decomp%xen(3)
-        !             k2eq1_x(:,j,k) = k2eq1(:)
-        !         enddo
-        !     enddo
+            do j=sp_decomp%xst(2),sp_decomp%xen(2)
+                do k=sp_decomp%xst(3),sp_decomp%xen(3)
+                    k2eq1_x(:,j,k) = k2eq1(sp_decomp%xst(1):sp_decomp%xen(1))
+                enddo
+            enddo
 
-        !     do j=sp_decomp%zst(2),sp_decomp%zen(2)
-        !         do i=sp_decomp%zst(1),sp_decomp%zen(1)
-        !             k2eq3_z(i,j,:) = k2eq3(:)
-        !         enddo
-        !     enddo
+            do j=sp_decomp%zst(2),sp_decomp%zen(2)
+                do i=sp_decomp%zst(1),sp_decomp%zen(1)
+                    k2eq3_z(i,j,:) = k2eq3(sp_decomp%zst(3):sp_decomp%zen(3))
+                enddo
+            enddo
 
-        !     call transpose_x_to_y(k2eq1_x,k2eq1_y)
-        !     call transpose_z_to_y(k2eq3_z,k2eq3_y)
+            call transpose_x_to_y(k2eq1_x,k2eq1_y,sp_decomp)
+            call transpose_z_to_y(k2eq3_z,k2eq3_y,sp_decomp)
 
         ! endif
 
@@ -878,8 +977,8 @@ contains
 
                 do j=2,n2m
                     lap_matrix_ik(1,1,j,-kl:-1)=lapY_matrix(j,-kl:-1)
-                    lap_matrix_ik(1,1,j,0)=lapY_matrix(j,0)-k2eq1(1)-k2eq3(1)
-                    ! lap_matrix_ik(1,1,j,0)=lapY_matrix(j,0)-k2eq1_y(1,j,1)-k2eq3_y(1,j,1)
+                    ! lap_matrix_ik(1,1,j,0)=lapY_matrix(j,0)-k2eq1(1)-k2eq3(1)
+                    lap_matrix_ik(1,1,j,0)=lapY_matrix(j,0)-k2eq1_y(1,j,1)-k2eq3_y(1,j,1)
                     lap_matrix_ik(1,1,j,1:ku)=lapY_matrix(j,1:ku)
                 enddo
 
@@ -894,8 +993,8 @@ contains
                 do i=max(2, sp_decomp%yst(1)), min(n1m, sp_decomp%yen(1))
 
                     lap_matrix_ik(i,1,j,-kl:-1)=lapY_matrix(j,-kl:-1)
-                    lap_matrix_ik(i,1,j,0)=lapY_matrix(j,0)-k2eq1(i)-k2eq3(1)
-                    ! lap_matrix_ik(i,1,j,0)=lapY_matrix(j,0)-k2eq1_y(i,j,1)-k2eq3_y(i,j,1)
+                    ! lap_matrix_ik(i,1,j,0)=lapY_matrix(j,0)-k2eq1(i)-k2eq3(1)
+                    lap_matrix_ik(i,1,j,0)=lapY_matrix(j,0)-k2eq1_y(i,j,1)-k2eq3_y(i,j,1)
                     lap_matrix_ik(i,1,j,1:ku)=lapY_matrix(j,1:ku)
 
                 enddo
@@ -909,8 +1008,8 @@ contains
                 do i=sp_decomp%yst(1), min(n1m, sp_decomp%yen(1))
 
                     lap_matrix_ik(i,k,j,-kl:-1)=lapY_matrix(j,-kl:-1)
-                    lap_matrix_ik(i,k,j,0)=lapY_matrix(j,0)-k2eq1(i)-k2eq3(k)
-                    ! lap_matrix_ik(i,k,j,0)=lapY_matrix(j,0)-k2eq1_y(i,j,k)-k2eq3_y(i,j,k)
+                    ! lap_matrix_ik(i,k,j,0)=lapY_matrix(j,0)-k2eq1(i)-k2eq3(k)
+                    lap_matrix_ik(i,k,j,0)=lapY_matrix(j,0)-k2eq1_y(i,j,k)-k2eq3_y(i,j,k)
                     lap_matrix_ik(i,k,j,1:ku)=lapY_matrix(j,1:ku)
 
                 enddo
@@ -956,13 +1055,13 @@ contains
             implicit none
 
             include 'fftw3.f'
-            integer k,i,j,k0,i0
+            integer k,i,j
             real*8, dimension(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3)) :: tmp_y
             real*8, dimension(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3)) :: IBM_mask3_z, IBM_maskcc_z
 
             integer :: n_objects_q3, n_objects_cc, n_objects_q1
-            integer, dimension(number_of_objects) :: n_re_tot_q3,n_re_tot_cc,n_re_tot_q1
-            integer, dimension(:), allocatable :: n_re_q3,n_re_cc,n_re_q1
+            integer, dimension(number_of_objects) :: n_re_tot_q3,n_re_tot_cc,n_re_tot_q1,n_fe_tot_q3,n_fe_tot_cc,n_fe_tot_q1
+            integer, dimension(:), allocatable :: n_re_q3,n_re_cc,n_re_q1,n_fe_q3,n_fe_cc,n_fe_q1
 
             call transpose_x_to_y(IBM_mask3_x,tmp_y)
             call transpose_y_to_z(tmp_y,IBM_mask3_z)
@@ -970,16 +1069,12 @@ contains
             call transpose_x_to_y(IBM_maskcc_x,tmp_y)
             call transpose_y_to_z(tmp_y,IBM_maskcc_z)
 
-            k0=1
             do i=zstart(1),zend(1)
                 do j=zstart(2),zend(2)
 
                     ! first, get objects bounds in X3 direction to correct the computation of derivatives
-                    call get_n_start_IBM(IBM_mask3_z(i,j,:),n3,n_re_tot_q3,n_objects_q3)
-                    call get_n_start_IBM(IBM_maskcc_z(i,j,:),n3,n_re_tot_cc,n_objects_cc)
-
-                    if (nrank.eq.0) write(*,*) 'n_objects_q3', n_objects_q3
-                    if (nrank.eq.0) write(*,*) 'n_objects_cc', n_objects_cc
+                    call get_n_start_IBM(IBM_mask3_z(i,j,:),n3,n_re_tot_q3,n_fe_tot_q3,n_objects_q3)
+                    call get_n_start_IBM(IBM_maskcc_z(i,j,:),n3,n_re_tot_cc,n_fe_tot_cc,n_objects_cc)
 
                     ! allocate the array of start indices
                     ! /!\ if there is no object on the probe, we initialize this array with dimension 1
@@ -987,37 +1082,46 @@ contains
                     if (n_objects_q3.eq.0) then
                         allocate(n_re_q3(1))
                         n_re_q3 = 0
+                        allocate(n_fe_q3(1))
+                        n_fe_q3 = 0
                     else
                         allocate(n_re_q3(n_objects_q3))
                         n_re_q3 = n_re_tot_q3(1:n_objects_q3)
+                        allocate(n_fe_q3(n_objects_q3))
+                        n_fe_q3 = n_fe_tot_q3(1:n_objects_q3)
                     endif
 
                     ! for cell center variables
                     if (n_objects_cc.eq.0) then
                         allocate(n_re_cc(1))
                         n_re_cc = 0
+                        allocate(n_fe_cc(1))
+                        n_fe_cc = 0
                     else
                         allocate(n_re_cc(n_objects_cc))
                         n_re_cc = n_re_tot_cc(1:n_objects_cc)
+                        allocate(n_fe_cc(n_objects_cc))
+                        n_fe_cc = n_fe_tot_cc(1:n_objects_cc)
                     endif
 
                     do k=1,n3m
-                        k2eq3_z(i,j,k) = K2eq_of_D1s_twice_ibm(D1s_ibm, n3, k, L3/PI, .true., n_re_q3, n_objects_q3, n_re_cc, n_objects_cc)
+                        tmp_k2eq3_z(i,j,k) = K2eq_of_D1s_twice_ibm(D1s_ibm, n3, k, L3/PI, .true., n_re_q3, n_fe_q3, n_objects_q3, n_re_cc, n_fe_cc, n_objects_cc)
                     enddo
 
                     deallocate(n_re_q3)
                     deallocate(n_re_cc)
+                    deallocate(n_fe_q3)
+                    deallocate(n_fe_cc)
 
                 enddo
             enddo
 
-            i0=1
             do k=xstart(3),xend(3)
                 do j=xstart(2),xend(2)
 
                     ! first, get objects bounds in X3 direction to coorect the computation of derivatives
-                    call get_n_start_IBM(IBM_mask1_x(:,j,k),n1,n_re_tot_q1,n_objects_q1)
-                    call get_n_start_IBM(IBM_maskcc_x(:,j,k),n1,n_re_tot_cc,n_objects_cc)
+                    call get_n_start_IBM(IBM_mask1_x(:,j,k),n1,n_re_tot_q1,n_fe_tot_q1,n_objects_q1)
+                    call get_n_start_IBM(IBM_maskcc_x(:,j,k),n1,n_re_tot_cc,n_fe_tot_cc,n_objects_cc)
 
                     ! allocate the array of start indices
                     ! /!\ if there is no object on the probe, we initialize this array with dimension 1
@@ -1025,26 +1129,36 @@ contains
                     if (n_objects_q1.eq.0) then
                         allocate(n_re_q1(1))
                         n_re_q1 = 0
+                        allocate(n_fe_q1(1))
+                        n_fe_q1 = 0
                     else
                         allocate(n_re_q1(n_objects_q1))
                         n_re_q1 = n_re_tot_q1(1:n_objects_q1)
+                        allocate(n_fe_q1(n_objects_q1))
+                        n_fe_q1 = n_fe_tot_q1(1:n_objects_q1)
                     endif
 
                     ! for cell center variables
                     if (n_objects_cc.eq.0) then
                         allocate(n_re_cc(1))
                         n_re_cc = 0
+                        allocate(n_fe_cc(1))
+                        n_fe_cc = 0
                     else
                         allocate(n_re_cc(n_objects_cc))
                         n_re_cc = n_re_tot_cc(1:n_objects_cc)
+                        allocate(n_fe_cc(n_objects_cc))
+                        n_fe_cc = n_fe_tot_cc(1:n_objects_cc)
                     endif
 
                     do i=1,n1m
-                        k2eq1_x(i,j,k) = K2eq_of_D1s_twice_ibm(D1s_ibm, n1, i, L1/PI, .true., n_re_q1, n_objects_q1, n_re_cc, n_objects_cc)
+                        tmp_k2eq1_x(i,j,k) = K2eq_of_D1s_twice_ibm(D1s_ibm, n1, i, L1/PI, .true., n_re_q1, n_fe_q1, n_objects_q1, n_re_cc, n_fe_cc, n_objects_cc)
                     enddo
 
                     deallocate(n_re_q1)
                     deallocate(n_re_cc)
+                    deallocate(n_fe_q1)
+                    deallocate(n_fe_cc)
 
                 enddo
             enddo

@@ -468,7 +468,7 @@ contains
         implicit none
 
         integer, intent(in) :: ns, ntime
-        integer             :: j, k, n1s
+        integer             :: j, k, n1s, s
         integer :: mpi_err
 
         real*8 :: t_bef, t_aft
@@ -479,7 +479,7 @@ contains
         !******************  CORE OF THE DNS ***********************
         !***********************************************************
 
-        if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) call deactivate_O2_for_intermediate_velocity
+        ! if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) call deactivate_O2_for_intermediate_velocity
 
         !   Time integration implicit viscous
         !   if nb_substep=1 Adams-Bashfort if nb_substep=3 Runge-Kutta
@@ -591,7 +591,7 @@ contains
         ! Note : here the time advancement is restricted to point where the velocity field is not constrained
         ! by the inflow/outflow condition (
         call perform_intermediate_velocity
-
+        
         ! Save the current RHS for the next iteration ...
         previousRHS1_x=RHS1_x
         previousRHS2_x=RHS2_x
@@ -1412,6 +1412,8 @@ contains
         use mpi
         use HDF5_IO
 
+        use mesh, only: Xc, Yc, Zc
+
         use COMMON_workspace_view, only: COMMON_snapshot_path
         use snapshot_writer
 
@@ -1420,6 +1422,7 @@ contains
         integer, intent(in)                                     :: ns, ntime
 
         real*8, dimension(xstart(2):xend(2), xstart(3):xend(3)) :: dpdy_old1
+        real*8, dimension(xstart(1):xend(1),xstart(2):xend(2), xstart(3):xend(3)) :: dpdx_old, dpdy_old, dpdz_old
         real*8, dimension(zstart(1):zend(1), zstart(2):zend(2)) :: dpdy_old3
         real*8                                                  :: errorsum, errorsum_glob, divy_mean
         integer                                                 :: mpi_err, s
@@ -1445,56 +1448,56 @@ contains
         do s = 1, 1         ! Loop for iterative process
 
             ! Activation the O2 scheme for the pressure correction
-            if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) call activate_O2_for_pressure_correction
+            ! if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) call activate_O2_for_pressure_correction
 
-            t_bef = MPI_WTIME()
+            ! t_bef = MPI_WTIME()
 
-            ! Copy of the coarsest grid on the finest grid
-            ! if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) call from_coarse_to_fine_velocity(q1_x,q2_x,q3_x)
-            if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) call from_coarse_to_fine_velocity(q1_save_x,q2_save_x,q3_save_x)
-            ! write(*,*) 'aft from_coarse_to_fine_velocity'
+            ! ! Copy of the coarsest grid on the finest grid
+            ! ! if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) call from_coarse_to_fine_velocity(q1_x,q2_x,q3_x)
+            ! if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) call from_coarse_to_fine_velocity(q1_save_x,q2_save_x,q3_save_x)
+            ! ! write(*,*) 'aft from_coarse_to_fine_velocity'
 
-            t_aft = MPI_WTIME()
+            ! t_aft = MPI_WTIME()
             ! write(*,*) 'from_coarse_to_fine_velocity', t_aft-t_bef
 
 
             ! Correction of the velocity in CloseField regions
-            if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then 
+            ! if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then 
                 
-                t_bef = MPI_WTIME()
+            !     t_bef = MPI_WTIME()
 
-                call update_velocity_ibm
+            !     call update_velocity_ibm
 
-                t_aft = MPI_WTIME()
-                ! write(*,*) 'update_velocity_ibm', t_aft-t_bef
+            !     t_aft = MPI_WTIME()
+            !     ! write(*,*) 'update_velocity_ibm', t_aft-t_bef
 
-                t_bef = MPI_WTIME()
+            !     t_bef = MPI_WTIME()
 
-                call transpose_x_to_y(q2_x_ibm, q2_y_ibm, decomp_fine)
-                call transpose_x_to_y(q3_x_ibm, q3_y_ibm, decomp_fine)
-                call transpose_y_to_z(q3_y_ibm, q3_z_ibm, decomp_fine)
+            !     call transpose_x_to_y(q2_x_ibm, q2_y_ibm, decomp_fine)
+            !     call transpose_x_to_y(q3_x_ibm, q3_y_ibm, decomp_fine)
+            !     call transpose_y_to_z(q3_y_ibm, q3_z_ibm, decomp_fine)
 
-                t_aft = MPI_WTIME()
-                ! write(*,*) 'apply_bc', t_aft-t_bef
+            !     t_aft = MPI_WTIME()
+            !     ! write(*,*) 'apply_bc', t_aft-t_bef
 
-            endif
+            ! endif
 
-            if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
-                call correct_and_average_velocity_ibm
+            ! if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
+            !     call correct_and_average_velocity_ibm
 
-                call transpose_y_to_x(q2_y, q2_x)
+            !     call transpose_y_to_x(q2_y, q2_x)
 
-                call transpose_z_to_y(q3_z, q3_y)
-                call transpose_y_to_x(q3_y, q3_x)
+            !     call transpose_z_to_y(q3_z, q3_y)
+            !     call transpose_y_to_x(q3_y, q3_x)
 
-            endif
+            ! endif
+
+            ! for IBM check
+            dpdx_old = dphidx1_x
+            dpdy_old = dphidx2_x
+            dpdz_old = dphidx3_x
 
             if (streamwise==1) dpdy_old1=dphidx2_x(n1-1,:,:)
-            if (streamwise==3) then
-                call transpose_x_to_y(dphidx2_x, dphidx2_y)
-                call transpose_y_to_z(dphidx2_y, dphidx2_z)
-                dpdy_old3=dphidx2_z(:,:,n3-1)
-            endif
 
             ! applying current estimation s of grad(p) to BC and body
             ! Vc=Vc+grad(p)[s] (Vc = desired value of velocity)
@@ -1503,18 +1506,10 @@ contains
             ! call pressure_gradient_transpose_x_to_z(dphidx1_x, dphidx2_x, dphidx3_x)
 
             if (BC1==OPEN) call apply_gradp_inoutflow_velocity_1
-            ! if (BC3==OPEN) call apply_gradp_inoutflow_velocity_3
 
             if (BC1==FRINGE) call apply_gradp_fringe_velocity_1
-            !if (BC3==OPEN) call apply_gradp_inoutflow_velocity_3
 
-            if ((streamwise==1).and.(IBM_activated)) call apply_gradp_IBM_velocity_1
-            ! if ((streamwise==3).and.(IBM_activated)) then
-            !     call velocity_transpose_x_to_z(q1_x, q2_x, q3_x)
-            !     ! pressure correction
-            !     call apply_gradp_IBM_velocity_3
-            !     call velocity_transpose_z_to_x(q1_z, q2_z, q3_z)
-            ! endif
+            ! if ((streamwise==1).and.(IBM_activated)) call apply_gradp_IBM_velocity_1
 
             call transpose_x_to_y(q2_x, q2_y)
             call transpose_x_to_y(q3_x, q3_y)
@@ -1528,39 +1523,52 @@ contains
             ! use the coarsest grid
             call perform_divergence(divu_z, q3_z, q2_y, q1_x)
 
-            call solve_Poisson(divu_z/(al*dt), dp_z)
+            ! if ((streamwise==1).and.(IBM_activated)) call apply_source_term_IBM_velocity_1
 
-            ! write(*,*) 'divu_z', divu_z(:,10,10)
-            ! write(*,*) 'dp_z', dp_z(:,10,10)
+            if ((IBM_activated).and.interpol_type == ANTISYMMETRIC_INTERPOL) then
+                call perform_source_term(source_term,IBM_mask3_z*q3_z,IBM_mask2_y*q2_y,IBM_mask1_x*q1_x)
+
+                ! call apply_source_term_IBM_velocity_1
+
+                errorsum = sum(source_term)
+                call MPI_ALLREDUCE(errorsum,errorsum_glob,1,MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
+                if (nrank==0) write(*,*) 'SUM SOURCE TERM:', s, errorsum
+                ! call create_stretch_snapshot(COMMON_snapshot_path, "IBM", q, "q", 3, Xc,Yc,Zc)
+                ! call create_stretch_snapshot(COMMON_snapshot_path, "IBM", divu_z, "divu_z", 3, Xc,Yc,Zc)
+                
+                call solve_Poisson((divu_z-source_term)/(al*dt), dp_z)
+            else
+                call solve_Poisson(divu_z/(al*dt), dp_z)
+            endif
 
             ! Correct velocity and update pressure
             call perform_gradp(dp_z)
 
-            ! write(*,*) 'dphidx1_x', dphidx1_x(:,10,10)
-            ! write(*,*) 'dphidx2_x', dphidx2_x(:,10,10)
-            ! write(*,*) 'dphidx3_x', dphidx3_x(:,10,10)
+            if (IBM_activated) then
 
-            ! Convergence control of iterative process :
-            if (streamwise==1) errorsum=sum(abs(dpdy_old1-dphidx2_x(n1-1,:,:)))
-            if (streamwise==3) then
-                call transpose_x_to_y(dphidx2_x, dphidx2_y)
-                call transpose_y_to_z(dphidx2_y, dphidx2_z)
-                errorsum=sum(abs(dpdy_old3-dphidx2_z(:,:,n3-1)))
+                ! Convergence control of iterative process :
+                if (streamwise==1) errorsum=sum(abs(dpdy_old1-dphidx2_x(n1-1,:,:)))
+
+                ! for IBM check
+                errorsum = sum(abs(IBM_mask1_x*dpdx_old-IBM_mask1_x*dphidx1_x)) + sum(abs(IBM_mask2_x*dpdy_old-IBM_mask2_x*dphidx2_x)) + sum(abs(IBM_mask3_x*dpdz_old-IBM_mask3_x*dphidx3_x))
+
+                call MPI_ALLREDUCE(errorsum,errorsum_glob,1,MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
+                if (nrank==0) write(*,*) 'ERROR GRADP IBM:', s, errorsum_glob*al*dt
+
             endif
 
-            call MPI_ALLREDUCE(errorsum,errorsum_glob,1,MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
-            if (nrank==0) write(*,*) 'ERROR GRADP:', s, errorsum_glob
-
         end do
+
+        ! call create_stretch_snapshot(COMMON_snapshot_path, "IBM", q3_z, "q3_z", 3, Xc,Yc,Zc)
+        ! call create_stretch_snapshot(COMMON_snapshot_path, "IBM", q2_y, "q2_y", 2, Xc,Yc,Zc)
+        ! call create_stretch_snapshot(COMMON_snapshot_path, "IBM", q1_x, "q1_x", 1, Xc,Yc,Zc)
 
         call correct_velocity
 
         ! ******************  PERFORM RESIDUAL DIVERGENCE **********
         call spread_to_all_pencil(q3_z, q2_y, q1_x, dp_z)
-
-        ! write(*,*) 'q1_x', q1_x(:,10,10)
-        ! write(*,*) 'q2_y', q2_y(:,10,10)
-        ! write(*,*) 'q3_z', q3_z(:,10,10)
+        
+        ! if (IBM_activated) call interpol_velocity
 
         ! RHS3_z=P*aldt
         call perform_divergence(divu_z, q3_z, q2_y, q1_x, divy_mean)
@@ -1591,9 +1599,9 @@ contains
             call MPI_ALLREDUCE (min_q3, min_glob_q3, 1, MPI_DOUBLE_PRECISION , MPI_MIN , MPI_COMM_WORLD , mpi_err)
 
             if (nrank==0) then
-                write(*,*) 'q1 velocity', max_glob_q1, min_glob_q1, maxloc(q1_x), minloc(q1_x)
-                write(*,*) 'q2 velocity', max_glob_q2, min_glob_q2, maxloc(q2_x), minloc(q2_x)
-                write(*,*) 'q3 velocity', max_glob_q3, min_glob_q3, maxloc(q3_x), minloc(q3_x)
+                write(*,*) 'q1 velocity', max_glob_q1, min_glob_q1!, maxloc(q1_x), minloc(q1_x)
+                write(*,*) 'q2 velocity', max_glob_q2, min_glob_q2!, maxloc(q2_x), minloc(q2_x)
+                write(*,*) 'q3 velocity', max_glob_q3, min_glob_q3!, maxloc(q3_x), minloc(q3_x)
             endif
         endif
 
@@ -1745,6 +1753,50 @@ contains
 
             end subroutine apply_gradp_IBM_velocity_1
 
+            subroutine apply_source_term_IBM_velocity_1
+                use IBM_settings
+                use IBM_data
+                implicit none
+                integer     :: i, j, k
+                real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: q1_IBM
+                real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)) :: q2_IBM
+                real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)) :: q3_IBM
+
+                ! do i = xstart(1),min(xend(1),n1-1)
+                !     do j = xstart(2),min(xend(2),n2-1)
+                !         do k = xstart(3),min(xend(3),n3-1)
+
+                !             q1_IBM(i,j,k)=q1_x(i,j,k)*IBM_mask1_x(i,j,k)
+
+                !         end do
+                !     enddo
+                ! enddo
+
+                ! do i = ystart(1),min(yend(1),n1-1)
+                !     do j = ystart(2),min(yend(2),n2-1)
+                !         do k = ystart(3),min(yend(3),n3-1)
+
+                !             q2_IBM(i,j,k)=q2_y(i,j,k)*IBM_mask2_y(i,j,k)
+
+                !         end do
+                !     enddo
+                ! enddo
+
+                ! do i = zstart(1),min(zend(1),n1-1)
+                !     do j = zstart(2),min(zend(2),n2-1)
+                !         do k = zstart(3),min(zend(3),n3-1)
+
+                !             q3_IBM(i,j,k)=q3_z(i,j,k)*IBM_mask3_z(i,j,k)
+
+                !         end do
+                !     enddo
+                ! enddo
+
+                ! call perform_divergence(q,IBM_mask3_z*q3_z,IBM_mask2_y*q2_y,IBM_mask1_x*q1_x)
+                ! call perform_source_term(q,IBM_mask3_z*q3_z,IBM_mask2_y*q2_y,IBM_mask1_x*q1_x)
+
+            end subroutine apply_source_term_IBM_velocity_1
+
             ! subroutine apply_gradp_IBM_velocity_1_ibm
             !     use IBM_settings
             !     use IBM_data
@@ -1769,26 +1821,6 @@ contains
 
             ! end subroutine apply_gradp_IBM_velocity_1_ibm
 
-            ! subroutine apply_gradp_IBM_velocity_3
-            !     use IBM_settings
-            !     use IBM_data
-            !     implicit none
-            !     integer     :: i, j, k
-
-            !     do i = zstart(1),min(zend(1),n1-1)
-            !         do j = zstart(2),min(zend(2),n2-1)
-            !             do k = 1, n3-1
-
-            !                 q1_z(i,j,k)=q1_save(i,j,k)+IBM_mask1_z(i,j,k)*dphidx1_z(i,j,k)*al*dt
-            !                 q2_z(i,j,k)=q2_save(i,j,k)+IBM_mask2_z(i,j,k)*dphidx2_z(i,j,k)*al*dt
-            !                 q3_z(i,j,k)=q3_save(i,j,k)+IBM_mask3_z(i,j,k)*dphidx3_z(i,j,k)*al*dt
-
-            !             end do
-            !         enddo
-            !     enddo
-
-            ! end subroutine apply_gradp_IBM_velocity_3
-
 
             subroutine perform_gradp(dph_z)
 
@@ -1797,6 +1829,8 @@ contains
 
                 use COMMON_workspace_view, only: COMMON_snapshot_path
                 use snapshot_writer
+                use numerical_methods_settings, only: schemes_configuration
+                use schemes_loader
 
                 implicit none
 
@@ -1814,44 +1848,6 @@ contains
 
                 call D1ssh_3Dz(dph_z, dphidx3_z, zsize(1),n1e,zsize(2),n2e,n3, dx3, .true., POISSON_PR_BC3)
 
-                ! if (IBM_activated) then
-
-                !     do n=1,number_of_objects
-
-                !         if (object_in_current_proc_z_q3(n)) then
-
-                !             if (k_start_obj_q3(n).gt.1) then
-
-                !                 do k=max(1,k_start_obj_q3(n)-5), k_start_obj_q3(n)
-                !                     do j=zstart_ibm_q3(n,2), zend_ibm_q3(n,2)
-                !                         do i=zstart_ibm_q3(n,1), zend_ibm_q3(n,1)
-
-                !                             ! remove upward term and add backward term
-                !                             dphidx3_z(i,j,k) = dphidx3_z(i,j,k) - (1.d0/dx3) * ( dph_z(i,j,k) - dph_z(i,j,k-1) ) + (1.d0/dx3) * ( dph_z(i,j,k) - dph_z(i,j,k-1) ) 
-
-                !                         enddo
-                !                     enddo
-                !                 enddo
-
-                !             endif
-
-                !             do k=k_start_obj_q3(n), k_end_obj_q3(n)
-                !                 do j=zstart_ibm_q3(n,2), zend_ibm_q3(n,2)
-                !                     do i=zstart_ibm_q3(n,1), zend_ibm_q3(n,1)
-
-                !                         ! remove upward term and add backward term
-                !                         dphidx3_z(i,j,k) = 0.d0
-
-                !                     enddo
-                !                 enddo
-                !             enddo
-
-                !         endif
-
-                !     enddo
-
-                ! endif
-
                 call transpose_z_to_y(dphidx3_z, dph_y)
                 call transpose_y_to_x(dph_y, dphidx3_x)         ! dph_y is used as temporary array to switch from z to x pencil
 
@@ -1861,7 +1857,7 @@ contains
                 n1e=ysize(1)
                 n3e=ysize(3)
 
-                if (use_generic_poisson) then
+                if ((use_generic_poisson).or.(schemes_configuration.eq.O2_SCHEMES)) then
 
                     call D1ssh_MULT_3Dy(dph_y, dphidx2_y, ysize(1),n1e,n2,ysize(3),n3e, dx2, .true., POISSON_PR_BC2, Y_to_YTr_for_D1)
 
@@ -1875,29 +1871,6 @@ contains
 
                 end if
 
-                ! if (IBM_activated) then
-
-                !     do n=1,number_of_objects
-
-                !         if (object_in_current_proc_y_q2(n)) then
-
-                !             do j=j_start_obj_q2(n), j_end_obj_q2(n)
-                !                 do i=ystart_ibm_q2(n,1), yend_ibm_q2(n,1)
-                !                     do k=ystart_ibm_q2(n,3), yend_ibm_q2(n,3)
-
-                !                         ! remove upward term and add backward term
-                !                         dphidx2_y(i,j,k) = 0.d0
-
-                !                     enddo
-                !                 enddo
-                !             enddo
-
-                !         endif
-
-                !     enddo
-
-                ! endif
-
                 call transpose_y_to_x(dphidx2_y, dphidx2_x)
 
                 ! Gradz(P) -----------------------------------------------------------------
@@ -1907,40 +1880,6 @@ contains
                 n3e=xsize(3)
 
                 call D1ssh_3Dx(dph_x, dphidx1_x, n1,xsize(2),n2e,xsize(3),n3e, dx1, .true., POISSON_PR_BC1)
-
-                ! if (IBM_activated) then
-
-                !     do n=1,number_of_objects
-
-                !         if (object_in_current_proc_x_q1(n)) then
-
-                !             do i=i_start_obj_q1(n)-5, i_start_obj_q1(n)
-                !                 do j=xstart_ibm_q1(n,2), xend_ibm_q1(n,2)
-                !                     do k=xstart_ibm_q1(n,3), xend_ibm_q1(n,3)
-
-                !                         ! remove upward term and add backward term
-                !                         dphidx1_x(i,j,k) = dphidx1_x(i,j,k) - (1.d0/dx1) * ( dph_x(i,j,k) - dph_x(i-1,j,k) ) + (1.d0/dx1) * ( dph_x(i-1,j,k) - dph_x(i,j,k) ) 
-
-                !                     enddo
-                !                 enddo
-                !             enddo
-
-                !             do i=i_start_obj_q1(n), i_end_obj_q1(n)
-                !                 do j=xstart_ibm_q1(n,2), xend_ibm_q1(n,2)
-                !                     do k=xstart_ibm_q1(n,3), xend_ibm_q1(n,3)
-
-                !                         ! remove upward term and add backward term
-                !                         dphidx1_x(i,j,k) = 0.d0
-
-                !                     enddo
-                !                 enddo
-                !             enddo
-
-                !         endif
-
-                !     enddo
-
-                ! endif
 
                 return
 
@@ -2003,6 +1942,79 @@ contains
 
                 return
             end subroutine correct_velocity
+
+            subroutine interpol_velocity
+                use numerical_methods_settings
+                use IBM_settings
+                use IBM_data
+                use IBM
+
+                implicit none
+                integer ::k,j,i
+                integer :: n1s, n1e, n2s,n2e, n3s,n3e
+
+                call compute_antisymmetric_velocity(q1_x, q2_x, q3_x, xsize, vel_term1, vel_term2, vel_term3)
+
+                if ((BC1==UNBOUNDED).or.(BC1==FRINGE)) n1s=xstart(1)
+                if ((BC1/=UNBOUNDED).and.(BC1/=FRINGE)) n1s=max(2,xstart(1))
+                n2s=xstart(2)
+                n3s=xstart(3)
+
+                do k = n3s, n3e
+                    do j = n2s, n2e
+                        do i = n1s, n1e
+                            q1_x(i,j,k) = q1_x(i,j,k) + IBM_mask_bounds1_x(i,j,k)*vel_term1(i,j,k)
+                        end do
+                    end do
+                end do
+
+
+                if (BC2==UNBOUNDED) n2s=xstart(2)
+                if (BC2/=UNBOUNDED) n2s=max(2,xstart(2))
+                ! On ne touche que q2[2..n1-2]
+                if (BC1==OPEN) then
+                    n1s=2
+                    n1e=n1-2
+                endif
+
+                n3s=xstart(3)
+
+                do k = n3s, n3e
+                    do j = n2s, n2e
+                        do i = n1s, n1e
+                            q2_x(i,j,k) = q2_x(i,j,k) + IBM_mask_bounds2_x(i,j,k)*vel_term2(i,j,k)
+                        end do
+                    end do
+                end do
+
+                if ((BC3==UNBOUNDED).or.(BC3==FRINGE)) n3s=xstart(3)
+                if ((BC3/=UNBOUNDED).and.(BC3/=FRINGE)) n3s=max(2,xstart(3))
+
+                ! On ne touche que q3[2..n1-2]
+                if (BC1==OPEN) then
+                    n1s=2
+                    n1e=n1-2
+                endif
+
+                n2s=xstart(2)
+
+                do k = n3s, n3e
+                    do j = n2s, n2e
+                        do i = n1s, n1e
+                            q2_x(i,j,k) = q2_x(i,j,k) + IBM_mask_bounds2_x(i,j,k)*vel_term2(i,j,k)
+                        end do
+                    end do
+                end do
+
+                call transpose_x_to_y(q1_x, q1_y)
+                call transpose_x_to_y(q2_x, q2_y)
+                call transpose_x_to_y(q3_x, q3_y)
+
+                call transpose_y_to_z(q1_y, q1_z)
+                call transpose_y_to_z(q2_y, q2_z)
+                call transpose_y_to_z(q3_y, q3_z)
+
+            end subroutine interpol_velocity
 
             ! Adaptation of correct_velocity, but on the finest grid while the IBM with second order box is used
             subroutine correct_and_average_velocity_ibm
@@ -2590,7 +2602,9 @@ contains
         use IBM
         use COMMON_workspace_view
         use snapshot_writer
-        use mesh, only: Xc, Yc, Zc
+        use mesh
+        use object_drawer
+        use object_file_reader
 
         implicit none
 
@@ -2604,7 +2618,13 @@ contains
         real*8, dimension(:,:,:), allocatable :: tmp1_x_ibm, tmp2_x_ibm, tmp3_x_ibm, q1q1_x_ibm
 
         integer :: k,i,j,n, mpi_err, n1e, n2e, n3e, n1s, n2s, n3s
-        character(200)                  :: snapshot_file
+        real*8, dimension(:,:), allocatable                 :: vertex
+        integer, dimension(:,:), allocatable                :: faces
+        integer                                             :: nb_faces, nb_vertex
+
+        real*8                                              :: dx1_bef, dx1_aft, dx3_bef, dx3_aft, dx2_bef, dx2_aft
+        integer                                             :: i_bef, i_aft, k_bef, k_aft, j_bef, j_aft
+        integer                                             :: i0, i1, j0, j1, k0, k1
         
 
         ! VALGRIND
@@ -2632,42 +2652,42 @@ contains
         tmp2_z = 0.d0
         tmp3_z = 0.d0
 
-        if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
+        ! if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
 
-            ! Z
-            allocate(tmp1_z_ibm(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
-            allocate(tmp2_z_ibm(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
-            allocate(tmp3_z_ibm(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
-            allocate(q3q3_z_ibm(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        !     ! Z
+        !     allocate(tmp1_z_ibm(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        !     allocate(tmp2_z_ibm(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        !     allocate(tmp3_z_ibm(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        !     allocate(q3q3_z_ibm(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
             
-            tmp1_z_ibm = 0.d0
-            tmp2_z_ibm = 0.d0
-            tmp3_z_ibm = 0.d0
-            q3q3_z_ibm = 0.d0
+        !     tmp1_z_ibm = 0.d0
+        !     tmp2_z_ibm = 0.d0
+        !     tmp3_z_ibm = 0.d0
+        !     q3q3_z_ibm = 0.d0
 
-            ! Y
-            allocate(tmp1_y_ibm(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
-            allocate(tmp2_y_ibm(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
-            allocate(q2q2_y_ibm(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
-            allocate(tmp3_y_ibm(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        !     ! Y
+        !     allocate(tmp1_y_ibm(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        !     allocate(tmp2_y_ibm(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        !     allocate(q2q2_y_ibm(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        !     allocate(tmp3_y_ibm(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
             
-            tmp1_y_ibm = 0.d0
-            tmp2_y_ibm = 0.d0
-            q2q2_y_ibm = 0.d0
-            tmp3_y_ibm = 0.d0
+        !     tmp1_y_ibm = 0.d0
+        !     tmp2_y_ibm = 0.d0
+        !     q2q2_y_ibm = 0.d0
+        !     tmp3_y_ibm = 0.d0
 
-            ! X
-            allocate(tmp1_x_ibm(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
-            allocate(q1q1_x_ibm(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
-            allocate(tmp2_x_ibm(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
-            allocate(tmp3_x_ibm(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        !     ! X
+        !     allocate(tmp1_x_ibm(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        !     allocate(q1q1_x_ibm(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        !     allocate(tmp2_x_ibm(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        !     allocate(tmp3_x_ibm(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
             
-            tmp1_x_ibm = 0.d0
-            q1q1_x_ibm = 0.d0
-            tmp2_x_ibm = 0.d0
-            tmp3_x_ibm = 0.d0
+        !     tmp1_x_ibm = 0.d0
+        !     q1q1_x_ibm = 0.d0
+        !     tmp2_x_ibm = 0.d0
+        !     tmp3_x_ibm = 0.d0
 
-        endif
+        ! endif
 
         ! For RHS1
         call D2c_3Dz(q1_z, tmp1_z, zsize(1),n1e,zsize(2),n2e,n3, diff3_coef, .true., NS_Q1_BC3)
@@ -2698,113 +2718,209 @@ contains
 !        enddo
 
         ! If the IBM is activated then the DRP scheme has to be corrected ...
-        if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
+        ! if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
 
-            if (object_in_current_proc_ccm_z) then
+        !     if (object_in_current_proc_ccm_z) then
 
-                n1s=zstart_ibm_ccm(1)
-                n2s=zstart_ibm_ccm(2)
-                n3s=zstart_ibm_ccm(3)
+        !         n1s=zstart_ibm_ccm(1)
+        !         n2s=zstart_ibm_ccm(2)
+        !         n3s=zstart_ibm_ccm(3)
 
-                n1e=zend_ibm_ccm(1)
-                n2e=zend_ibm_ccm(2)
-                n3e=zend_ibm_ccm(3)
+        !         n1e=zend_ibm_ccm(1)
+        !         n2e=zend_ibm_ccm(2)
+        !         n3e=zend_ibm_ccm(3)
 
-                ! For RHS1
-                call D2c_IBM_O2_3Dz(q1_z(n1s:n1e,n2s:n2e,n3s:n3e), tmp1_z_ibm(n1s:n1e,n2s:n2e,n3s:n3e),zsize_ibm_ccm(1),zsize_ibm_ccm(2),zsize_ibm_ccm(3),diff3_coef)
-                call D1s_IBM_O2_ACC_3Dz(p13_z(n1s:n1e,n2s:n2e,n3s:n3e),tmp1_z_ibm(n1s:n1e,n2s:n2e,n3s:n3e),zsize_ibm_ccm(1),zsize_ibm_ccm(2),zsize_ibm_ccm(3),conv3_coef)
+        !         ! For RHS1
+        !         call D2c_IBM_O2_3Dz(q1_z(n1s:n1e,n2s:n2e,n3s:n3e), tmp1_z_ibm(n1s:n1e,n2s:n2e,n3s:n3e),zsize_ibm_ccm(1),zsize_ibm_ccm(2),zsize_ibm_ccm(3),diff3_coef)
+        !         call D1s_IBM_O2_ACC_3Dz(p13_z(n1s:n1e,n2s:n2e,n3s:n3e),tmp1_z_ibm(n1s:n1e,n2s:n2e,n3s:n3e),zsize_ibm_ccm(1),zsize_ibm_ccm(2),zsize_ibm_ccm(3),conv3_coef)
 
-                ! For RHS2
-                call D2c_IBM_O2_3Dz(q2_z(n1s:n1e,n2s:n2e,n3s:n3e),tmp2_z_ibm(n1s:n1e,n2s:n2e,n3s:n3e),zsize_ibm_ccm(1),zsize_ibm_ccm(2),zsize_ibm_ccm(3),diff3_coef)
-                call D1s_IBM_O2_ACC_3Dz(p23_z(n1s:n1e,n2s:n2e,n3s:n3e),tmp2_z_ibm(n1s:n1e,n2s:n2e,n3s:n3e),zsize_ibm_ccm(1),zsize_ibm_ccm(2),zsize_ibm_ccm(3),conv3_coef)
+        !         ! For RHS2
+        !         call D2c_IBM_O2_3Dz(q2_z(n1s:n1e,n2s:n2e,n3s:n3e),tmp2_z_ibm(n1s:n1e,n2s:n2e,n3s:n3e),zsize_ibm_ccm(1),zsize_ibm_ccm(2),zsize_ibm_ccm(3),diff3_coef)
+        !         call D1s_IBM_O2_ACC_3Dz(p23_z(n1s:n1e,n2s:n2e,n3s:n3e),tmp2_z_ibm(n1s:n1e,n2s:n2e,n3s:n3e),zsize_ibm_ccm(1),zsize_ibm_ccm(2),zsize_ibm_ccm(3),conv3_coef)
 
-                ! For RHS1
-                call D2c_IBM_O2_3Dz(q3_z(n1s:n1e,n2s:n2e,n3s:n3e),tmp3_z_ibm(n1s:n1e,n2s:n2e,n3s:n3e),zsize_ibm_ccm(1),zsize_ibm_ccm(2),zsize_ibm_ccm(3),diff3_coef)
+        !         ! For RHS1
+        !         call D2c_IBM_O2_3Dz(q3_z(n1s:n1e,n2s:n2e,n3s:n3e),tmp3_z_ibm(n1s:n1e,n2s:n2e,n3s:n3e),zsize_ibm_ccm(1),zsize_ibm_ccm(2),zsize_ibm_ccm(3),diff3_coef)
 
-                call D0s_IBM_O2_3Dz(q3_z(n1s:n1e,n2s:n2e,n3s:n3e),q3q3_z_ibm(n1s:n1e,n2s:n2e,n3s:n3e),zsize_ibm_ccm(1),zsize_ibm_ccm(2),zsize_ibm_ccm(3))
-                q3q3_z_ibm=q3q3_z_ibm**2
+        !         call D0s_IBM_O2_3Dz(q3_z(n1s:n1e,n2s:n2e,n3s:n3e),q3q3_z_ibm(n1s:n1e,n2s:n2e,n3s:n3e),zsize_ibm_ccm(1),zsize_ibm_ccm(2),zsize_ibm_ccm(3))
+        !         q3q3_z_ibm=q3q3_z_ibm**2
 
-                call D1ssh_IBM_O2_ACC_3Dz(q3q3_z_ibm(n1s:n1e,n2s:n2e,n3s:n3e),tmp3_z_ibm(n1s:n1e,n2s:n2e,n3s:n3e),zsize_ibm_ccm(1),zsize_ibm_ccm(2),zsize_ibm_ccm(3),conv3_coef)
+        !         call D1ssh_IBM_O2_ACC_3Dz(q3q3_z_ibm(n1s:n1e,n2s:n2e,n3s:n3e),tmp3_z_ibm(n1s:n1e,n2s:n2e,n3s:n3e),zsize_ibm_ccm(1),zsize_ibm_ccm(2),zsize_ibm_ccm(3),conv3_coef)
 
-            endif
+        !     endif
 
-            if (object_in_current_proc_cpm_z) then
+        !     if (object_in_current_proc_cpm_z) then
 
-                do i=zstart_ibm_cpm(1), zend_ibm_cpm(1)
-                    do j=zstart_ibm_cpm(2), zend_ibm_cpm(2)
-                        do k=zstart_ibm_cpm(3), zend_ibm_cpm(3)
+        !         do i=zstart_ibm_cpm(1), zend_ibm_cpm(1)
+        !             do j=zstart_ibm_cpm(2), zend_ibm_cpm(2)
+        !                 do k=zstart_ibm_cpm(3), zend_ibm_cpm(3)
 
-                            tmp1_z(i,j,k) = tmp1_z_ibm(i,j,k)
-                            tmp2_z(i,j,k) = tmp2_z_ibm(i,j,k)
-                            tmp3_z(i,j,k) = tmp3_z_ibm(i,j,k)
+        !                     tmp1_z(i,j,k) = tmp1_z_ibm(i,j,k)
+        !                     tmp2_z(i,j,k) = tmp2_z_ibm(i,j,k)
+        !                     tmp3_z(i,j,k) = tmp3_z_ibm(i,j,k)
 
-                        enddo
-                    enddo
-                enddo
+        !                 enddo
+        !             enddo
+        !         enddo
 
-            endif
+        !     endif
 
-        endif
+        ! endif
 
 
-        ! if (IBM_activated) then
+        ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
 
         !     do n=1,number_of_objects
 
+        !         ! READING OBJECT FILE
+        !         call read_object_size(trim(obj_file_path), nb_vertex, nb_faces)
+        !         call read_object(trim(obj_file_path), vertex, faces, nb_vertex, nb_faces)
+
+        !         ! Scale with H
+        !         vertex(:,1)=vertex(:,1)*body_scale_x1(n)+body_x1(n)
+        !         vertex(:,2)=vertex(:,2)*body_scale_x2(n)+body_x2(n)
+        !         vertex(:,3)=vertex(:,3)*body_scale_x3(n)+body_x3(n)
+
+        !         call get_objet_area(vertex, nb_vertex)
+
+        !         xs = max(0.d0,xs)
+        !         xe = min(L1,xe)
+        !         ys = max(0.d0,ys)
+        !         ye = min(L2,ye)
+        !         zs = max(0.d0,zs)
+        !         ze = min(L3,ze)
+
         !         if (object_in_current_proc_z_q3(n)) then
 
-        !             if (k_start_obj_q3(n).gt.1) then
+        !             i0 = i_start_obj_q3(n)
+        !             i1 = i_end_obj_q3(n)
+        !             j0 = j_start_obj_q3(n)
+        !             j1 = j_end_obj_q3(n)
+        !             k0 = k_start_obj_q3(n)
+        !             k1 = k_end_obj_q3(n)
 
-        !                 do k=max(1,k_start_obj_q3(n)-5), k_start_obj_q3(n)
-        !                     do j=zstart_ibm_q3(n,2), zend_ibm_q3(n,2)
-        !                         do i=zstart_ibm_q3(n,1), zend_ibm_q3(n,1)
+        !             k_bef = k0-1
+        !             k_aft = k1+1
 
-        !                             ! remove upward term and add backward term
-        !                             tmp3_z(i,j,k) = tmp3_z(i,j,k) - (1.d0/conv3_coef) * ( q3q3_z(i,j,k) - q3q3_z(i,j,k-1) ) + (1.d0/conv3_coef) * ( q3q3_z(i,j,k-1) - q3q3_z(i,j,k) ) 
+        !             if (k0.eq.1) k_bef=n3-1
+        !             if (k1.gt.(n3-1)) k_aft=1
 
-        !                         enddo
-        !                     enddo
+        !             dx3_bef = (zs-X(k0)-dx3)
+        !             dx3_aft = (X(k1)+dx3-ze)
+
+        !             do j=zstart_ibm_q3(n,2), zend_ibm_q3(n,2)
+        !                 do i=zstart_ibm_q3(n,1), zend_ibm_q3(n,1)
+
+        !                     if ((j.ge.j0).and.(j.le.j1).and.(i.ge.i0).and.(i.le.i1)) then
+
+        !                         ! correct dq3q3/dz term only for k_aft (no need to do this for k_bef)
+        !                         ! remove what is computed by generic O2 scheme
+        !                         tmp3_z(i,j,k_aft) = tmp3_z(i,j,k_aft) - ( (1.d0/conv3_coef)*(q3q3_z(i,j,k_aft) - q3q3_z(i,j,min(k1,n3m))) )
+        !                         ! add what is computed by taking into account the object position
+        !                         tmp3_z(i,j,k_aft) = tmp3_z(i,j,k_aft) + (1.d0/(-dx3_aft))*(q3q3_z(i,j,k_aft) - 0.d0)
+
+        !                         ! correct d²q3/dz² term (no need to do this for i_bef)
+        !                         ! remove what is computed by generic O2 scheme
+        !                         tmp3_z(i,j,k_bef) = tmp3_z(i,j,k_bef) - ( (1.d0/diff3_coef**2)*(q3_z(i,j,k_bef-1) -2.d0*q3_z(i,j,k_bef) + q3_z(i,j,k0)) )
+        !                         tmp3_z(i,j,k_aft) = tmp3_z(i,j,k_aft) - ( (1.d0/diff3_coef**2)*(q3_z(i,j,k_aft+1) -2.d0*q3_z(i,j,k_aft) + q3_z(i,j,min(k1,n3m))) )
+        !                         ! add what is computed by taking into account the object position
+        !                         ! Caution, here we use the interpolated velocity to use the same scheme as O2 (with equal spacing)
+        !                         tmp3_z(i,j,k_bef) = tmp3_z(i,j,k_bef) + (1.d0/(dx3_bef*sqrt(ren))**2)*(0.d0 + q3_z(i,j,k_bef-1) + ((dx3-dx3_bef)/dx3)*(q3_z(i,j,k_bef)-q3_z(i,j,k_bef-1))) - 2.d0*(1.d0/(dx3_bef*sqrt(ren))**2)*q3_z(i,j,k_bef)
+        !                         tmp3_z(i,j,k_aft) = tmp3_z(i,j,k_aft) + (1.d0/(dx3_aft*sqrt(ren))**2)*(0.d0 + q3_z(i,j,k_aft) + (dx3_bef/dx3)*(q3_z(i,j,k_aft+1)-q3_z(i,j,k_aft))) - 2.d0*(1.d0/(dx3_aft*sqrt(ren))**2)*q3_z(i,j,k_aft)
+
+        !                     endif
+
         !                 enddo
-
-        !             endif
+        !             enddo
 
         !         endif
 
         !         if (object_in_current_proc_z_q2(n)) then
 
-        !             if (k_start_obj_q2(n).gt.1) then
+        !             i0 = i_start_obj_q2(n)
+        !             i1 = i_end_obj_q2(n)
+        !             j0 = j_start_obj_q2(n)
+        !             j1 = j_end_obj_q2(n)
+        !             k0 = k_start_obj_q2(n)
+        !             k1 = k_end_obj_q2(n)
 
-        !                 do k=max(1,k_start_obj_q2(n)-5), k_start_obj_q2(n)
-        !                     do j=zstart_ibm_q2(n,2), zend_ibm_q2(n,2)
-        !                         do i=zstart_ibm_q2(n,1), zend_ibm_q2(n,1)
+        !             k_bef = k0-1
+        !             k_aft = k1+1
 
-        !                             ! remove upward term and add backward term
-        !                             tmp2_z(i,j,k) = tmp2_z(i,j,k) - (1.d0/conv3_coef) * ( p23_z(i,j,k+1) - p23_z(i,j,k) ) + (1.d0/conv3_coef) * ( p23_z(i,j,k-1) - p23_z(i,j,k) ) 
+        !             if (k0.eq.1) k_bef=n3-1
+        !             if (k1.gt.(n3-1)) k_aft=1
 
-        !                         enddo
-        !                     enddo
+        !             dx3_bef = (zs-X(k0)-dx3)
+        !             dx3_aft = (X(k1)+dx3-ze)
+
+        !             do j=zstart_ibm_q2(n,2), zend_ibm_q2(n,2)
+        !                 do i=zstart_ibm_q2(n,1), zend_ibm_q2(n,1)
+
+        !                     if ((j.ge.j0).and.(j.le.j1).and.(i.ge.i0).and.(i.le.i1)) then
+
+        !                         ! correct dq3q3/dz term only for k_aft (no need to do this for k_bef)
+        !                         ! remove what is computed by generic O2 scheme
+        !                         tmp2_z(i,j,k_bef) = tmp2_z(i,j,k_bef) - ( (1.d0/conv3_coef)*(p23_z(i,j,k0) - p23_z(i,j,k_bef)) )
+        !                         ! add what is computed by taking into account the object position
+        !                         tmp2_z(i,j,k_bef) = tmp2_z(i,j,k_bef) + (1.d0/(-dx3_aft))*(0.d0 - p23_z(i,j,k_aft))
+
+        !                         ! correct d²q3/dz² term (no need to do this for i_bef)
+        !                         ! remove what is computed by generic O2 scheme
+        !                         tmp2_z(i,j,k_bef) = tmp2_z(i,j,k_bef) - ( (1.d0/diff3_coef**2)*(q2_z(i,j,k_bef-1) -2.d0*q2_z(i,j,k_bef) + q2_z(i,j,k0)) )
+        !                         tmp2_z(i,j,k_aft) = tmp2_z(i,j,k_aft) - ( (1.d0/diff3_coef**2)*(q2_z(i,j,k_aft+1) -2.d0*q2_z(i,j,k_aft) + q2_z(i,j,min(k1,n3m))) )
+        !                         ! add what is computed by taking into account the object position
+        !                         ! Caution, here we use the interpolated velocity to use the same scheme as O2 (with equal spacing)
+        !                         tmp2_z(i,j,k_bef) = tmp2_z(i,j,k_bef) + (1.d0/(dx3_bef*sqrt(ren))**2)*(0.d0 + q2_z(i,j,k_bef-1) + ((dx3-dx3_bef)/dx3)*(q2_z(i,j,k_bef)-q2_z(i,j,k_bef-1))) - 2.d0*(1.d0/(dx3_bef*sqrt(ren))**2)*q2_z(i,j,k_bef)
+        !                         tmp2_z(i,j,k_aft) = tmp2_z(i,j,k_aft) + (1.d0/(dx3_aft*sqrt(ren))**2)*(0.d0 + q2_z(i,j,k_aft) + (dx3_bef/dx3)*(q2_z(i,j,k_aft+1)-q2_z(i,j,k_aft))) - 2.d0*(1.d0/(dx3_aft*sqrt(ren))**2)*q2_z(i,j,k_aft)
+
+        !                     endif
+
         !                 enddo
-
-        !             endif
+        !             enddo
 
         !         endif
 
         !         if (object_in_current_proc_z_q1(n)) then
 
-        !             if (k_start_obj_q1(n).gt.1) then
+        !             i0 = i_start_obj_q1(n)
+        !             i1 = i_end_obj_q1(n)
+        !             j0 = j_start_obj_q1(n)
+        !             j1 = j_end_obj_q1(n)
+        !             k0 = k_start_obj_q1(n)
+        !             k1 = k_end_obj_q1(n)
 
-        !                 do k=max(1,k_start_obj_q1(n)-5), k_start_obj_q1(n)
-        !                     do j=zstart_ibm_q1(n,2), zend_ibm_q1(n,2)
-        !                         do i=zstart_ibm_q1(n,1), zend_ibm_q1(n,1)
+        !             k_bef = k0-1
+        !             k_aft = k1+1
 
-        !                             ! remove upward term and add backward term
-        !                             tmp1_z(i,j,k) = tmp1_z(i,j,k) - (1.d0/conv3_coef) * ( p13_z(i,j,k+1) - p13_z(i,j,k) ) + (1.d0/conv3_coef) * ( p13_z(i,j,k-1) - p13_z(i,j,k) ) 
+        !             if (k0.eq.1) k_bef=n3-1
+        !             if (k1.gt.(n3-1)) k_aft=1
 
-        !                         enddo
-        !                     enddo
+        !             dx3_bef = (zs-X(k0)-dx3)
+        !             dx3_aft = (X(k1)+dx3-ze)
+
+        !             do j=zstart_ibm_q1(n,2), zend_ibm_q1(n,2)
+        !                 do i=zstart_ibm_q1(n,1), zend_ibm_q1(n,1)
+
+        !                     if ((j.ge.j0).and.(j.le.j1).and.(i.ge.i0).and.(i.le.i1)) then
+
+        !                         ! correct dq3q3/dz term only for k_aft (no need to do this for k_bef)
+        !                         ! remove what is computed by generic O2 scheme
+        !                         tmp1_z(i,j,k_bef) = tmp1_z(i,j,k_bef) - ( (1.d0/conv3_coef)*(p13_z(i,j,k0) - p13_z(i,j,k_bef)) )
+        !                         ! add what is computed by taking into account the object position
+        !                         tmp1_z(i,j,k_bef) = tmp1_z(i,j,k_bef) + (1.d0/(-dx3_aft))*(0.d0 - p13_z(i,j,k_aft))
+
+        !                         ! correct d²q3/dz² term (no need to do this for i_bef)
+        !                         ! remove what is computed by generic O2 scheme
+        !                         tmp1_z(i,j,k_bef) = tmp1_z(i,j,k_bef) - ( (1.d0/diff3_coef**2)*(q1_z(i,j,k_bef-1) -2.d0*q1_z(i,j,k_bef) + q1_z(i,j,k0)) )
+        !                         tmp1_z(i,j,k_aft) = tmp1_z(i,j,k_aft) - ( (1.d0/diff3_coef**2)*(q1_z(i,j,k_aft+1) -2.d0*q1_z(i,j,k_aft) + q1_z(i,j,min(k1,n3m))) )
+        !                         ! add what is computed by taking into account the object position
+        !                         ! Caution, here we use the interpolated velocity to use the same scheme as O2 (with equal spacing)
+        !                         tmp1_z(i,j,k_bef) = tmp1_z(i,j,k_bef) + (1.d0/(dx3_bef*sqrt(ren))**2)*(0.d0 + q1_z(i,j,k_bef-1) + ((dx3-dx3_bef)/dx3)*(q1_z(i,j,k_bef)-q1_z(i,j,k_bef-1))) - 2.d0*(1.d0/(dx3_bef*sqrt(ren))**2)*q1_z(i,j,k_bef)
+        !                         tmp1_z(i,j,k_aft) = tmp1_z(i,j,k_aft) + (1.d0/(dx3_aft*sqrt(ren))**2)*(0.d0 + q1_z(i,j,k_aft) + (dx3_bef/dx3)*(q1_z(i,j,k_aft+1)-q1_z(i,j,k_aft))) - 2.d0*(1.d0/(dx3_aft*sqrt(ren))**2)*q1_z(i,j,k_aft)
+
+        !                     endif
+
         !                 enddo
-
-        !             endif
+        !             enddo
 
         !         endif
 
@@ -2858,62 +2974,249 @@ contains
         call D1s_MULTACC_3Dy(p23_y, tmp3_y, ysize(1),n1e,n2,ysize(3),n3e, conv2_coef, .false., NS_P23_BC2, Yc_to_YcTr_for_D1)
 
         ! If the IBM is activated then the DRP scheme has to be corrected ...
-        if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
+        ! if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
 
-            if (object_in_current_proc_ccm_y) then
+        !     if (object_in_current_proc_ccm_y) then
 
-                n1s=ystart_ibm_ccm(1)
-                n2s=ystart_ibm_ccm(2)
-                n3s=ystart_ibm_ccm(3)
+        !         n1s=ystart_ibm_ccm(1)
+        !         n2s=ystart_ibm_ccm(2)
+        !         n3s=ystart_ibm_ccm(3)
 
-                n1e=yend_ibm_ccm(1)
-                n2e=yend_ibm_ccm(2)
-                n3e=yend_ibm_ccm(3)
+        !         n1e=yend_ibm_ccm(1)
+        !         n2e=yend_ibm_ccm(2)
+        !         n3e=yend_ibm_ccm(3)
 
-                ! For RHS1
-                call D1c_IBM_O2_MULTACC_3Dy(q1_y(n1s:n1e,n2s:n2e,n3s:n3e),tmp1_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3),diff21_coef,Yc_to_YcTr_for_D2(:,1))
-                call D2c_IBM_O2_MULTACC_3Dy(q1_y(n1s:n1e,n2s:n2e,n3s:n3e),tmp1_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3),diff22_coef,Yc_to_YcTr_for_D2(:,2))
+        !         ! For RHS1
+        !         call D1c_IBM_O2_MULTACC_3Dy(q1_y(n1s:n1e,n2s:n2e,n3s:n3e),tmp1_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3),diff21_coef,Yc_to_YcTr_for_D2(:,1))
+        !         call D2c_IBM_O2_MULTACC_3Dy(q1_y(n1s:n1e,n2s:n2e,n3s:n3e),tmp1_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3),diff22_coef,Yc_to_YcTr_for_D2(:,2))
 
-                call D1s_IBM_O2_MULTACC_3Dy(p12_y(n1s:n1e,n2s:n2e,n3s:n3e),tmp1_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3),conv2_coef,Yc_to_YcTr_for_D1)
+        !         call D1s_IBM_O2_MULTACC_3Dy(p12_y(n1s:n1e,n2s:n2e,n3s:n3e),tmp1_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3),conv2_coef,Yc_to_YcTr_for_D1)
 
-                ! For RHS2
-                call D1c_IBM_O2_MULTACC_3Dy(q2_y(n1s:n1e,n2s:n2e,n3s:n3e),tmp2_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3),diff21_coef,Y_to_YTr_for_D2(:,1))
-                call D2c_IBM_O2_MULTACC_3Dy(q2_y(n1s:n1e,n2s:n2e,n3s:n3e),tmp2_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3),diff22_coef,Y_to_YTr_for_D2(:,2))
+        !         ! For RHS2
+        !         call D1c_IBM_O2_MULTACC_3Dy(q2_y(n1s:n1e,n2s:n2e,n3s:n3e),tmp2_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3),diff21_coef,Y_to_YTr_for_D2(:,1))
+        !         call D2c_IBM_O2_MULTACC_3Dy(q2_y(n1s:n1e,n2s:n2e,n3s:n3e),tmp2_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3),diff22_coef,Y_to_YTr_for_D2(:,2))
 
-                call D0s_IBM_O2_3Dy(q2_y(n1s:n1e,n2s:n2e,n3s:n3e),q2q2_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3))
-                q2q2_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e)=q2q2_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e)**2
+        !         call D0s_IBM_O2_3Dy(q2_y(n1s:n1e,n2s:n2e,n3s:n3e),q2q2_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3))
+        !         q2q2_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e)=q2q2_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e)**2
 
-                call D1ssh_IBM_O2_MULTACC_3Dy(q2q2_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),tmp2_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3),conv2_coef,Y_to_YTr_for_D1)
+        !         call D1ssh_IBM_O2_MULTACC_3Dy(q2q2_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),tmp2_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3),conv2_coef,Y_to_YTr_for_D1)
 
-                ! For RHS3
-                call D1c_IBM_O2_MULTACC_3Dy(q3_y(n1s:n1e,n2s:n2e,n3s:n3e),tmp3_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3),diff21_coef,Yc_to_YcTr_for_D2(:,1))
-                call D2c_IBM_O2_MULTACC_3Dy(q3_y(n1s:n1e,n2s:n2e,n3s:n3e),tmp3_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3),diff22_coef,Yc_to_YcTr_for_D2(:,2))
+        !         ! For RHS3
+        !         call D1c_IBM_O2_MULTACC_3Dy(q3_y(n1s:n1e,n2s:n2e,n3s:n3e),tmp3_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3),diff21_coef,Yc_to_YcTr_for_D2(:,1))
+        !         call D2c_IBM_O2_MULTACC_3Dy(q3_y(n1s:n1e,n2s:n2e,n3s:n3e),tmp3_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3),diff22_coef,Yc_to_YcTr_for_D2(:,2))
 
-                call D1s_IBM_O2_MULTACC_3Dy(p23_y(n1s:n1e,n2s:n2e,n3s:n3e),tmp3_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3),conv2_coef,Yc_to_YcTr_for_D1)
+        !         call D1s_IBM_O2_MULTACC_3Dy(p23_y(n1s:n1e,n2s:n2e,n3s:n3e),tmp3_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3),conv2_coef,Yc_to_YcTr_for_D1)
 
-            endif
+        !     endif
 
-            ! call create_snapshot(COMMON_snapshot_path, "IBM", p23_y, "p23_y", 2)
-            ! call create_snapshot(COMMON_snapshot_path, "IBM", tmp3_y_ibm, "tmp3_y_ibm", 2)
-            ! call create_snapshot(COMMON_snapshot_path, "IBM", tmp3_y, "tmp3_y", 2)
+        !     ! call create_snapshot(COMMON_snapshot_path, "IBM", p23_y, "p23_y", 2)
+        !     ! call create_snapshot(COMMON_snapshot_path, "IBM", tmp3_y_ibm, "tmp3_y_ibm", 2)
+        !     ! call create_snapshot(COMMON_snapshot_path, "IBM", tmp3_y, "tmp3_y", 2)
 
-            if (object_in_current_proc_cpm_y) then
+        !     if (object_in_current_proc_cpm_y) then
 
-                do i=ystart_ibm_cpm(1), yend_ibm_cpm(1)
-                    do j=ystart_ibm_cpm(2), yend_ibm_cpm(2)
-                        do k=ystart_ibm_cpm(3), yend_ibm_cpm(3)
+        !         do i=ystart_ibm_cpm(1), yend_ibm_cpm(1)
+        !             do j=ystart_ibm_cpm(2), yend_ibm_cpm(2)
+        !                 do k=ystart_ibm_cpm(3), yend_ibm_cpm(3)
 
-                            tmp1_y(i,j,k) = tmp1_y_ibm(i,j,k)
-                            tmp2_y(i,j,k) = tmp2_y_ibm(i,j,k)
-                            tmp3_y(i,j,k) = tmp3_y_ibm(i,j,k)
+        !                     tmp1_y(i,j,k) = tmp1_y_ibm(i,j,k)
+        !                     tmp2_y(i,j,k) = tmp2_y_ibm(i,j,k)
+        !                     tmp3_y(i,j,k) = tmp3_y_ibm(i,j,k)
 
-                        enddo
-                    enddo
-                enddo
+        !                 enddo
+        !             enddo
+        !         enddo
 
-            endif
+        !     endif
 
-        endif
+        ! endif
+
+
+        ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
+
+        !     do n=1,number_of_objects
+
+        !         ! READING OBJECT FILE
+        !         call read_object_size(trim(obj_file_path), nb_vertex, nb_faces)
+        !         call read_object(trim(obj_file_path), vertex, faces, nb_vertex, nb_faces)
+
+        !         ! Scale with H
+        !         vertex(:,1)=vertex(:,1)*body_scale_x1(n)+body_x1(n)
+        !         vertex(:,2)=vertex(:,2)*body_scale_x2(n)+body_x2(n)
+        !         vertex(:,3)=vertex(:,3)*body_scale_x3(n)+body_x3(n)
+
+        !         call get_objet_area(vertex, nb_vertex)
+
+        !         if (object_in_current_proc_y_q3(n)) then
+
+        !             ! Then, fix dp13/dy and d²q3/dy²
+        !             j_bef = max(j_start_obj_q3(n)-1,1)
+        !             j_aft = min(j_end_obj_q3(n)+1,n2-1)
+
+        !             dx2_bef = (ys-Yc(j_bef))
+        !             dx2_aft = (Yc(j_aft)-ye)
+
+        !             if (j_start_obj_q3(n).gt.1) then
+
+        !                 do i=ystart_ibm_q3(n,1), yend_ibm_q3(n,1)
+        !                     do k=ystart_ibm_q3(n,3), yend_ibm_q3(n,3)
+
+        !                         ! remove dp23/dz term computed by generic O2 scheme
+        !                         tmp3_y(i,j_bef,k) = tmp3_y(i,j_bef,k) - ( (1.d0/conv2_coef)*(p23_y(i,j_start_obj_q3(n),k) - p23_y(i,j_bef,k) ) ) * Yc_to_YcTr_for_D1(j_bef)
+
+        !                         ! remove d²q2/dz² term computed by generic O2 scheme
+        !                         tmp3_y(i,j_bef,k) = tmp3_y(i,j_bef,k) - ( (0.5d0/diff21_coef)*(q3_y(i,j_start_obj_q3(n),k) - q3_y(i,j_bef-1,k)) ) * Yc_to_YcTr_for_D2(j_bef,1)
+        !                         tmp3_y(i,j_bef,k) = tmp3_y(i,j_bef,k) - ( (1.d0/diff22_coef**2)*(q3_y(i,j_start_obj_q3(n),k) + q3_y(i,j_bef-1,k)) - 2.d0*(1.d0/diff1_coef**2)*q3_y(i,j_bef,k) ) * Yc_to_YcTr_for_D2(j_bef,2)
+
+        !                         ! add dp23/dz term by taking into account the object position
+        !                         tmp3_y(i,j_bef,k) = tmp3_y(i,j_bef,k) + (1.d0/(-dx2_bef))*(0.d0 - p23_y(i,j_bef,k))*Yc_to_YcTr_for_D1(j_bef)
+
+        !                         ! remove d²q2/dz² term computed by generic O2 scheme
+        !                         ! Caution, here we use the interpolated velocity to use the same scheme as O2 (with equal spacing)
+        !                         tmp3_y(i,j_bef,k) = tmp3_y(i,j_bef,k) + ( (0.5d0/(dx2_bef*ren))*(0.d0 - ( q3_y(i,j_bef-1,k) + ((dx2-dx2_bef)/dx2)*(q3_y(i,j_bef,k)-q3_y(i,j_bef-1,k)) ) )) * Yc_to_YcTr_for_D2(j_bef,1)
+        !                         tmp3_y(i,j_bef,k) = tmp3_y(i,j_bef,k) + ( (1.d0/(dx2_bef*sqrt(ren))**2)*(0.d0 + q3_y(i,j_bef-1,k) + ((dx2-dx2_bef)/dx2)*(q3_y(i,j_bef,k)-q3_y(i,j_bef-1,k)) ) - 2.d0*(1.d0/(dx2_bef*sqrt(ren))**2)*q3_y(i,j_bef,k) ) * Yc_to_YcTr_for_D2(j_bef,2)
+
+
+        !                     enddo
+        !                 enddo
+
+        !             endif
+
+        !             if (j_end_obj_q3(n).lt.(n2-1)) then
+
+        !                 do i=ystart_ibm_q3(n,1), yend_ibm_q3(n,1)
+        !                     do k=ystart_ibm_q3(n,3), yend_ibm_q3(n,3)
+
+        !                         ! remove dp23/dz term computed by generic O2 scheme
+        !                         tmp3_y(i,j_aft,k) = tmp3_y(i,j_aft,k) - ( (1.d0/conv2_coef)*(p23_y(i,j_aft+1,k) - p23_y(i,j_aft,k)) )*Yc_to_YcTr_for_D1(j_aft)
+
+        !                         ! remove d²q2/dz² term computed by generic O2 scheme
+        !                         tmp3_y(i,j_aft,k) = tmp3_y(i,j_aft,k) - ( (0.5d0/diff21_coef)*(q3_y(i,j_aft+1,k) - q3_y(i,j_end_obj_q3(n),k)) ) * Yc_to_YcTr_for_D2(j_aft,1)
+        !                         tmp3_y(i,j_aft,k) = tmp3_y(i,j_aft,k) - ( (1.d0/diff22_coef**2)*(q3_y(i,j_start_obj_q3(n),k) + q3_y(i,j_aft+1,k)) - 2.d0*(1.d0/diff1_coef**2)*q3_y(i,j_aft,k) ) * Yc_to_YcTr_for_D2(j_aft,2)
+
+        !                         ! add dp23/dz term by taking into account the object position
+        !                         tmp3_y(i,j_aft,k) = tmp3_y(i,j_aft,k) + (1.d0/(-dx2_aft))*(p23_y(i,j_aft+1,k) - p23_y(i,j_aft,k))*Yc_to_YcTr_for_D1(j_aft)
+
+        !                         ! remove d²q2/dz² term computed by generic O2 scheme
+        !                         ! Caution, here we use the interpolated velocity to use the same scheme as O2 (with equal spacing)
+        !                         tmp3_y(i,j_aft,k) = tmp3_y(i,j_aft,k) + ( (0.5d0/(dx2_bef*ren))*(0.d0 - ( q3_y(i,j_aft,k) + (dx2_bef/dx2)*(q3_y(i,j_aft+1,k)-q3_y(i,j_aft,k)) ) )) * Yc_to_YcTr_for_D2(j_aft,1)
+        !                         tmp3_y(i,j_aft,k) = tmp3_y(i,j_aft,k) + ( (1.d0/(dx2_bef*sqrt(ren))**2)*(0.d0 - ( q3_y(i,j_aft,k) + (dx2_bef/dx2)*(q3_y(i,j_aft+1,k)-q3_y(i,j_aft,k)) )) - 2.d0*(1.d0/(dx2_bef*sqrt(ren))**2)*q3_y(i,j_aft,k) ) * Yc_to_YcTr_for_D2(j_aft,2)
+
+
+        !                     enddo
+        !                 enddo
+
+        !             endif
+
+        !         endif
+
+        !         ! if (object_in_current_proc_x_q2(n)) then
+
+        !         !     ! Then, fix dp12/dx and d²q2/dx²
+        !         !     i_bef = i_start_obj_q2(n)-1
+        !         !     i_aft = i_end_obj_q2(n)+1
+
+        !         !     if (i_start_obj_q2(n).eq.1) i_bef=n1-1
+        !         !     if (i_end_obj_q2(n).gt.(n1-1)) i_aft=1
+
+        !         !     dx1_bef = (xs-Zc(i_bef))
+        !         !     dx1_aft = (Zc(i_aft)-xe)
+
+        !         !     if (i_start_obj_q2(n).eq.1) dx1_bef = (xs-Zc(1)-dx1)
+        !         !     if (i_end_obj_q2(n).gt.(n1-1)) dx1_aft = (Zc(n1-1)+dx1-xe)
+
+        !         !     do j=xstart_ibm_q2(n,2), xend_ibm_q2(n,2)
+        !         !         do k=xstart_ibm_q2(n,3), xend_ibm_q2(n,3)
+
+        !         !             ! remove dp23/dz term computed by generic O2 scheme
+        !         !             tmp2_x(i_bef,j,k) = tmp2_x(i_bef,j,k) - ( (1.d0/conv1_coef)*(p12_x(i_start_obj_q2(n),j,k) - p12_x(i_bef,j,k)) )
+        !         !             tmp2_x(i_aft,j,k) = tmp2_x(i_aft,j,k) - ( (1.d0/conv1_coef)*(p12_x(i_aft+1,j,k) - p12_x(i_aft,j,k)) )
+
+        !         !             ! remove d²q2/dz² term computed by generic O2 scheme
+        !         !             tmp2_x(i_bef,j,k) = tmp2_x(i_bef,j,k) - ( (1.d0/diff1_coef**2)*(q2_x(i_start_obj_q2(n),j,k) + q2_x(i_bef-1,j,k)) - 2.d0*(1.d0/diff1_coef**2)*q2_x(i_bef,j,k) )
+        !         !             tmp2_x(i_aft,j,k) = tmp2_x(i_aft,j,k) - ( (1.d0/diff1_coef**2)*(q2_x(i_end_obj_q2(n),j,k) + q2_x(i_aft+1,j,k)) - 2.d0*(1.d0/diff1_coef**2)*q2_x(i_aft,j,k) )
+
+        !         !             ! add dp23/dz term by taking into account the object position
+        !         !             tmp2_x(i_bef,j,k) = tmp2_x(i_bef,j,k) + (1.d0/(-dx1_bef))*(0.d0 - p12_x(i_bef,j,k))
+        !         !             tmp2_x(i_aft,j,k) = tmp2_x(i_aft,j,k) + (1.d0/(-dx1_aft))*(p12_x(i_aft+1,j,k) - p12_x(i_aft,j,k))
+
+        !         !             ! remove d²q2/dz² term computed by generic O2 scheme
+        !         !             ! Caution, here we use the interpolated velocity to use the same scheme as O2 (with equal spacing)
+        !         !             tmp2_x(i_bef,j,k) = tmp2_x(i_bef,j,k) + (1.d0/(dx1_bef*sqrt(ren))**2)*(0.d0 + q2_x(i_bef-1,j,k) + ((dx1-dx1_bef)/dx1)*(q2_x(i_bef,j,k)-q2_x(i_bef-1,j,k))) - 2.d0*(1.d0/(dx1_bef*sqrt(ren))**2)*q2_x(i_bef,j,k)
+        !         !             tmp2_x(i_aft,j,k) = tmp2_x(i_aft,j,k) + (1.d0/(dx1_aft*sqrt(ren))**2)*(0.d0 + q2_x(i_aft,j,k) + (dx1_bef/dx1)*(q2_x(i_aft+1,j,k)-q2_x(i_aft,j,k))) - 2.d0*(1.d0/(dx1_aft*sqrt(ren))**2)*q2_x(i_aft,j,k)
+
+
+        !         !         enddo
+        !         !     enddo
+
+        !         ! endif
+
+        !         if (object_in_current_proc_y_q1(n)) then
+
+        !             ! Then, fix dp13/dy and d²q3/dy²
+        !             j_bef = max(j_start_obj_q3(n)-1,1)
+        !             j_aft = min(j_end_obj_q3(n)+1,n2-1)
+
+        !             dx2_bef = (ys-Yc(j_bef))
+        !             dx2_aft = (Yc(j_aft)-ye)
+
+        !             if (j_start_obj_q1(n).gt.1) then
+
+        !                 do i=ystart_ibm_q1(n,1), yend_ibm_q1(n,1)
+        !                     do k=ystart_ibm_q1(n,3), yend_ibm_q1(n,3)
+
+        !                         ! remove dp23/dz term computed by generic O2 scheme
+        !                         tmp1_y(i,j_bef,k) = tmp1_y(i,j_bef,k) - ( (1.d0/conv2_coef)*(p23_y(i,j_start_obj_q1(n),k) - p23_y(i,j_bef,k)) )*Yc_to_YcTr_for_D1(j_bef)
+
+        !                         ! remove d²q2/dz² term computed by generic O2 scheme
+        !                         tmp1_y(i,j_bef,k) = tmp1_y(i,j_bef,k) - ( (0.5d0/diff21_coef)*(q1_y(i,j_start_obj_q1(n),k) - q1_y(i,j_bef-1,k)) ) * Yc_to_YcTr_for_D2(j_bef,1)
+        !                         tmp1_y(i,j_bef,k) = tmp1_y(i,j_bef,k) - ( (1.d0/diff22_coef**2)*(q1_y(i,j_start_obj_q1(n),k) + q1_y(i,j_bef-1,k)) - 2.d0*(1.d0/diff1_coef**2)*q1_y(i,j_bef,k) ) * Yc_to_YcTr_for_D2(j_bef,2)
+
+        !                         ! add dp23/dz term by taking into account the object position
+        !                         tmp1_y(i,j_bef,k) = tmp1_y(i,j_bef,k) + (1.d0/(-dx2_bef))*(0.d0 - p23_y(i,j_bef,k))*Yc_to_YcTr_for_D1(j_bef)
+
+        !                         ! remove d²q2/dz² term computed by generic O2 scheme
+        !                         ! Caution, here we use the interpolated velocity to use the same scheme as O2 (with equal spacing)
+        !                         tmp1_y(i,j_bef,k) = tmp1_y(i,j_bef,k) + ( (0.5d0/(dx2_bef*ren))*(0.d0 - ( q1_y(i,j_bef-1,k) + ((dx2-dx2_bef)/dx2)*(q1_y(i,j_bef,k)-q1_y(i,j_bef-1,k)) ) )) * Yc_to_YcTr_for_D2(j_bef,1)
+        !                         tmp1_y(i,j_bef,k) = tmp1_y(i,j_bef,k) + ( (1.d0/(dx2_bef*sqrt(ren))**2)*(0.d0 + q1_y(i,j_bef-1,k) + ((dx2-dx2_bef)/dx2)*(q1_y(i,j_bef,k)-q1_y(i,j_bef-1,k)) ) - 2.d0*(1.d0/(dx2_bef*sqrt(ren))**2)*q1_y(i,j_bef,k) ) * Yc_to_YcTr_for_D2(j_bef,2)
+
+
+        !                     enddo
+        !                 enddo
+
+        !             endif
+
+        !             if (j_end_obj_q1(n).lt.(n2-1)) then
+
+        !                 do i=ystart_ibm_q1(n,1), yend_ibm_q1(n,1)
+        !                     do k=ystart_ibm_q1(n,3), yend_ibm_q1(n,3)
+
+        !                         ! remove dp23/dz term computed by generic O2 scheme
+        !                         tmp1_y(i,j_aft,k) = tmp1_y(i,j_aft,k) - ( (1.d0/conv2_coef)*(p23_y(i,j_aft+1,k) - p23_y(i,j_aft,k)) )*Yc_to_YcTr_for_D1(j_aft)
+
+        !                         ! remove d²q2/dz² term computed by generic O2 scheme
+        !                         tmp1_y(i,j_aft,k) = tmp1_y(i,j_aft,k) - ( (0.5d0/diff21_coef)*(q1_y(i,j_aft+1,k) - q1_y(i,j_end_obj_q1(n),k)) ) * Yc_to_YcTr_for_D2(j_aft,1)
+        !                         tmp1_y(i,j_aft,k) = tmp1_y(i,j_aft,k) - ( (1.d0/diff22_coef**2)*(q1_y(i,j_start_obj_q1(n),k) + q1_y(i,j_aft+1,k)) - 2.d0*(1.d0/diff1_coef**2)*q1_y(i,j_aft,k) ) * Yc_to_YcTr_for_D2(j_aft,2)
+
+        !                         ! add dp23/dz term by taking into account the object position
+        !                         tmp1_y(i,j_aft,k) = tmp1_y(i,j_aft,k) + (1.d0/(-dx2_aft))*(p23_y(i,j_aft+1,k) - p23_y(i,j_aft,k))*Yc_to_YcTr_for_D1(j_aft)
+
+        !                         ! remove d²q2/dz² term computed by generic O2 scheme
+        !                         ! Caution, here we use the interpolated velocity to use the same scheme as O2 (with equal spacing)
+        !                         tmp1_y(i,j_aft,k) = tmp1_y(i,j_aft,k) + ( (0.5d0/(dx2_bef*ren))*(0.d0 - ( q1_y(i,j_aft,k) + (dx2_bef/dx2)*(q1_y(i,j_aft+1,k)-q1_y(i,j_aft,k)) ) )) * Yc_to_YcTr_for_D2(j_aft,1)
+        !                         tmp1_y(i,j_aft,k) = tmp1_y(i,j_aft,k) + ( (1.d0/(dx2_bef*sqrt(ren))**2)*(0.d0 - ( q1_y(i,j_aft,k) + (dx2_bef/dx2)*(q1_y(i,j_aft+1,k)-q1_y(i,j_aft,k)) )) - 2.d0*(1.d0/(dx2_bef*sqrt(ren))**2)*q1_y(i,j_aft,k) ) * Yc_to_YcTr_for_D2(j_aft,2)
+
+
+        !                     enddo
+        !                 enddo
+
+        !             endif
+
+        !         endif
+
+        !     enddo
+
+        ! endif
 
         if(BC2==NOSLIP) call diff_at_wall_2 ! implicit: NS_Q3_BC2=Dirichlet
 
@@ -2959,69 +3262,117 @@ contains
         call D2c_ACC_3Dx(q3_x, tmp3_x, n1,xsize(2),n2e,xsize(3),n3e, diff1_coef, .true., NS_Q3_BC1)
 
         ! If the IBM is activated then the DRP scheme has to be corrected ...
-        if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
+        ! if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
 
-            if (object_in_current_proc_ccm_x) then
+        !     if (object_in_current_proc_ccm_x) then
 
-                n1s=xstart_ibm_ccm(1)
-                n2s=xstart_ibm_ccm(2)
-                n3s=xstart_ibm_ccm(3)
+        !         n1s=xstart_ibm_ccm(1)
+        !         n2s=xstart_ibm_ccm(2)
+        !         n3s=xstart_ibm_ccm(3)
 
-                n1e=xend_ibm_ccm(1)
-                n2e=xend_ibm_ccm(2)
-                n3e=xend_ibm_ccm(3)
+        !         n1e=xend_ibm_ccm(1)
+        !         n2e=xend_ibm_ccm(2)
+        !         n3e=xend_ibm_ccm(3)
 
-                ! For RHS1
-                call D2c_IBM_O2_3Dx(q1_x(n1s:n1e,n2s:n2e,n3s:n3e),tmp1_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e),xsize_ibm_ccm(1),xsize_ibm_ccm(2),xsize_ibm_ccm(3),diff1_coef)
+        !         ! For RHS1
+        !         call D2c_IBM_O2_3Dx(q1_x(n1s:n1e,n2s:n2e,n3s:n3e),tmp1_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e),xsize_ibm_ccm(1),xsize_ibm_ccm(2),xsize_ibm_ccm(3),diff1_coef)
 
-                call D0s_IBM_O2_3Dx(q1_x(n1s:n1e,n2s:n2e,n3s:n3e),q1q1_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e),xsize_ibm_ccm(1),xsize_ibm_ccm(2),xsize_ibm_ccm(3))
-                q1q1_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e)=q1q1_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e)**2
+        !         call D0s_IBM_O2_3Dx(q1_x(n1s:n1e,n2s:n2e,n3s:n3e),q1q1_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e),xsize_ibm_ccm(1),xsize_ibm_ccm(2),xsize_ibm_ccm(3))
+        !         q1q1_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e)=q1q1_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e)**2
 
-                call D1ssh_IBM_O2_ACC_3Dx(q1q1_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e),tmp1_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e),xsize_ibm_ccm(1),xsize_ibm_ccm(2),xsize_ibm_ccm(3),conv1_coef)
+        !         call D1ssh_IBM_O2_ACC_3Dx(q1q1_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e),tmp1_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e),xsize_ibm_ccm(1),xsize_ibm_ccm(2),xsize_ibm_ccm(3),conv1_coef)
 
-                ! For RHS2
-                call D2c_IBM_O2_3Dx(q2_x(n1s:n1e,n2s:n2e,n3s:n3e),tmp2_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e),xsize_ibm_ccm(1),xsize_ibm_ccm(2),xsize_ibm_ccm(3),diff1_coef)
-                call D1s_IBM_O2_ACC_3Dx(p12_x(n1s:n1e,n2s:n2e,n3s:n3e),tmp2_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e),xsize_ibm_ccm(1),xsize_ibm_ccm(2),xsize_ibm_ccm(3),conv1_coef)
+        !         ! For RHS2
+        !         call D2c_IBM_O2_3Dx(q2_x(n1s:n1e,n2s:n2e,n3s:n3e),tmp2_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e),xsize_ibm_ccm(1),xsize_ibm_ccm(2),xsize_ibm_ccm(3),diff1_coef)
+        !         call D1s_IBM_O2_ACC_3Dx(p12_x(n1s:n1e,n2s:n2e,n3s:n3e),tmp2_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e),xsize_ibm_ccm(1),xsize_ibm_ccm(2),xsize_ibm_ccm(3),conv1_coef)
 
-                ! For RHS3
-                call D2c_IBM_O2_3Dx(q3_x(n1s:n1e,n2s:n2e,n3s:n3e),tmp3_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e),xsize_ibm_ccm(1),xsize_ibm_ccm(2),xsize_ibm_ccm(3),diff1_coef)
-                call D1s_IBM_O2_ACC_3Dx(p13_x(n1s:n1e,n2s:n2e,n3s:n3e),tmp3_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e),xsize_ibm_ccm(1),xsize_ibm_ccm(2),xsize_ibm_ccm(3),conv1_coef)
+        !         ! For RHS3
+        !         call D2c_IBM_O2_3Dx(q3_x(n1s:n1e,n2s:n2e,n3s:n3e),tmp3_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e),xsize_ibm_ccm(1),xsize_ibm_ccm(2),xsize_ibm_ccm(3),diff1_coef)
+        !         call D1s_IBM_O2_ACC_3Dx(p13_x(n1s:n1e,n2s:n2e,n3s:n3e),tmp3_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e),xsize_ibm_ccm(1),xsize_ibm_ccm(2),xsize_ibm_ccm(3),conv1_coef)
 
-            endif
+        !     endif
 
-            if (object_in_current_proc_cpm_x) then
+        !     if (object_in_current_proc_cpm_x) then
 
-                do i=xstart_ibm_cpm(1), xend_ibm_cpm(1)
-                    do j=xstart_ibm_cpm(2), xend_ibm_cpm(2)
-                        do k=xstart_ibm_cpm(3), xend_ibm_cpm(3)
+        !         do i=xstart_ibm_cpm(1), xend_ibm_cpm(1)
+        !             do j=xstart_ibm_cpm(2), xend_ibm_cpm(2)
+        !                 do k=xstart_ibm_cpm(3), xend_ibm_cpm(3)
 
-                            tmp1_x(i,j,k) = tmp1_x_ibm(i,j,k)
-                            tmp2_x(i,j,k) = tmp2_x_ibm(i,j,k)
-                            tmp3_x(i,j,k) = tmp3_x_ibm(i,j,k)
+        !                     tmp1_x(i,j,k) = tmp1_x_ibm(i,j,k)
+        !                     tmp2_x(i,j,k) = tmp2_x_ibm(i,j,k)
+        !                     tmp3_x(i,j,k) = tmp3_x_ibm(i,j,k)
 
-                        enddo
-                    enddo
-                enddo
+        !                 enddo
+        !             enddo
+        !         enddo
 
-            endif
+        !     endif
 
-        endif
+        ! endif
 
 
-        ! if (IBM_activated) then
+        ! if ((IBM_activated).and.(interpol_type == ANTISYMMETRIC_INTERPOL)) then
 
         !     do n=1,number_of_objects
 
+        !         ! READING OBJECT FILE
+        !         call read_object_size(trim(obj_file_path), nb_vertex, nb_faces)
+        !         call read_object(trim(obj_file_path), vertex, faces, nb_vertex, nb_faces)
+
+        !         ! Scale with H
+        !         vertex(:,1)=vertex(:,1)*body_scale_x1(n)+body_x1(n)
+        !         vertex(:,2)=vertex(:,2)*body_scale_x2(n)+body_x2(n)
+        !         vertex(:,3)=vertex(:,3)*body_scale_x3(n)+body_x3(n)
+
+        !         call get_objet_area(vertex, nb_vertex)
+
+        !         xs = max(0.d0,xs)
+        !         xe = min(L1,xe)
+        !         ys = max(0.d0,ys)
+        !         ye = min(L2,ye)
+        !         zs = max(0.d0,zs)
+        !         ze = min(L3,ze)
+
         !         if (object_in_current_proc_x_q3(n)) then
 
-        !             do i=i_start_obj_q3(n)-5, i_start_obj_q3(n)
-        !                 do j=xstart_ibm_q3(n,2), xend_ibm_q3(n,2)
-        !                     do k=xstart_ibm_q3(n,3), xend_ibm_q3(n,3)
+        !             i0 = i_start_obj_q3(n)
+        !             i1 = i_end_obj_q3(n)
+        !             j0 = j_start_obj_q3(n)
+        !             j1 = j_end_obj_q3(n)
+        !             k0 = k_start_obj_q3(n)
+        !             k1 = k_end_obj_q3(n)
 
-        !                         ! remove upward term and add backward term
-        !                         tmp3_x(i,j,k) = tmp3_x(i,j,k) - (1.d0/conv1_coef) * ( p13_x(i+1,j,k) - p13_x(i,j,k) ) + (1.d0/conv1_coef) * ( p13_x(i-1,j,k) - p13_x(i,j,k) ) 
+        !             i_bef = i0-1
+        !             i_aft = i1+1
 
-        !                     enddo
+        !             if (i0.eq.1) i_bef=n1-1
+        !             if (i1.gt.(n1-1)) i_aft=1
+
+        !             dx1_bef = abs(xs-Zc(i0)-dx1)
+        !             dx1_aft = abs(Zc(i1)+dx1-xe)
+
+        !             do j=xstart_ibm_q3(n,2), xend_ibm_q3(n,2)
+        !                 do k=xstart_ibm_q3(n,3), xend_ibm_q3(n,3)
+
+        !                     if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) then
+
+        !                         ! correct dp12/dx term only for i_bef (no need to do this for i_aft)
+        !                         ! remove what is computed by generic O2 scheme
+        !                         tmp3_x(i_bef,j,k) = tmp3_x(i_bef,j,k) - ( (1.d0/conv1_coef)*(p13_x(i0,j,k) - p13_x(i_bef,j,k)) )
+        !                         ! add what is computed by taking into account the object position
+        !                         tmp3_x(i_bef,j,k) = tmp3_x(i_bef,j,k) + (1.d0/(-dx1_bef))*(0.d0 - p13_x(i_bef,j,k))
+
+        !                         ! correct d²u/dx² term (no need to do this for i_bef)
+        !                         ! remove what is computed by generic O2 scheme
+        !                         tmp3_x(i_bef,j,k) = tmp3_x(i_bef,j,k) - ( (1.d0/diff1_coef**2)*(q3_x(i_bef-1,j,k) -2.d0*q3_x(i_bef,j,k) + q3_x(i0,j,k)) )
+        !                         tmp3_x(i_aft,j,k) = tmp3_x(i_aft,j,k) - ( (1.d0/diff1_coef**2)*(q3_x(i_aft+1,j,k) -2.d0*q3_x(i_aft,j,k) + q3_x(i1,j,k)) )
+        !                         ! add what is computed by taking into account the object position
+        !                         ! Caution, here we use the interpolated velocity to use the same scheme as O2 (with equal spacing)
+        !                         tmp3_x(i_bef,j,k) = tmp3_x(i_bef,j,k) + (1.d0/(dx1_bef*sqrt(ren))**2)*(0.d0 + q3_x(i_bef-1,j,k) + ((dx1-dx1_bef)/dx1)*(q3_x(i_bef,j,k)-q3_x(i_bef-1,j,k))) - 2.d0*(1.d0/(dx1_bef*sqrt(ren))**2)*q3_x(i_bef,j,k)
+        !                         tmp3_x(i_aft,j,k) = tmp3_x(i_aft,j,k) + (1.d0/(dx1_aft*sqrt(ren))**2)*(0.d0 + q3_x(i_aft,j,k) + (dx1_bef/dx1)*(q3_x(i_aft+1,j,k)-q3_x(i_aft,j,k))) - 2.d0*(1.d0/(dx1_aft*sqrt(ren))**2)*q3_x(i_aft,j,k)
+
+        !                     endif
+
         !                 enddo
         !             enddo
 
@@ -3029,14 +3380,44 @@ contains
 
         !         if (object_in_current_proc_x_q2(n)) then
 
-        !             do i=i_start_obj_q2(n)-5, i_start_obj_q2(n)
-        !                 do j=xstart_ibm_q2(n,2), xend_ibm_q2(n,2)
-        !                     do k=xstart_ibm_q2(n,3), xend_ibm_q2(n,3)
+        !             i0 = i_start_obj_q2(n)
+        !             i1 = i_end_obj_q2(n)
+        !             j0 = j_start_obj_q2(n)
+        !             j1 = j_end_obj_q2(n)
+        !             k0 = k_start_obj_q2(n)
+        !             k1 = k_end_obj_q2(n)
 
-        !                         ! remove upward term and add backward term
-        !                         tmp2_x(i,j,k) = tmp2_x(i,j,k) - (1.d0/conv1_coef) * ( p12_x(i+1,j,k) - p12_x(i,j,k) ) + (1.d0/conv1_coef) * ( p12_x(i-1,j,k) - p12_x(i,j,k) ) 
+        !             i_bef = i0-1
+        !             i_aft = i1+1
 
-        !                     enddo
+        !             if (i0.eq.1) i_bef=n1-1
+        !             if (i1.gt.(n1-1)) i_aft=1
+
+        !             dx1_bef = abs(xs-Zc(i0)-dx1)
+        !             dx1_aft = abs(Zc(i1)+dx1-xe)
+
+        !             do j=xstart_ibm_q2(n,2), xend_ibm_q2(n,2)
+        !                 do k=xstart_ibm_q2(n,3), xend_ibm_q2(n,3)
+
+        !                     if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) then
+
+        !                         ! correct dp12/dx term only for i_bef (no need to do this for i_aft)
+        !                         ! remove what is computed by generic O2 scheme
+        !                         tmp2_x(i_bef,j,k) = tmp2_x(i_bef,j,k) - ( (1.d0/conv1_coef)*(p12_x(i0,j,k) - p12_x(i_bef,j,k)) )
+        !                         ! add what is computed by taking into account the object position
+        !                         tmp2_x(i_bef,j,k) = tmp2_x(i_bef,j,k) + (1.d0/(-dx1_bef))*(0.d0 - p12_x(i_bef,j,k))
+
+        !                         ! correct d²u/dx² term (no need to do this for i_bef)
+        !                         ! remove what is computed by generic O2 scheme
+        !                         tmp2_x(i_bef,j,k) = tmp2_x(i_bef,j,k) - ( (1.d0/diff1_coef**2)*(q2_x(i_bef-1,j,k) -2.d0*q2_x(i_bef,j,k) + q2_x(i0,j,k)) )
+        !                         tmp2_x(i_aft,j,k) = tmp2_x(i_aft,j,k) - ( (1.d0/diff1_coef**2)*(q2_x(i_aft+1,j,k) -2.d0*q2_x(i_aft,j,k) + q2_x(i1,j,k)) )
+        !                         ! add what is computed by taking into account the object position
+        !                         ! Caution, here we use the interpolated velocity to use the same scheme as O2 (with equal spacing)
+        !                         tmp2_x(i_bef,j,k) = tmp2_x(i_bef,j,k) + (1.d0/(dx1_bef*sqrt(ren))**2)*(0.d0 + q2_x(i_bef-1,j,k) + ((dx1-dx1_bef)/dx1)*(q2_x(i_bef,j,k)-q2_x(i_bef-1,j,k))) - 2.d0*(1.d0/(dx1_bef*sqrt(ren))**2)*q2_x(i_bef,j,k)
+        !                         tmp2_x(i_aft,j,k) = tmp2_x(i_aft,j,k) + (1.d0/(dx1_aft*sqrt(ren))**2)*(0.d0 + q2_x(i_aft,j,k) + (dx1_bef/dx1)*(q2_x(i_aft+1,j,k)-q2_x(i_aft,j,k))) - 2.d0*(1.d0/(dx1_aft*sqrt(ren))**2)*q2_x(i_aft,j,k)
+
+        !                     endif
+
         !                 enddo
         !             enddo
 
@@ -3044,14 +3425,44 @@ contains
 
         !         if (object_in_current_proc_x_q1(n)) then
 
-        !             do i=i_start_obj_q1(n)-5, i_start_obj_q1(n)
-        !                 do j=xstart_ibm_q1(n,2), xend_ibm_q1(n,2)
-        !                     do k=xstart_ibm_q1(n,3), xend_ibm_q1(n,3)
+        !             i0 = i_start_obj_q1(n)
+        !             i1 = i_end_obj_q1(n)
+        !             j0 = j_start_obj_q1(n)
+        !             j1 = j_end_obj_q1(n)
+        !             k0 = k_start_obj_q1(n)
+        !             k1 = k_end_obj_q1(n)
 
-        !                         ! remove upward term and add backward term
-        !                         tmp1_x(i,j,k) = tmp1_x(i,j,k) - (1.d0/conv1_coef) * ( q1q1_x(i,j,k) - q1q1_x(i-1,j,k) ) + (1.d0/conv1_coef) * ( q1q1_x(i-1,j,k) - q1q1_x(i,j,k) ) 
+        !             i_bef = i0-1
+        !             i_aft = i1+1
 
-        !                     enddo
+        !             if (i0.eq.1) i_bef=n1-1
+        !             if (i1.gt.(n1-1)) i_aft=1
+
+        !             dx1_bef = abs(xs-Z(i0)-dx1)
+        !             dx1_aft = abs(Z(i1)+dx1-xe)
+
+        !             do j=xstart_ibm_q1(n,2), xend_ibm_q1(n,2)
+        !                 do k=xstart_ibm_q1(n,3), xend_ibm_q1(n,3)
+
+        !                     if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) then
+
+        !                         ! correct dq1q1/dx term only for i_aft (no need to do this for i_bef)
+        !                         ! remove what is computed by generic O2 scheme
+        !                         tmp1_x(i_aft,j,k) = tmp1_x(i_aft,j,k) - ( (1.d0/conv1_coef)*(q1q1_x(i_aft,j,k) - q1q1_x(i1,j,k)) )
+        !                         ! add what is computed by taking into account the object position
+        !                         tmp1_x(i_aft,j,k) = tmp1_x(i_aft,j,k) + (1.d0/(-dx1_aft))*(q1q1_x(i_aft,j,k) - 0.d0)
+
+        !                         ! correct d²u/dx² term
+        !                         ! remove what is computed by generic O2 scheme
+        !                         tmp1_x(i_bef,j,k) = tmp1_x(i_bef,j,k) - ( (1.d0/diff1_coef**2)*(q1_x(i_bef-1,j,k) -2.d0*q1_x(i_bef,j,k) + q1_x(i0,j,k)) )
+        !                         tmp1_x(i_aft,j,k) = tmp1_x(i_aft,j,k) - ( (1.d0/diff1_coef**2)*(q1_x(i_aft+1,j,k) -2.d0*q1_x(i_aft,j,k) + q1_x(i1,j,k)) )
+        !                         ! add what is computed by taking into account the object position
+        !                         ! Caution, here we use the interpolated velocity to use the same scheme as O2 (with equal spacing)
+        !                         tmp1_x(i_bef,j,k) = tmp1_x(i_bef,j,k) + (1.d0/(dx1_bef*sqrt(ren))**2)*(0.d0 + q1_x(i_bef-1,j,k) + ((dx1-dx1_bef)/dx1)*(q1_x(i_bef,j,k)-q1_x(i_bef-1,j,k))) - 2.d0*(1.d0/(dx1_bef*sqrt(ren))**2)*q1_x(i_bef,j,k)
+        !                         tmp1_x(i_aft,j,k) = tmp1_x(i_aft,j,k) + (1.d0/(dx1_aft*sqrt(ren))**2)*(0.d0 + q1_x(i_aft,j,k) + (dx1_bef/dx1)*(q1_x(i_aft+1,j,k)-q1_x(i_aft,j,k))) - 2.d0*(1.d0/(dx1_aft*sqrt(ren))**2)*q1_x(i_aft,j,k)
+
+        !                     endif
+
         !                 enddo
         !             enddo
 
@@ -3527,10 +3938,11 @@ contains
             if ((interpol_type == IBM_INTERPOL_NONE).or.(interpol_type == SECOND_ORDER_INTERPOL)) then
                 call force_velocity(q1_save_x, q2_save_x, q3_save_x, xsize, vel_term1, vel_term2, vel_term3)
             else if (interpol_type == ANTISYMMETRIC_INTERPOL) then
-                ! call compute_antisymmetric_velocity(q1_save2, q2_save2, q3_save2, xsize, vel_term1, vel_term2, vel_term3)
-                call get_antisymmetric_velocity_in_object(Zc,Yc,X,q3_x,vel_term3,'X')
-                call get_antisymmetric_velocity_in_object(Zc,Y,Xc,q2_x,vel_term2,'X')
-                call get_antisymmetric_velocity_in_object(Z,Yc,Xc,q1_x,vel_term1,'X')
+                call compute_antisymmetric_velocity(q1_save_x, q2_save_x, q3_save_x, xsize, vel_term1, vel_term2, vel_term3)
+                ! call compute_antisymmetric_velocity(q1_save_x, q2_save_x, q3_save_x, xsize, vel_term1, vel_term2, vel_term3)
+                ! call get_antisymmetric_velocity_in_object(Zc,Yc,X,q3_x,vel_term3,'X')
+                ! call get_antisymmetric_velocity_in_object(Zc,Y,Xc,q2_x,vel_term2,'X')
+                ! call get_antisymmetric_velocity_in_object(Z,Yc,Xc,q1_x,vel_term1,'X')
             endif
 
             if ((BC1==UNBOUNDED).or.(BC1==FRINGE)) n1s=xstart(1)
@@ -3542,7 +3954,7 @@ contains
                 do j = n2s, n2e
                     do i = n1s, n1e
                         RHS1i = NSTERMS1(i,j,k) !+ Fext1(i, j, k)
-                        q1_x(i,j,k) = q1_save_x(i,j,k) + RHS1i + IBM_mask1_x(i,j,k)*(-RHS1i + vel_term1(i,j,k))
+                        q1_x(i,j,k) = q1_save_x(i,j,k) + RHS1i + IBM_mask1_x(i,j,k)*(-RHS1i + vel_term1(i,j,k)) !+ IBM_mask_bounds1_x(i,j,k)*(-RHS1i + vel_term1(i,j,k))
                     end do
                 end do
             end do
@@ -3562,7 +3974,7 @@ contains
                 do j = n2s, n2e
                     do i = n1s, n1e
                         RHS2i = NSTERMS2(i,j,k) !+ Fext2(i, j, k)
-                        q2_x(i,j,k) = q2_save_x(i,j,k) + RHS2i + IBM_mask2_x(i,j,k)*(-RHS2i + vel_term2(i,j,k))
+                        q2_x(i,j,k) = q2_save_x(i,j,k) + RHS2i + IBM_mask2_x(i,j,k)*(-RHS2i + vel_term2(i,j,k)) !+ IBM_mask_bounds2_x(i,j,k)*(-RHS2i + vel_term2(i,j,k))
                     end do
                 end do
             end do
@@ -3582,7 +3994,7 @@ contains
                 do j = n2s, n2e
                     do i = n1s, n1e
                         RHS3i = NSTERMS3(i,j,k) !+ Fext3(i, j, k)
-                        q3_x(i,j,k) = q3_save_x(i,j,k) + RHS3i + IBM_mask3_x(i,j,k)*(-RHS3i + vel_term3(i,j,k))
+                        q3_x(i,j,k) = q3_save_x(i,j,k) + RHS3i + IBM_mask3_x(i,j,k)*(-RHS3i + vel_term3(i,j,k)) !+ IBM_mask_bounds3_x(i,j,k)*(-RHS3i + vel_term3(i,j,k))
                     end do
                 end do
             end do
@@ -3811,70 +4223,70 @@ contains
 
         integer :: n1e, n2e, n3e, n1s, n2s, n3s
 
-        if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
+        ! if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
 
-            allocate(tmp12_x_ibm(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
-            allocate(tmp13_x_ibm(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        !     allocate(tmp12_x_ibm(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        !     allocate(tmp13_x_ibm(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
 
-            tmp12_x_ibm = 0.d0
-            tmp13_x_ibm = 0.d0
+        !     tmp12_x_ibm = 0.d0
+        !     tmp13_x_ibm = 0.d0
 
-            allocate(tmp12_y_ibm(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
-            allocate(tmp23_y_ibm(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        !     allocate(tmp12_y_ibm(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+        !     allocate(tmp23_y_ibm(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
             
-            tmp12_y_ibm = 0.d0
-            tmp23_y_ibm = 0.d0
+        !     tmp12_y_ibm = 0.d0
+        !     tmp23_y_ibm = 0.d0
 
-            allocate(tmp23_z_ibm(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
-            allocate(tmp13_z_ibm(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        !     allocate(tmp23_z_ibm(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        !     allocate(tmp13_z_ibm(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
             
-            tmp23_z_ibm = 0.d0
-            tmp13_z_ibm = 0.d0
+        !     tmp23_z_ibm = 0.d0
+        !     tmp13_z_ibm = 0.d0
 
-        endif
+        ! endif
 
         ! X ------------------------------------------------------------------------
 
         call D0ssh_3Dx(q3_x, p13_x, n1,xsize(2),xsize(2),xsize(3),xsize(3), NS_Q3_BC1)
         call D0ssh_3Dx(q2_x, p12_x, n1,xsize(2),xsize(2),xsize(3),xsize(3), NS_Q2_BC1)
 
-        if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
+        ! if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
 
-            if (object_in_current_proc_ccm_x) then
+        !     if (object_in_current_proc_ccm_x) then
 
-                n1s=xstart_ibm_ccm(1)
-                n2s=xstart_ibm_ccm(2)
-                n3s=xstart_ibm_ccm(3)
+        !         n1s=xstart_ibm_ccm(1)
+        !         n2s=xstart_ibm_ccm(2)
+        !         n3s=xstart_ibm_ccm(3)
 
-                n1e=xend_ibm_ccm(1)
-                n2e=xend_ibm_ccm(2)
-                n3e=xend_ibm_ccm(3)
+        !         n1e=xend_ibm_ccm(1)
+        !         n2e=xend_ibm_ccm(2)
+        !         n3e=xend_ibm_ccm(3)
 
-                ! for p13_ibm
-                call D0ssh_IBM_O2_3Dx(q3_x(n1s:n1e,n2s:n2e,n3s:n3e), tmp13_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e),xsize_ibm_ccm(1),xsize_ibm_ccm(2),xsize_ibm_ccm(3))
+        !         ! for p13_ibm
+        !         call D0ssh_IBM_O2_3Dx(q3_x(n1s:n1e,n2s:n2e,n3s:n3e), tmp13_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e),xsize_ibm_ccm(1),xsize_ibm_ccm(2),xsize_ibm_ccm(3))
                 
-                ! for p12_ibm
-                call D0ssh_IBM_O2_3Dx(q2_x(n1s:n1e,n2s:n2e,n3s:n3e), tmp12_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e),xsize_ibm_ccm(1),xsize_ibm_ccm(2),xsize_ibm_ccm(3))
+        !         ! for p12_ibm
+        !         call D0ssh_IBM_O2_3Dx(q2_x(n1s:n1e,n2s:n2e,n3s:n3e), tmp12_x_ibm(n1s:n1e,n2s:n2e,n3s:n3e),xsize_ibm_ccm(1),xsize_ibm_ccm(2),xsize_ibm_ccm(3))
 
-            endif
+        !     endif
 
-            if (object_in_current_proc_cpm_x) then
+        !     if (object_in_current_proc_cpm_x) then
 
-                do i=xstart_ibm_cpm(1), xend_ibm_cpm(1)
-                    do j=xstart_ibm_cpm(2), xend_ibm_cpm(2)
-                        do k=xstart_ibm_cpm(3), xend_ibm_cpm(3)
+        !         do i=xstart_ibm_cpm(1), xend_ibm_cpm(1)
+        !             do j=xstart_ibm_cpm(2), xend_ibm_cpm(2)
+        !                 do k=xstart_ibm_cpm(3), xend_ibm_cpm(3)
 
-                            p13_x(i,j,k) = tmp13_x_ibm(i,j,k)
+        !                     p13_x(i,j,k) = tmp13_x_ibm(i,j,k)
 
-                            p12_x(i,j,k) = tmp12_x_ibm(i,j,k)
+        !                     p12_x(i,j,k) = tmp12_x_ibm(i,j,k)
 
-                        enddo
-                    enddo
-                enddo
+        !                 enddo
+        !             enddo
+        !         enddo
 
-            endif
+        !     endif
 
-        endif
+        ! endif
 
         if ((BC1==NOSLIP).or.(BC1==FREESLIP).or.(BC1==PSEUDO_PERIODIC).or.(BC1==OPEN)) then
 
@@ -3897,43 +4309,43 @@ contains
         ! call D0ssh_MULT_3Dy(q1_y, p12_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), NS_Q1_BC2)
         call D0ssh_3Dy(q1_y, tmp12_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), NS_Q1_BC2)
 
-        if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
+        ! if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
 
-            if (object_in_current_proc_ccm_y) then
+        !     if (object_in_current_proc_ccm_y) then
 
-                n1s=ystart_ibm_ccm(1)
-                n2s=ystart_ibm_ccm(2)
-                n3s=ystart_ibm_ccm(3)
+        !         n1s=ystart_ibm_ccm(1)
+        !         n2s=ystart_ibm_ccm(2)
+        !         n3s=ystart_ibm_ccm(3)
 
-                n1e=yend_ibm_ccm(1)
-                n2e=yend_ibm_ccm(2)
-                n3e=yend_ibm_ccm(3)
+        !         n1e=yend_ibm_ccm(1)
+        !         n2e=yend_ibm_ccm(2)
+        !         n3e=yend_ibm_ccm(3)
 
-                ! for p13_ibm
-                call D0ssh_IBM_O2_3Dy(q3_y(n1s:n1e,n2s:n2e,n3s:n3e), tmp23_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3))
+        !         ! for p13_ibm
+        !         call D0ssh_IBM_O2_3Dy(q3_y(n1s:n1e,n2s:n2e,n3s:n3e), tmp23_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3))
                 
-                ! for p12_ibm
-                call D0ssh_IBM_O2_3Dy(q1_y(n1s:n1e,n2s:n2e,n3s:n3e), tmp12_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3))
+        !         ! for p12_ibm
+        !         call D0ssh_IBM_O2_3Dy(q1_y(n1s:n1e,n2s:n2e,n3s:n3e), tmp12_y_ibm(n1s:n1e,n2s:n2e,n3s:n3e),ysize_ibm_ccm(1),ysize_ibm_ccm(2),ysize_ibm_ccm(3))
 
-            endif
+        !     endif
 
-            if (object_in_current_proc_cpm_y) then
+        !     if (object_in_current_proc_cpm_y) then
 
-                do i=ystart_ibm_cpm(1), yend_ibm_cpm(1)
-                    do j=ystart_ibm_cpm(2), yend_ibm_cpm(2)
-                        do k=ystart_ibm_cpm(3), yend_ibm_cpm(3)
+        !         do i=ystart_ibm_cpm(1), yend_ibm_cpm(1)
+        !             do j=ystart_ibm_cpm(2), yend_ibm_cpm(2)
+        !                 do k=ystart_ibm_cpm(3), yend_ibm_cpm(3)
 
-                            p23_y(i,j,k) = tmp23_y_ibm(i,j,k)
+        !                     p23_y(i,j,k) = tmp23_y_ibm(i,j,k)
 
-                            tmp12_y(i,j,k) = tmp12_y_ibm(i,j,k)
+        !                     tmp12_y(i,j,k) = tmp12_y_ibm(i,j,k)
 
-                        enddo
-                    enddo
-                enddo
+        !                 enddo
+        !             enddo
+        !         enddo
 
-            endif
+        !     endif
 
-        endif
+        ! endif
 
         if ((BC2==NOSLIP).or.(BC2==FREESLIP)) then
 
@@ -3966,43 +4378,43 @@ contains
         call D0ssh_3Dz(q2_z, tmp23_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, NS_Q2_BC3)
         call D0ssh_3Dz(q1_z, tmp13_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, NS_Q1_BC3)
 
-        if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
+        ! if ((IBM_activated).and.(interpol_type == SECOND_ORDER_INTERPOL)) then
 
-            if (object_in_current_proc_ccm_z) then
+        !     if (object_in_current_proc_ccm_z) then
 
-                n1s=zstart_ibm_ccm(1)
-                n2s=zstart_ibm_ccm(2)
-                n3s=zstart_ibm_ccm(3)
+        !         n1s=zstart_ibm_ccm(1)
+        !         n2s=zstart_ibm_ccm(2)
+        !         n3s=zstart_ibm_ccm(3)
 
-                n1e=zend_ibm_ccm(1)
-                n2e=zend_ibm_ccm(2)
-                n3e=zend_ibm_ccm(3)
+        !         n1e=zend_ibm_ccm(1)
+        !         n2e=zend_ibm_ccm(2)
+        !         n3e=zend_ibm_ccm(3)
 
-                ! for p13_ibm
-                call D0ssh_IBM_O2_3Dz(q2_z(n1s:n1e,n2s:n2e,n3s:n3e), tmp23_z_ibm(n1s:n1e,n2s:n2e,n3s:n3e),zsize_ibm_ccm(1),zsize_ibm_ccm(2),zsize_ibm_ccm(3))
+        !         ! for p13_ibm
+        !         call D0ssh_IBM_O2_3Dz(q2_z(n1s:n1e,n2s:n2e,n3s:n3e), tmp23_z_ibm(n1s:n1e,n2s:n2e,n3s:n3e),zsize_ibm_ccm(1),zsize_ibm_ccm(2),zsize_ibm_ccm(3))
                 
-                ! for p12_ibm
-                call D0ssh_IBM_O2_3Dz(q1_z(n1s:n1e,n2s:n2e,n3s:n3e), tmp13_z_ibm(n1s:n1e,n2s:n2e,n3s:n3e),zsize_ibm_ccm(1),zsize_ibm_ccm(2),zsize_ibm_ccm(3))
+        !         ! for p12_ibm
+        !         call D0ssh_IBM_O2_3Dz(q1_z(n1s:n1e,n2s:n2e,n3s:n3e), tmp13_z_ibm(n1s:n1e,n2s:n2e,n3s:n3e),zsize_ibm_ccm(1),zsize_ibm_ccm(2),zsize_ibm_ccm(3))
 
-            endif
+        !     endif
 
-            if (object_in_current_proc_cpm_z) then
+        !     if (object_in_current_proc_cpm_z) then
 
-                do i=zstart_ibm_cpm(1), zend_ibm_cpm(1)
-                    do j=zstart_ibm_cpm(2), zend_ibm_cpm(2)
-                        do k=zstart_ibm_cpm(3), zend_ibm_cpm(3)
+        !         do i=zstart_ibm_cpm(1), zend_ibm_cpm(1)
+        !             do j=zstart_ibm_cpm(2), zend_ibm_cpm(2)
+        !                 do k=zstart_ibm_cpm(3), zend_ibm_cpm(3)
 
-                            tmp23_z(i,j,k) = tmp23_z_ibm(i,j,k)
+        !                     tmp23_z(i,j,k) = tmp23_z_ibm(i,j,k)
 
-                            tmp13_z(i,j,k) = tmp13_z_ibm(i,j,k)
+        !                     tmp13_z(i,j,k) = tmp13_z_ibm(i,j,k)
 
-                        enddo
-                    enddo
-                enddo
+        !                 enddo
+        !             enddo
+        !         enddo
 
-            endif
+        !     endif
 
-        endif
+        ! endif
 
         ! ATTENTION
         if ((BC3==NOSLIP).or.(BC3==FREESLIP)) then

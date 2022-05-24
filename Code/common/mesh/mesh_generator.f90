@@ -10,6 +10,7 @@ contains
         real*8      :: beta1
 
         beta=beta1
+
     end subroutine t1_init_transfo
 
 
@@ -28,6 +29,21 @@ contains
         t1_get_computational_coords=yeta
 
     end function t1_get_computational_coords
+
+
+    real*8 function t1_get_computational_coords_from_physical(y_physical)
+
+        use mesh
+        use boundaries
+        implicit none
+
+        real*8, intent(in)      :: y_physical
+        real*8  :: yeta
+
+        yeta=0.5d0 + (1.d0/beta) * datanh( dtanh(beta*0.5d0)*(y_physical-1.d0) )
+        t1_get_computational_coords_from_physical=yeta
+
+    end function t1_get_computational_coords_from_physical
 
 
     real*8 function t1_get_physical_coords(yeta)
@@ -135,6 +151,22 @@ contains
         t2_get_computational_coords=yeta
 
     end function t2_get_computational_coords
+
+
+    real*8 function t2_get_computational_coords_from_physical(y_physical)
+
+        use mesh
+        use boundaries
+        implicit none
+
+        real*8, intent(in)      :: y_physical
+        real*8  :: yeta
+
+        yeta=0.5d0 + (1.d0/beta) * datanh( dtanh(beta*0.5d0)*(y_physical-1.d0) )
+        t2_get_computational_coords_from_physical=yeta
+        write(*,*) 't2_get_computational_coords_from_physical for Lamballais transfo NOT IMPLEMENTED YET!'
+
+    end function t2_get_computational_coords_from_physical
 
 
     real*8 function t2_get_physical_coords(yeta)
@@ -308,6 +340,52 @@ contains
 
 end module transfo_tester
 
+module mesh_interface
+    use lamballais_transfo
+    use arctan_transfo
+
+    procedure(t1_init_transfo), pointer                             :: init_transfo
+    procedure(t1_get_computational_coords), pointer                 :: get_computational_coords
+    procedure(t1_get_computational_coords_from_physical), pointer   :: get_computational_coords_from_physical
+    procedure(t1_get_physical_coords), pointer                      :: get_physical_coords
+    procedure(t1_DYonDy), pointer                                   :: DYonDy
+    procedure(t1_D2YonDy2), pointer                                 :: D2YonDy2
+
+end module mesh_interface
+
+module mesh_loader
+
+    use mesh_interface
+    use lamballais_transfo
+    use arctan_transfo
+    use mesh
+
+    contains
+
+        subroutine configure_mesh_transfo(mesh_type)
+
+        if (mesh_type==ORLANDI_MESH) then
+            init_transfo                            =>t1_init_transfo
+            get_computational_coords                =>t1_get_computational_coords
+            get_computational_coords_from_physical  =>t1_get_computational_coords_from_physical
+            get_physical_coords                     =>t1_get_physical_coords
+            DYonDy                                  =>t1_DYonDy
+            D2YonDy2                                =>t1_D2YonDy2
+        end if
+
+        if (mesh_type==LAMBALLAIS_MESH) then
+            init_transfo                            =>t2_init_transfo
+            get_computational_coords                =>t2_get_computational_coords
+            get_computational_coords_from_physical  =>t2_get_computational_coords_from_physical
+            get_physical_coords                     =>t2_get_physical_coords
+            DYonDy                                  =>t2_DYonDy
+            D2YonDy2                                =>t2_D2YonDy2
+        end if
+
+        end subroutine configure_mesh_transfo
+
+end module mesh_loader
+
 module mesh_generator
 
     ! Data modules
@@ -315,8 +393,8 @@ module mesh_generator
     use mesh
 
     ! Processing modules
-    use lamballais_transfo
-    use arctan_transfo
+    use mesh_interface
+    use mesh_loader
 
     use decomp_2d
     use mpi
@@ -352,29 +430,6 @@ contains
         real*8, dimension(n2m)      :: y_reg_c
         real*8, dimension(n2)       :: y_reg
 
-
-        procedure(t1_init_transfo), pointer             :: init_transfo
-        procedure(t1_get_computational_coords), pointer :: get_computational_coords
-        procedure(t1_get_physical_coords), pointer      :: get_physical_coords
-        procedure(t1_DYonDy), pointer                   :: DYonDy
-        procedure(t1_D2YonDy2), pointer                 :: D2YonDy2
-
-        if (mesh_type==ORLANDI_MESH) then
-            init_transfo            =>t1_init_transfo
-            get_computational_coords=>t1_get_computational_coords
-            get_physical_coords     =>t1_get_physical_coords
-            DYonDy                  =>t1_DYonDy
-            D2YonDy2                =>t1_D2YonDy2
-        end if
-
-        if (mesh_type==LAMBALLAIS_MESH) then
-            init_transfo            =>t2_init_transfo
-            get_computational_coords=>t2_get_computational_coords
-            get_physical_coords     =>t2_get_physical_coords
-            DYonDy                  =>t2_DYonDy
-            D2YonDy2                =>t2_D2YonDy2
-        end if
-
         allocate(Z(n1))
         allocate(Zc(n1-1))
 
@@ -394,7 +449,10 @@ contains
         dx1=L1/dfloat(n1m)      ! spanwise size of a cell
         dx3=L3/dfloat(n3m)      ! streamwise size of a cell
 
-        call init_transfo(str)
+        if (mesh_type/=NO_TRANSFO_MESH) then
+            call configure_mesh_transfo(mesh_type)
+            call init_transfo(str)
+        endif
 
         ! Point positions in X, Z uniform directions -------------------
         do i=1,n1
@@ -411,24 +469,26 @@ contains
             Xc(k)=X(k+1)-0.5d0*dx3
         enddo
 
-        ! Point positions in Y non-uniform directions ------------------------
-        yeta=get_computational_coords(1.d0*n2, n2)
-        Y(n2)=get_physical_coords(yeta)
+        if (mesh_type/=NO_TRANSFO_MESH) then
 
-        do j=1,n2-1
+            ! Point positions in Y non-uniform directions ------------------------
+            yeta=get_computational_coords(1.d0*n2, n2)
+            Y(n2)=get_physical_coords(yeta)
 
-            yeta=get_computational_coords(1.d0*j, n2)
-            Y(j)=get_physical_coords(yeta)
+            do j=1,n2-1
 
-            yeta=get_computational_coords(j+0.5d0, n2)
-            Yc(j)=get_physical_coords(yeta)
+                yeta=get_computational_coords(1.d0*j, n2)
+                Y(j)=get_physical_coords(yeta)
 
-            if (j>1) cell_size_Y(j-1)=Y(j)-Y(j-1)
-        enddo
+                yeta=get_computational_coords(j+0.5d0, n2)
+                Yc(j)=get_physical_coords(yeta)
 
-        cell_size_Y(n2-1)=Y(n2)-Y(n2-1)
+                if (j>1) cell_size_Y(j-1)=Y(j)-Y(j-1)
+            enddo
 
-        do k = zstart(3), zend(3)
+            cell_size_Y(n2-1)=Y(n2)-Y(n2-1)
+
+            do k = zstart(3), zend(3)
                 do j = zstart(2), zend(2)
                     do i = zstart(1), zend(1)
                         Y_field(i,j,k) = Y(j)
@@ -436,52 +496,90 @@ contains
                 end do
             end do
 
-        !open(1542, file="Y_field", position="append")
-        !do i = 1,n1
-         !   do k = 1,n3
-          !      do j = 1,n2
-           !         Y_field(i,j,k) = Y(j)
-            !        write(1542,*)Y(j)
-             !   end do
+            !open(1542, file="Y_field", position="append")
+            !do i = 1,n1
+             !   do k = 1,n3
+              !      do j = 1,n2
+               !         Y_field(i,j,k) = Y(j)
+                !        write(1542,*)Y(j)
+                 !   end do
+                !end do
             !end do
-        !end do
-        !close(1542)
+            !close(1542)
 
-        ! *************************************************************************
-        ! Defining coefficient for schemes in irregular directions-----------------
-        ! *************************************************************************
+            ! *************************************************************************
+            ! Defining coefficient for schemes in irregular directions-----------------
+            ! *************************************************************************
 
-        ! Y direction--------------------------------------------------------------
-        allocate(Y_to_YTr_for_D1(n2))
-        Y_to_YTr_for_D1=0.d0
-        allocate(Yc_to_YcTr_for_D1(n2-1))
-        Yc_to_YcTr_for_D1=0.d0
+            ! Y direction--------------------------------------------------------------
+            allocate(Y_to_YTr_for_D1(n2))
+            Y_to_YTr_for_D1=0.d0
+            allocate(Yc_to_YcTr_for_D1(n2-1))
+            Yc_to_YcTr_for_D1=0.d0
 
-        allocate(Y_to_YTr_for_D2(n2, 2))
-        Y_to_YTr_for_D2=0.d0
-        allocate(Yc_to_YcTr_for_D2(n2-1, 2))
-        Yc_to_YcTr_for_D2=0.d0
+            allocate(Y_to_YTr_for_D2(n2, 2))
+            Y_to_YTr_for_D2=0.d0
+            allocate(Yc_to_YcTr_for_D2(n2-1, 2))
+            Yc_to_YcTr_for_D2=0.d0
 
-        ! 1st derivative
-        do j = 1, n2
-            Y_to_YTr_for_D1(j)=DYonDy(get_computational_coords(j*1.d0, n2))
-        end do
+            ! 1st derivative
+            do j = 1, n2
+                Y_to_YTr_for_D1(j)=DYonDy(get_computational_coords(j*1.d0, n2))
+            end do
 
-        do j = 1, n2m
-            Yc_to_YcTr_for_D1(j)=DYonDy(get_computational_coords(j+0.5d0, n2))
-        end do
+            do j = 1, n2m
+                Yc_to_YcTr_for_D1(j)=DYonDy(get_computational_coords(j+0.5d0, n2))
+            end do
 
-            ! 2nd derivative
+                ! 2nd derivative
 
-        do j = 2, n2m
-            Y_to_YTr_for_D2(j,1)=D2YonDy2(get_computational_coords(j*1.d0, n2))
-            Y_to_YTr_for_D2(j,2)=Y_to_YTr_for_D1(j)**2
-        end do
+            do j = 2, n2m
+                Y_to_YTr_for_D2(j,1)=D2YonDy2(get_computational_coords(j*1.d0, n2))
+                Y_to_YTr_for_D2(j,2)=Y_to_YTr_for_D1(j)**2
+            end do
 
-        do j = 1, n2m
-            Yc_to_YcTr_for_D2(j,1)=D2YonDy2(get_computational_coords(j+0.5d0, n2))
-            Yc_to_YcTr_for_D2(j,2)=Yc_to_YcTr_for_D1(j)**2
-        end do
+            do j = 1, n2m
+                Yc_to_YcTr_for_D2(j,1)=D2YonDy2(get_computational_coords(j+0.5d0, n2))
+                Yc_to_YcTr_for_D2(j,2)=Yc_to_YcTr_for_D1(j)**2
+            end do
+
+        else
+
+            ! Point positions in Y uniform directions -------------------
+            ! /!\ Caution, here we use half height of the cells in y-direction
+            do j=1,n2
+                ! Y(j)=dfloat(j-1)*dx2
+                Y(j)=dfloat(j-1)*2.d0*dx2
+            enddo
+            do j=1,n2-1
+                ! Yc(j)=Y(j+1)-0.5d0*dx2
+                Yc(j)=Y(j+1)-dx2
+
+                if (j>1) cell_size_Y(j-1)=Y(j)-Y(j-1)
+            enddo
+
+            do k = zstart(3), zend(3)
+                do j = zstart(2), zend(2)
+                    do i = zstart(1), zend(1)
+                        Y_field(i,j,k) = Y(j)
+                    end do
+                end do
+            end do
+
+            allocate(Y_to_YTr_for_D1(n2))
+            Y_to_YTr_for_D1=1.d0
+            allocate(Yc_to_YcTr_for_D1(n2-1))
+            Yc_to_YcTr_for_D1=1.d0
+
+            allocate(Y_to_YTr_for_D2(n2, 2))
+            Y_to_YTr_for_D2(:,1)=0.d0
+            Y_to_YTr_for_D2(:,2)=1.d0
+            allocate(Yc_to_YcTr_for_D2(n2-1, 2))
+            Yc_to_YcTr_for_D2(:,1)=0.d0
+            Yc_to_YcTr_for_D2(:,2)=1.d0
+
+        endif
+
 
         ! Write mesh in Log path ____________________________________________________
 

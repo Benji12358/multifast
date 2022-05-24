@@ -1,7 +1,7 @@
 module object_drawer
     implicit none
 
-    public :: perform_mask, perform_modulation_function, generate_mesh_ibm, get_objet_area, extrapolate_mask_fine_mesh_ibm
+    public :: perform_mask, perform_mask_antisymmetric, generate_mesh_ibm, get_objet_area, extrapolate_mask_fine_mesh_ibm
     private
 
 contains
@@ -372,7 +372,8 @@ contains
 
     subroutine perform_mask(vertex, faces, nb_vertex, nb_faces, mask_field, n1, n2, n2s,n2e,n3, n3s,n3e, X, Y, Z, value, verbose)
         use IBM_data
-        use mesh, only:L1,L2,L3
+        use decomp_2d, only: nrank
+        use mesh, only:L1,L2,L3,dx1,dx3,cell_size_Y
         implicit none
         integer                                     :: n1, n2, n2s,n2e,n3, n3s,n3e, nb_vertex, nb_faces
         real*8, dimension(n1, n2s:n2e,n3s:n3e)      :: mask_field
@@ -381,6 +382,8 @@ contains
         real*8, dimension(:)                        :: X, Y, Z
         real*8                                      :: value
         integer, optional                           :: verbose
+        real*8                                      :: a,b,c
+        real*8                                      :: lx, ly, lz
 
         real*8, dimension(3)                        :: face1, face2, face3, point
         logical :: isInFace=.false.
@@ -393,11 +396,20 @@ contains
         integer     :: i,j,k,f
         integer :: i0, i1, j0, j1, k0, k1, ierr
         real*8  :: tolerance=1.d-13
+        integer :: k_bef, k_aft, j_bef, j_aft
 
         ! mask_field=0.d0
         ! initialized outside of the subroutine to take into account multi object
 
         i0=1; i1=n1; j0=1; j1=n2; k0=1; k1=n3;
+
+        xs = max(0.d0,xs)
+        ys = max(0.d0,ys)
+        zs = max(0.d0,zs)
+
+        xe = min(L1,xe)
+        ye = min(L2,ye)
+        ze = min(L3,ze)
 
         do i = 1, n1
             if (X(i)>=xs) then
@@ -441,26 +453,123 @@ contains
             endif
         end do
 
-        write(*,*)'objet ext:', xs, xe, ys, ye, zs, ze
-        write(*,*)'i', i0,':',i1
-        write(*,*)'j', j0,':',j1
-        write(*,*)'k', k0,':',k1
-        write(*,*)'value', value
+        ! lx = X(i1)-X(i0)
+        ! ly = Y(j1)-Y(j0)
+        ! lz = Z(k1)-Z(k0)
+
+        ! lx = 3*dx1
+        ! ly = cell_size_Y(j1)+cell_size_Y(j1+1)+cell_size_Y(j1+2)
+        ! lz = 3*dx3
+
+        if (nrank.eq.0) then
+            write(*,*)'objet ext:', xs, xe, ys, ye, zs, ze
+            write(*,*)'i', i0,':',i1
+            write(*,*)'j', j0,':',j1
+            write(*,*)'k', k0,':',k1
+            write(*,*)'value', value
+        endif
         call sleep(0)
 
-        ! is=(xs-Ox)/(Lx-Ox)
-
         ibm_volume = ibm_volume + (min(xe,L1) - max(xs,0.d0)) * (min(ye,L2) - max(ys,0.d0)) * (min(ze,L3) - max(zs,0.d0))
+
+        k_aft=k1
+        if (k1.eq.n3) k_aft=1
 
         do i=i0,i1
             do j = n2s, n2e
                 do k = n3s, n3e
 
                     if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field(i,j,k)=1.d0
+                    if ((j.ge.j0).and.(j.le.j1).and.(k.eq.k_aft)) mask_field(i,j,k)=1.d0
 
                 enddo
             enddo
         enddo
+
+
+        ! On first node inside object
+        ! do i=i0,i1
+        !     do j = n2s, n2e
+        !         do k = n3s, n3e
+
+        !             if ((i.eq.i0).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field(i,j,k)=1.d0
+        !             if ((i.eq.i1).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field(i,j,k)=1.d0
+
+        !             if ((j.eq.j0).and.(k.ge.k0).and.(k.le.k1)) mask_field(i,j,k)=1.d0
+        !             if ((j.eq.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field(i,j,k)=1.d0
+
+        !             if ((k.eq.k0).and.(j.ge.j0).and.(j.le.j1)) mask_field(i,j,k)=1.d0
+        !             if ((k.eq.k1).and.(j.ge.j0).and.(j.le.j1)) mask_field(i,j,k)=1.d0
+
+        !         enddo
+        !     enddo
+        ! enddo
+
+        ! do i=i0-1,i1+1
+        !     do j = n2s, n2e
+        !         do k = n3s, n3e
+
+        !             if ((j.ge.(j0-1)).and.(j.le.(j1+1)).and.(k.ge.(k0-1)).and.(k.le.(k1+1))) then
+
+        !                 mask_field(i,j,k)=1.d0
+
+        !                 if ((i.eq.(i0-1))) mask_field(i,j,k)=mask_field(i,j,k) * ( 1 - (-X(i)+xs)/dx1 )
+        !                 if ((i.eq.(i1+1))) mask_field(i,j,k)=mask_field(i,j,k) * ( 1 - (-xe+X(i))/dx1 )
+
+        !                 if ((j.eq.(j0-1))) mask_field(i,j,k)=mask_field(i,j,k) * ( 1 - (-Y(j)+ys)/cell_size_Y(j) )
+        !                 if ((j.eq.(j1+1)).and.(j.le.(n2-1))) mask_field(i,j,k)=mask_field(i,j,k) * ( 1 - (-ye+Y(j))/cell_size_Y(j) )
+
+        !                 ! if ((k.eq.(k_bef))) mask_field(i,j,k)=mask_field(i,j,k) * ( 1 - (-Z(k)+zs)/dx3 )
+        !                 ! if ((k.eq.(k_aft))) mask_field(i,j,k)=mask_field(i,j,k) * ( 1 - (-ze+Z(k))/dx3 )
+
+        !             endif
+
+        !             ! a = smooth_step_function( (X(i)-(xs+dx1-0.25*lx))/(0.25*lx) ) - smooth_step_function( (X(i)-(xe-dx1))/(0.25*lx) )
+        !             ! b = smooth_step_function( (Y(j)-(ys-0.25*ly))/(0.25*ly) ) - smooth_step_function( (Y(j)-ye)/(0.25*ly) )
+        !             ! c = smooth_step_function( (Z(k)-(zs+dx3-0.25*lz))/(0.25*lz) ) - smooth_step_function( (Z(k)-(ze-dx3))/(0.25*lz) )
+
+        !             ! mask_field(i,j,k) = a*b*c
+
+        !             ! endif
+
+        !             ! if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field(i,j,k)=1.d0
+
+        !         enddo
+        !     enddo
+        ! enddo
+
+        ! do i=1,n1
+        !     do j = n2s, n2e
+        !         do k = n3s, n3e
+
+        !             ! if ((j.ge.(j0-1)).and.(j.le.(j1+1)).and.(k.ge.(k0-1)).and.(k.le.(k1+1))) then
+
+        !             !     mask_field(i,j,k)=1.d0
+
+        !             !     if ((i.eq.(i0-1))) mask_field(i,j,k)=mask_field(i,j,k) * ( 1 - (-X(i)+xs)/dx1 )
+        !             !     if ((i.eq.(i1+1))) mask_field(i,j,k)=mask_field(i,j,k) * ( 1 - (-xe+X(i))/dx1 )
+
+        !             !     if ((j.eq.(j0-1))) mask_field(i,j,k)=mask_field(i,j,k) * ( 1 - (-Y(j)+ys)/cell_size_Y(j) )
+        !             !     if ((j.eq.(j1+1)).and.(j.le.(n2-1))) mask_field(i,j,k)=mask_field(i,j,k) * ( 1 - (-ye+Y(j))/cell_size_Y(j) )
+
+        !             !     ! if ((k.eq.(k_bef))) mask_field(i,j,k)=mask_field(i,j,k) * ( 1 - (-Z(k)+zs)/dx3 )
+        !             !     ! if ((k.eq.(k_aft))) mask_field(i,j,k)=mask_field(i,j,k) * ( 1 - (-ze+Z(k))/dx3 )
+
+        !             ! endif
+
+        !             a = smooth_step_function( (X(i)-(xs+dx1-lx))/(lx) ) - smooth_step_function( (X(i)-(xe-dx1))/(lx) )
+        !             b = smooth_step_function( (Y(j)-(ys-ly))/(ly) ) - smooth_step_function( (Y(j)-ye)/(ly) )
+        !             ! c = smooth_step_function( (Z(k)-(zs+dx3-lz))/(lz) ) - smooth_step_function( (Z(k)-(ze-dx3))/(lz) )
+
+        !             mask_field(i,j,k) = a*b!*c
+
+        !             ! endif
+
+        !             ! if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field(i,j,k)=1.d0
+
+        !         enddo
+        !     enddo
+        ! enddo
 
         ! do j = n2s, n2e
         !     do k = n3s, n3e
@@ -580,68 +689,58 @@ contains
         !     end do
         ! end do
 
+        contains
+
+        function smooth_step_function(x) result(y)
+
+            implicit  none
+
+            real*8, intent(in) :: x
+            real*8 :: y
+
+            if (x<=0) then
+
+              y = 0.d0
+
+            elseif (x>=1) then
+
+              y = 1.d0
+
+            else ! 0 < x < 1
+
+              y = 1.d0 / ( 1.d0 + exp(1.d0/(x-1.d0) + 1.d0/x))
+
+            endif
+
+        end function smooth_step_function
+
     end subroutine perform_mask
 
-    subroutine perform_modulation_function(mask_field, n1, n2, n2s,n2e,n3, n3s,n3e, X, Y, Z, L1, L2, L3)
+    subroutine perform_mask_antisymmetric(mask_field, mask_field_bounds, n1, n2, n2s,n2e,n3, n3s,n3e, X, Y, Z)
         use IBM_data
-        use mathematical_constants
-        use mpi
+        use decomp_2d, only: nrank
+        use mesh, only:L1,L2,L3,dx1,dx3,cell_size_Y
         implicit none
         integer                                     :: n1, n2, n2s,n2e,n3, n3s,n3e
-        real*8, dimension(n1, n2s:n2e,n3s:n3e)      :: mask_field
         real*8, dimension(:)                        :: X, Y, Z
-        real*8                                      :: L1, L2, L3
+        real*8, dimension(n1, n2s:n2e,n3s:n3e)      :: mask_field, mask_field_bounds
 
         integer     :: i,j,k,f
+        integer :: i0, i1, j0, j1, k0, k1, ierr
+        integer :: k_bef, k_aft, j_bef, j_aft
 
-        integer :: i0, i1, j0, j1, k0, k1, ierr, mpi_err
-        real*8  :: x_c, y_c, z_c
-        real*8  :: dimension_x, dimension_y, dimension_z
-        real*8  :: f_max, f_max_glob
-
-        if ((xs<0).and.(xe>L1)) then
-            dimension_x = L1
-            x_c = L1/2.d0
-        elseif (xs<0) then
-            dimension_x = xe
-            x_c = xe/2.d0
-        elseif (xe>L1) then
-            dimension_x = L1 - xs
-            x_c = xs + dimension_x/2.d0
-        else
-            dimension_x = (xe - xs)
-            x_c = xs + dimension_x/2.d0
-        endif
-
-        if ((ys<0).and.(ye>L2)) then
-            dimension_y = L2
-            y_c = L2/2.d0
-        elseif (ys<0) then
-            dimension_y = ye
-            y_c = ye/2.d0
-        elseif (ye>L2) then
-            dimension_y = L2 - ys
-            y_c = ys + dimension_y/2.d0
-        else
-            dimension_y = (ye - ys)
-            y_c = ys + dimension_y/2.d0
-        endif
-
-        if ((zs<0).and.(ze>L3)) then
-            dimension_z = L3
-            z_c = L3/2.d0
-        elseif (zs<0) then
-            dimension_z = ze
-            z_c = ze/2.d0
-        elseif (ze>L3) then
-            dimension_z = L3 - zs
-            z_c = zs + dimension_z/2.d0
-        else
-            dimension_z = (ze - zs)
-            z_c = zs + dimension_z/2.d0
-        endif
+        ! mask_field=0.d0
+        ! initialized outside of the subroutine to take into account multi object
 
         i0=1; i1=n1; j0=1; j1=n2; k0=1; k1=n3;
+
+        xs = max(0.d0,xs)
+        ys = max(0.d0,ys)
+        zs = max(0.d0,zs)
+
+        xe = min(L1,xe)
+        ye = min(L2,ye)
+        ze = min(L3,ze)
 
         do i = 1, n1
             if (X(i)>=xs) then
@@ -685,48 +784,253 @@ contains
             endif
         end do
 
-        ! At this stage we have the volumic center of the object,
-        ! the position of the bounds and the indexes of the domain
-        write(*,*)'perform_modulation_function:', x_c, y_c, z_c
-        write(*,*)dimension_x, dimension_y, dimension_z
+        if (nrank.eq.0) then
+            write(*,*)'objet ext:', xs, xe, ys, ye, zs, ze
+            write(*,*)'mesh:', X(i0), X(i1), Y(j0), Y(j1), Z(k0), Z(k1)
+            write(*,*)'i', i0,':',i1
+            write(*,*)'j', j0,':',j1
+            write(*,*)'k', k0,':',k1
+        endif
         call sleep(0)
 
-        mask_field = 0d0
+        ibm_volume = ibm_volume + (min(xe,L1) - max(xs,0.d0)) * (min(ye,L2) - max(ys,0.d0)) * (min(ze,L3) - max(zs,0.d0))
 
+        ! if (k0.eq.1) then
+        !     k_bef=n3-1
+        ! else
+        !     k_bef=k0-1
+        ! endif
+        
+        ! if (k1.ge.(n3-1)) then
+        !     k_aft=1
+        ! else
+        !     k_aft=k1+1
+        ! endif
+
+        k_aft=k1
+        if (k1.eq.n3) k_aft=1
+
+        ! if (nrank.eq.0) write(*,*) 'k_aft', k_aft
+
+        ! ! ASSUMING WALLS IN Y-DIRECTION
+        ! j_bef = j0
+        ! j_aft = j1
+
+        ! if (j0.gt.1) j_bef = j0-1
+        ! if (j0.lt.(n2-1)) j_aft = j1+1
+
+        ! CAUTION, THIS WILL NOT WORK FOR OBJECT PLACED AT THE INFLOW
         do i=i0,i1
             do j = n2s, n2e
                 do k = n3s, n3e
 
-                    if ((j.gt.j0).and.(j.lt.j1).and.(k.gt.k0).and.(k.lt.k1)) then
+                    if ((i.eq.i0).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field(i,j,k)=1.d0
+                    if ((i.eq.i1).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field(i,j,k)=1.d0
 
-                        ! mask_field(i,j,k) = ( 0.5 - abs((X(i)-x_c)) / dimension_x) * & 
-                        ! ( 0.5 - abs((Y(j)-y_c)) / dimension_y) * &
-                        ! ( 0.5 - abs((Z(k)-z_c)) / dimension_z)
+                    if ((j.eq.j0).and.(k.ge.k0).and.(k.le.k1)) mask_field(i,j,k)=1.d0
+                    if ((j.eq.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field(i,j,k)=1.d0
 
-                        mask_field(i,j,k) = (1 - abs((X(i)-x_c)/dimension_x + (Y(j)-y_c)/ dimension_y) - abs((Y(j)-y_c)/ dimension_y - (X(i)-x_c)/dimension_x)) * & 
-                        (1 - abs((Y(j)-y_c)/dimension_y + (Z(k)-z_c)/ dimension_z) - abs((Z(k)-z_c)/ dimension_z - (Y(j)-y_c)/dimension_y)) * &
-                        (1 - abs((Z(k)-z_c)/dimension_z + (X(i)-x_c)/ dimension_x) - abs((X(i)-x_c)/ dimension_x - (Z(k)-z_c)/dimension_z))
+                    if ((k.eq.k0).and.(j.ge.j0).and.(j.le.j1)) mask_field(i,j,k)=1.d0
 
-                    endif
+                    ! if ((k.eq.k1).and.(j.ge.j0).and.(j.le.j1)) mask_field(i,j,k)=1.d0
+                    if ((k.eq.k_aft).and.(j.ge.j0).and.(j.le.j1)) mask_field(i,j,k)=1.d0
 
                 enddo
             enddo
         enddo
 
-        f_max = maxval(mask_field)
+        do i=i0,i1
+            do j = n2s, n2e
+                do k = n3s, n3e
 
-        call MPI_ALLREDUCE (f_max, f_max_glob, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
+                    ! First, fill the object with one extra point in each direction (x and y)
+                    if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field_bounds(i,j,k)=1.d0
 
-        mask_field = mask_field * (f_max_glob - mask_field)
-        ! mask_field = (f_max_glob - mask_field)
+                    ! Then, add what is missing in z direction
+                    ! if ((i.eq.(i0-1)).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field_bounds(i,j,k)=1.d0
+                    ! if ((i.eq.(i1+1)).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field_bounds(i,j,k)=1.d0
+                    ! if ((j.ge.j0).and.(j.le.j1).and.(k.eq.k_bef).and.(i.ge.i0).and.(i.le.i1)) mask_field_bounds(i,j,k)=1.d0
+                    ! if ((j.ge.j0).and.(j.le.j1).and.(k.eq.k_aft).and.(i.ge.i0).and.(i.le.i1)) mask_field_bounds(i,j,k)=1.d0
 
-        f_max = maxval(mask_field)
+                enddo
+            enddo
+        enddo
 
-        call MPI_ALLREDUCE (f_max, f_max_glob, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
+        ! do i=i0-1,i1+1
+        !     do j = n2s, n2e
+        !         do k = n3s, n3e
 
-        mask_field = mask_field / f_max_glob
+        !             ! First, fill the object with one extra point in each direction (x and y)
+        !             ! if ((i.ge.i0).and.(i.le.i1).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field(i,j,k)=1.d0
 
-    end subroutine perform_modulation_function
+        !             ! Then, add what is missing in z direction
+        !             if ((i.eq.(i0-1)).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field_bounds(i,j,k)=1.d0
+        !             if ((i.eq.(i1+1)).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field_bounds(i,j,k)=1.d0
+        !             if ((j.ge.j0).and.(j.le.j1).and.(k.eq.k_bef).and.(i.ge.i0).and.(i.le.i1)) mask_field_bounds(i,j,k)=1.d0
+        !             if ((j.ge.j0).and.(j.le.j1).and.(k.eq.k_aft).and.(i.ge.i0).and.(i.le.i1)) mask_field_bounds(i,j,k)=1.d0
+
+        !         enddo
+        !     enddo
+        ! enddo
+
+        ! if (j0.gt.1) then
+
+        !     do i=i0-1,i1+1
+        !         do j = n2s, n2e
+        !             do k = n3s, n3e
+
+        !                 if ((j.eq.j_bef).and.(k.ge.k0).and.(k.le.k1).and.(i.ge.i0).and.(i.le.i1)) mask_field_bounds(i,j,k)=1.d0
+
+        !             enddo
+        !         enddo
+        !     enddo
+
+        ! endif
+
+        ! if (j0.lt.(n2-1)) then
+
+        !     do i=i0-1,i1+1
+        !         do j = n2s, n2e
+        !             do k = n3s, n3e
+
+        !                 if ((j.eq.j_aft).and.(k.ge.k0).and.(k.le.k1).and.(i.ge.i0).and.(i.le.i1)) mask_field_bounds(i,j,k)=1.d0
+
+        !             enddo
+        !         enddo
+        !     enddo
+
+        ! endif
+
+        if (j0.eq.1) then
+
+            do i=i0+1,i1-1
+                do j = n2s, n2e
+                    do k = n3s, n3e
+
+                        if ((j.eq.j0).and.(k.ge.(k0+1)).and.(k.le.(k1-1))) mask_field(i,j,k)=0.d0
+
+                    enddo
+                enddo
+            enddo
+
+        endif
+
+        if (j1.eq.(n2-1)) then
+
+            do i=i0+1,i1-1
+                do j = n2s, n2e
+                    do k = n3s, n3e
+
+                        if ((j.eq.j1).and.(k.ge.(k0+1)).and.(k.le.(k1-1))) mask_field(i,j,k)=0.d0
+
+                    enddo
+                enddo
+            enddo
+
+        endif
+
+        
+        
+
+        ! do i=i0-1,i1+1
+        !     do j = n2s, n2e
+        !         do k = n3s, n3e
+
+        !             ! First, fill the object with one extra point in each direction (x and y)
+        !             if ((i.ge.i0).and.(i.le.i1).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field(i,j,k)=1.d0
+
+        !             ! Then, add what is missing in z direction
+        !             if ((i.eq.(i0-1)).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field_bounds(i,j,k)=1.d0
+        !             if ((i.eq.(i1+1)).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field_bounds(i,j,k)=1.d0
+        !             if ((j.ge.j0).and.(j.le.j1).and.(k.eq.k_bef).and.(i.ge.i0).and.(i.le.i1)) mask_field_bounds(i,j,k)=1.d0
+        !             if ((j.ge.j0).and.(j.le.j1).and.(k.eq.k_aft).and.(i.ge.i0).and.(i.le.i1)) mask_field_bounds(i,j,k)=1.d0
+
+        !         enddo
+        !     enddo
+        ! enddo
+
+        ! do i=i0,i1
+        !     do j = n2s, n2e
+        !         do k = n3s, n3e
+
+        !             ! in x-direction
+        !             if ((i.eq.i0).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field(i,j,k)=1.d0
+
+        !             if ((i.eq.i1).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field(i,j,k)=1.d0
+
+        !             ! in y-direction
+        !             if ((j.eq.j0).and.(k.ge.k0).and.(k.le.k1)) mask_field(i,j,k)=1.d0
+
+        !             if ((j.eq.j1).and.(k.ge.k0).and.(k.le.k1)) mask_field(i,j,k)=1.d0
+
+        !             ! in z-direction
+        !             if ((k.eq.k0).and.(j.ge.j0).and.(j.le.j1)) mask_field(i,j,k)=1.d0
+
+        !             if ((k.eq.k1).and.(j.ge.j0).and.(j.le.j1)) mask_field(i,j,k)=1.d0
+
+        !         enddo
+        !     enddo
+        ! enddo
+
+        ! do i=i0-1,i1+1
+        !     do j = n2s, n2e
+        !         do k = n3s, n3e
+
+        !             ! in x-direction
+        !             if ((i.eq.(i0-1)).and.(j.ge.(j0-1)).and.(j.le.j1+1).and.(k.ge.k_bef).and.(k.le.k_aft)) mask_field(i,j,k)=1.d0
+        !             if ((i.eq.(i0)).and.(j.ge.(j0-1)).and.(j.le.(j1+1)).and.(k.ge.(k_bef)).and.(k.le.(k_aft))) mask_field(i,j,k)=1.d0
+
+        !             if ((i.eq.(i1+1)).and.(j.ge.(j0-1)).and.(j.le.(j1+1)).and.(k.ge.k_bef).and.(k.le.k_aft)) mask_field(i,j,k)=1.d0
+        !             if ((i.eq.(i1)).and.(j.ge.(j0-1)).and.(j.le.(j1+1)).and.(k.ge.k_bef).and.(k.le.k_aft)) mask_field(i,j,k)=1.d0
+
+        !             ! in y-direction
+        !             if ((j.eq.(j0-1)).and.(k.ge.k_bef).and.(k.le.k_aft)) mask_field(i,j,k)=1.d0
+        !             if ((j.eq.(j0)).and.(k.ge.k_bef).and.(k.le.k_aft)) mask_field(i,j,k)=1.d0
+
+        !             if ((j.eq.(j1+1)).and.(k.ge.k_bef).and.(k.le.k_aft)) mask_field(i,j,k)=1.d0
+        !             if ((j.eq.(j1)).and.(k.ge.k_bef).and.(k.le.k_aft)) mask_field(i,j,k)=1.d0
+
+        !             ! in z-direction
+        !             if ((k.eq.(k_bef)).and.(j.ge.(j0-1)).and.(j.le.(j1+1))) mask_field(i,j,k)=1.d0
+        !             if ((k.eq.(k0)).and.(j.ge.(j0-1)).and.(j.le.(j1+1))) mask_field(i,j,k)=1.d0
+
+        !             if ((k.eq.(k_aft)).and.(j.ge.(j0-1)).and.(j.le.(j1+1))) mask_field(i,j,k)=1.d0
+        !             if ((k.eq.(k1)).and.(j.ge.(j0-1)).and.(j.le.(j1+1))) mask_field(i,j,k)=1.d0
+
+        !         enddo
+        !     enddo
+        ! enddo
+
+        ! do i=i0-1,i1+1
+        !     do j = n2s, n2e
+        !         do k = n3s, n3e
+
+        !             ! remove corners x-z plane
+        !             if ((i.eq.(i0-1)).and.(k.eq.k_bef)) mask_field(i,j,k)=0.d0
+        !             if ((i.eq.(i0-1)).and.(k.eq.k_aft)) mask_field(i,j,k)=0.d0
+
+        !             if ((i.eq.(i1+1)).and.(k.eq.k_bef)) mask_field(i,j,k)=0.d0
+        !             if ((i.eq.(i1+1)).and.(k.eq.k_aft)) mask_field(i,j,k)=0.d0
+
+        !             ! remove corners y-z plane
+        !             if ((j.eq.(j0-1)).and.(k.eq.k_bef)) mask_field(i,j,k)=0.d0
+        !             if ((j.eq.(j0-1)).and.(k.eq.k_aft)) mask_field(i,j,k)=0.d0
+
+        !             if ((j.eq.(j1+1)).and.(k.eq.k_bef)) mask_field(i,j,k)=0.d0
+        !             if ((j.eq.(j1+1)).and.(k.eq.k_aft)) mask_field(i,j,k)=0.d0
+
+        !             ! remove corners x-y plane
+        !             if ((i.eq.(i0-1)).and.(j.eq.(j0-1))) mask_field(i,j,k)=0.d0
+        !             if ((i.eq.(i0-1)).and.(j.eq.(j1+1))) mask_field(i,j,k)=0.d0
+
+        !             if ((i.eq.(i1+1)).and.(j.eq.(j0-1))) mask_field(i,j,k)=0.d0
+        !             if ((i.eq.(i1+1)).and.(j.eq.(j1+1))) mask_field(i,j,k)=0.d0
+
+        !         enddo
+        !     enddo
+        ! enddo
+
+    end subroutine perform_mask_antisymmetric
 
     ! Define all the mesh attributes from the mesh description given by arguments (n1,n2...)
     !   ni : number of point along the i th direction
@@ -948,7 +1252,7 @@ module IBM
 
 contains
 
-    subroutine IBM_setup()
+    subroutine IBM_setup(SCA_state)
         use snapshot_writer
         use object_drawer
         use object_file_reader
@@ -964,6 +1268,8 @@ contains
         real*8  :: X1c(n1), X2c(n2), X3c(n3)
         real*8, dimension(:), allocatable                   :: X1_ibm, X2_ibm, X3_ibm, X1c_ibm, X2c_ibm, X3c_ibm
         integer     :: i,j,k
+        integer     :: i_start, i_end, j_start, j_end, k_start, k_end
+        integer, intent(in) :: SCA_state
         character(200)                  :: snapshot_file
 
         ! ALLOCATE GLOBAL DATA
@@ -1005,6 +1311,23 @@ contains
         k_start_obj_q3=0
         allocate(k_end_obj_q3(number_of_objects))
         k_end_obj_q3=0
+
+        if (SCA_state/=0) then
+
+            allocate(i_start_obj_sca(number_of_objects))
+            i_start_obj_sca=0
+            allocate(i_end_obj_sca(number_of_objects))
+            i_end_obj_sca=0
+            allocate(j_start_obj_sca(number_of_objects))
+            j_start_obj_sca=0
+            allocate(j_end_obj_sca(number_of_objects))
+            j_end_obj_sca=0
+            allocate(k_start_obj_sca(number_of_objects))
+            k_start_obj_sca=0
+            allocate(k_end_obj_sca(number_of_objects))
+            k_end_obj_sca=0
+
+        endif
 
         allocate(xstart_ibm_q1(number_of_objects,3))
         xstart_ibm_q1=0
@@ -1075,6 +1398,130 @@ contains
         allocate(object_in_current_proc_y_q3(number_of_objects))
         allocate(object_in_current_proc_z_q3(number_of_objects))
 
+        if (SCA_state/=0) then
+
+            allocate(xstart_ibm_sca(number_of_objects,3))
+            xstart_ibm_sca=0
+            allocate(xend_ibm_sca(number_of_objects,3))
+            xend_ibm_sca=0
+            allocate(xsize_ibm_sca(number_of_objects,3))
+            xsize_ibm_sca=0
+            allocate(ystart_ibm_sca(number_of_objects,3))
+            ystart_ibm_sca=0
+            allocate(yend_ibm_sca(number_of_objects,3))
+            yend_ibm_sca=0
+            allocate(ysize_ibm_sca(number_of_objects,3))
+            ysize_ibm_sca=0
+            allocate(zstart_ibm_sca(number_of_objects,3))
+            zstart_ibm_sca=0
+            allocate(zend_ibm_sca(number_of_objects,3))
+            zend_ibm_sca=0
+            allocate(zsize_ibm_sca(number_of_objects,3))
+            zsize_ibm_sca=0
+
+            allocate(object_in_current_proc_x_sca(number_of_objects))
+            allocate(object_in_current_proc_y_sca(number_of_objects))
+            allocate(object_in_current_proc_z_sca(number_of_objects))
+
+        endif
+
+        !!!!!! IN OBJECT
+        allocate(xstart_ibm_inobj_q1(number_of_objects,3))
+        xstart_ibm_inobj_q1=0
+        allocate(xend_ibm_inobj_q1(number_of_objects,3))
+        xend_ibm_inobj_q1=0
+        allocate(xsize_ibm_inobj_q1(number_of_objects,3))
+        xsize_ibm_inobj_q1=0
+        allocate(ystart_ibm_inobj_q1(number_of_objects,3))
+        ystart_ibm_inobj_q1=0
+        allocate(yend_ibm_inobj_q1(number_of_objects,3))
+        yend_ibm_inobj_q1=0
+        allocate(ysize_ibm_inobj_q1(number_of_objects,3))
+        ysize_ibm_inobj_q1=0
+        allocate(zstart_ibm_inobj_q1(number_of_objects,3))
+        zstart_ibm_inobj_q1=0
+        allocate(zend_ibm_inobj_q1(number_of_objects,3))
+        zend_ibm_inobj_q1=0
+        allocate(zsize_ibm_inobj_q1(number_of_objects,3))
+        zsize_ibm_inobj_q1=0
+
+        allocate(object_in_current_proc_x_inobj_q1(number_of_objects))
+        allocate(object_in_current_proc_y_inobj_q1(number_of_objects))
+        allocate(object_in_current_proc_z_inobj_q1(number_of_objects))
+
+        allocate(xstart_ibm_inobj_q2(number_of_objects,3))
+        xstart_ibm_inobj_q2=0
+        allocate(xend_ibm_inobj_q2(number_of_objects,3))
+        xend_ibm_inobj_q2=0
+        allocate(xsize_ibm_inobj_q2(number_of_objects,3))
+        xsize_ibm_inobj_q2=0
+        allocate(ystart_ibm_inobj_q2(number_of_objects,3))
+        ystart_ibm_inobj_q2=0
+        allocate(yend_ibm_inobj_q2(number_of_objects,3))
+        yend_ibm_inobj_q2=0
+        allocate(ysize_ibm_inobj_q2(number_of_objects,3))
+        ysize_ibm_inobj_q2=0
+        allocate(zstart_ibm_inobj_q2(number_of_objects,3))
+        zstart_ibm_inobj_q2=0
+        allocate(zend_ibm_inobj_q2(number_of_objects,3))
+        zend_ibm_inobj_q2=0
+        allocate(zsize_ibm_inobj_q2(number_of_objects,3))
+        zsize_ibm_inobj_q2=0
+
+        allocate(object_in_current_proc_x_inobj_q2(number_of_objects))
+        allocate(object_in_current_proc_y_inobj_q2(number_of_objects))
+        allocate(object_in_current_proc_z_inobj_q2(number_of_objects))
+
+        allocate(xstart_ibm_inobj_q3(number_of_objects,3))
+        xstart_ibm_inobj_q3=0
+        allocate(xend_ibm_inobj_q3(number_of_objects,3))
+        xend_ibm_inobj_q3=0
+        allocate(xsize_ibm_inobj_q3(number_of_objects,3))
+        xsize_ibm_inobj_q3=0
+        allocate(ystart_ibm_inobj_q3(number_of_objects,3))
+        ystart_ibm_inobj_q3=0
+        allocate(yend_ibm_inobj_q3(number_of_objects,3))
+        yend_ibm_inobj_q3=0
+        allocate(ysize_ibm_inobj_q3(number_of_objects,3))
+        ysize_ibm_inobj_q3=0
+        allocate(zstart_ibm_inobj_q3(number_of_objects,3))
+        zstart_ibm_inobj_q3=0
+        allocate(zend_ibm_inobj_q3(number_of_objects,3))
+        zend_ibm_inobj_q3=0
+        allocate(zsize_ibm_inobj_q3(number_of_objects,3))
+        zsize_ibm_inobj_q3=0
+
+        allocate(object_in_current_proc_x_inobj_q3(number_of_objects))
+        allocate(object_in_current_proc_y_inobj_q3(number_of_objects))
+        allocate(object_in_current_proc_z_inobj_q3(number_of_objects))
+
+        if (SCA_state/=0) then
+
+            allocate(xstart_ibm_inobj_sca(number_of_objects,3))
+            xstart_ibm_inobj_sca=0
+            allocate(xend_ibm_inobj_sca(number_of_objects,3))
+            xend_ibm_inobj_sca=0
+            allocate(xsize_ibm_inobj_sca(number_of_objects,3))
+            xsize_ibm_inobj_sca=0
+            allocate(ystart_ibm_inobj_sca(number_of_objects,3))
+            ystart_ibm_inobj_sca=0
+            allocate(yend_ibm_inobj_sca(number_of_objects,3))
+            yend_ibm_inobj_sca=0
+            allocate(ysize_ibm_inobj_sca(number_of_objects,3))
+            ysize_ibm_inobj_sca=0
+            allocate(zstart_ibm_inobj_sca(number_of_objects,3))
+            zstart_ibm_inobj_sca=0
+            allocate(zend_ibm_inobj_sca(number_of_objects,3))
+            zend_ibm_inobj_sca=0
+            allocate(zsize_ibm_inobj_sca(number_of_objects,3))
+            zsize_ibm_inobj_sca=0
+
+            allocate(object_in_current_proc_x_inobj_sca(number_of_objects))
+            allocate(object_in_current_proc_y_inobj_sca(number_of_objects))
+            allocate(object_in_current_proc_z_inobj_sca(number_of_objects))
+
+        endif
+
 
         ! In this context, the mesh array must be n1,n2 or n3-array even for the staggered ones
         ! (because of subroutine perform_mask)
@@ -1110,7 +1557,17 @@ contains
         IBM_mask1_x = 0.d0
         IBM_mask2_x = 0.d0
         IBM_mask3_x = 0.d0
+        IBM_maskcc_x = 0.d0
+        IBM_mask_boundscc_x = 0.d0
         ibm_volume = 0.d0
+
+        if (interpol_type==ANTISYMMETRIC_INTERPOL) then
+
+            IBM_mask_bounds1_x = 0.d0
+            IBM_mask_bounds2_x = 0.d0
+            IBM_mask_bounds3_x = 0.d0
+
+        endif
 
         do i=1,number_of_objects
 
@@ -1118,43 +1575,50 @@ contains
             call read_object_size(trim(obj_file_path), nb_vertex, nb_faces)
             call read_object(trim(obj_file_path), vertex, faces, nb_vertex, nb_faces)
 
-            ! Object is positioned according the user requirements
-            ! vertex(:,1)=vertex(:,1)*body_scale_x1(i)+body_x1(i)*L1
-            ! ! Shift in direction 1 with L_y so that it is easier
-            ! ! vertex(:,1)=vertex(:,1)*body_scale_x1+body_x1*2.d0
-            ! vertex(:,2)=vertex(:,2)*body_scale_x2(i)+body_x2(i)*2.d0
-            ! vertex(:,3)=vertex(:,3)*body_scale_x3(i)+body_x3(i)*L3
-
             ! Scale with H
             vertex(:,1)=vertex(:,1)*body_scale_x1(i)+body_x1(i)
-            ! Shift in direction 1 with L_y so that it is easier
-            ! vertex(:,1)=vertex(:,1)*body_scale_x1+body_x1*2.d0
             vertex(:,2)=vertex(:,2)*body_scale_x2(i)+body_x2(i)
             vertex(:,3)=vertex(:,3)*body_scale_x3(i)+body_x3(i)
 
-            ! ! Shift in directions with H so that it is easier
-            ! vertex(:,1)=vertex(:,1)*body_scale_x1(i)+body_x1(i)*1.d0
-            ! vertex(:,2)=vertex(:,2)*body_scale_x2(i)+body_x2(i)*1.d0
-            ! vertex(:,3)=vertex(:,3)*body_scale_x3(i)+body_x3(i)*1.d0
-
             call get_objet_area(vertex, nb_vertex)
 
-            ! PERFORMING THE MASK
-            call perform_mask(vertex, faces, nb_vertex, nb_faces, IBM_mask1_x, n1, &
-            n2,xstart(2),xend(2), n3,xstart(3),xend(3), X1, X2c, X3c, 1.d0)
+            if (interpol_type/=ANTISYMMETRIC_INTERPOL) then
 
-            call perform_mask(vertex, faces, nb_vertex, nb_faces, IBM_mask2_x, n1, &
-            n2,xstart(2),xend(2), n3,xstart(3),xend(3), X1c, X2, X3c, 1.d0)
+                ! PERFORMING THE MASK
+                call perform_mask(vertex, faces, nb_vertex, nb_faces, IBM_mask1_x, n1, &
+                n2,xstart(2),xend(2), n3,xstart(3),xend(3), X1, X2c, X3c, 1.d0)
 
-            call perform_mask(vertex, faces, nb_vertex, nb_faces, IBM_mask3_x, n1, &
-            n2,xstart(2),xend(2), n3,xstart(3),xend(3), X1c, X2c, X3, 1.d0)
+                call perform_mask(vertex, faces, nb_vertex, nb_faces, IBM_mask2_x, n1, &
+                n2,xstart(2),xend(2), n3,xstart(3),xend(3), X1c, X2, X3c, 1.d0)
 
-            call perform_mask(vertex, faces, nb_vertex, nb_faces, IBM_maskcc_x, n1, &
-            n2,xstart(2),xend(2), n3,xstart(3),xend(3), X1c, X2c, X3c, 1.d0)
+                call perform_mask(vertex, faces, nb_vertex, nb_faces, IBM_mask3_x, n1, &
+                n2,xstart(2),xend(2), n3,xstart(3),xend(3), X1c, X2c, X3, 1.d0)
+
+                call perform_mask_antisymmetric(IBM_maskcc_x, IBM_mask_boundscc_x, n1, &
+                n2,xstart(2),xend(2), n3,xstart(3),xend(3), X1c, X2c, X3c)
+
+            else
+
+                ! PERFORMING THE MASK
+                call perform_mask_antisymmetric(IBM_mask1_x, IBM_mask_bounds1_x, n1, &
+                n2,xstart(2),xend(2), n3,xstart(3),xend(3), X1, X2c, X3c)
+
+                call perform_mask_antisymmetric(IBM_mask2_x, IBM_mask_bounds2_x, n1, &
+                n2,xstart(2),xend(2), n3,xstart(3),xend(3), X1c, X2, X3c)
+
+                call perform_mask_antisymmetric(IBM_mask3_x, IBM_mask_bounds3_x, n1, &
+                n2,xstart(2),xend(2), n3,xstart(3),xend(3), X1c, X2c, X3)
+
+                call perform_mask_antisymmetric(IBM_maskcc_x, IBM_mask_boundscc_x, n1, &
+                n2,xstart(2),xend(2), n3,xstart(3),xend(3), X1c, X2c, X3c)
+
+            endif
 
             call get_ijk_IBM(X1, X2c, X3c,i_start_obj_q1(i),i_end_obj_q1(i),j_start_obj_q1(i),j_end_obj_q1(i),k_start_obj_q1(i),k_end_obj_q1(i))
             call get_ijk_IBM(X1c, X2, X3c,i_start_obj_q2(i),i_end_obj_q2(i),j_start_obj_q2(i),j_end_obj_q2(i),k_start_obj_q2(i),k_end_obj_q2(i))
             call get_ijk_IBM(X1c, X2c, X3,i_start_obj_q3(i),i_end_obj_q3(i),j_start_obj_q3(i),j_end_obj_q3(i),k_start_obj_q3(i),k_end_obj_q3(i))
+
+            if (SCA_state/=0) call get_ijk_IBM(X1c, X2c, X3c,i_start_obj_sca(i),i_end_obj_sca(i),j_start_obj_sca(i),j_end_obj_sca(i),k_start_obj_sca(i),k_end_obj_sca(i))
 
             call decomp_objet_among_procs(xstart_ibm_q1(i,:), xend_ibm_q1(i,:), &
                                       ystart_ibm_q1(i,:), yend_ibm_q1(i,:), &
@@ -1192,7 +1656,163 @@ contains
                                       k_start_obj_q3(i), k_end_obj_q3(i), &
                                       object_in_current_proc_x_q3(i), object_in_current_proc_y_q3(i), object_in_current_proc_z_q3(i))
 
+            if (SCA_state/=0) then
+                call decomp_objet_among_procs(xstart_ibm_sca(i,:), xend_ibm_sca(i,:), &
+                                          ystart_ibm_sca(i,:), yend_ibm_sca(i,:), &
+                                          zstart_ibm_sca(i,:), zend_ibm_sca(i,:), &
+                                          xsize_ibm_sca(i,:), ysize_ibm_sca(i,:), zsize_ibm_sca(i,:), &
+                                          xstart, xend, &
+                                          ystart, yend, &
+                                          zstart, zend, &
+                                          i_start_obj_sca(i), i_end_obj_sca(i), &
+                                          j_start_obj_sca(i), j_end_obj_sca(i), &
+                                          k_start_obj_sca(i), k_end_obj_sca(i), &
+                                          object_in_current_proc_x_sca(i), object_in_current_proc_y_sca(i), object_in_current_proc_z_sca(i))
+            endif
+
+            ! decomp in object
+            i_start = i_start_obj_q1(i)-1
+            i_end = i_end_obj_q1(i)+1
+            j_start = j_start_obj_q1(i)-1
+            j_end = j_end_obj_q1(i)+1
+            k_start = k_start_obj_q1(i)-1
+            k_end = k_end_obj_q1(i)+1
+
+            if ((i_start.lt.1).or.(i_end.ge.n1)) then
+                i_start=1
+                i_end=n1
+            endif
+            if ((j_start.lt.1).or.(j_end.ge.n2)) then
+                j_start=1
+                j_end=n2
+            endif
+            if ((k_start.lt.1).or.(k_end.ge.n3)) then
+                k_start=1
+                k_end=n3
+            endif
+
+            call decomp_objet_among_procs(xstart_ibm_inobj_q1(i,:), xend_ibm_inobj_q1(i,:), &
+                                      ystart_ibm_inobj_q1(i,:), yend_ibm_inobj_q1(i,:), &
+                                      zstart_ibm_inobj_q1(i,:), zend_ibm_inobj_q1(i,:), &
+                                      xsize_ibm_inobj_q1(i,:), ysize_ibm_inobj_q1(i,:), zsize_ibm_inobj_q1(i,:), &
+                                      xstart, xend, &
+                                      ystart, yend, &
+                                      zstart, zend, &
+                                      i_start, i_end, &
+                                      j_start, j_end, &
+                                      k_start, k_end, &
+                                      object_in_current_proc_x_inobj_q1(i), object_in_current_proc_y_inobj_q1(i), object_in_current_proc_z_inobj_q1(i))
+
+            i_start = i_start_obj_q2(i)-1
+            i_end = i_end_obj_q2(i)+1
+            j_start = j_start_obj_q2(i)-1
+            j_end = j_end_obj_q2(i)+1
+            k_start = k_start_obj_q2(i)-1
+            k_end = k_end_obj_q2(i)+1
+
+            if ((i_start.lt.1).or.(i_end.ge.n1)) then
+                i_start=1
+                i_end=n1
+            endif
+            if ((j_start.lt.1).or.(j_end.ge.n2)) then
+                j_start=1
+                j_end=n2
+            endif
+            if ((k_start.lt.1).or.(k_end.ge.n3)) then
+                k_start=1
+                k_end=n3
+            endif
+
+            call decomp_objet_among_procs(xstart_ibm_inobj_q2(i,:), xend_ibm_inobj_q2(i,:), &
+                                      ystart_ibm_inobj_q2(i,:), yend_ibm_inobj_q2(i,:), &
+                                      zstart_ibm_inobj_q2(i,:), zend_ibm_inobj_q2(i,:), &
+                                      xsize_ibm_inobj_q2(i,:), ysize_ibm_inobj_q2(i,:), zsize_ibm_inobj_q2(i,:), &
+                                      xstart, xend, &
+                                      ystart, yend, &
+                                      zstart, zend, &
+                                      i_start, i_end, &
+                                      j_start, j_end, &
+                                      k_start, k_end, &
+                                      object_in_current_proc_x_inobj_q2(i), object_in_current_proc_y_inobj_q2(i), object_in_current_proc_z_inobj_q2(i))
+
+            i_start = i_start_obj_q3(i)-1
+            i_end = i_end_obj_q3(i)+1
+            j_start = j_start_obj_q3(i)-1
+            j_end = j_end_obj_q3(i)+1
+            k_start = k_start_obj_q3(i)-1
+            k_end = k_end_obj_q3(i)+1
+
+            if ((i_start.lt.1).or.(i_end.ge.n1)) then
+                i_start=1
+                i_end=n1
+            endif
+            if ((j_start.lt.1).or.(j_end.ge.n2)) then
+                j_start=1
+                j_end=n2
+            endif
+            if ((k_start.lt.1).or.(k_end.ge.n3)) then
+                k_start=1
+                k_end=n3
+            endif
+
+            call decomp_objet_among_procs(xstart_ibm_inobj_q3(i,:), xend_ibm_inobj_q3(i,:), &
+                                      ystart_ibm_inobj_q3(i,:), yend_ibm_inobj_q3(i,:), &
+                                      zstart_ibm_inobj_q3(i,:), zend_ibm_inobj_q3(i,:), &
+                                      xsize_ibm_inobj_q3(i,:), ysize_ibm_inobj_q3(i,:), zsize_ibm_inobj_q3(i,:), &
+                                      xstart, xend, &
+                                      ystart, yend, &
+                                      zstart, zend, &
+                                      i_start, i_end, &
+                                      j_start, j_end, &
+                                      k_start, k_end, &
+                                      object_in_current_proc_x_inobj_q3(i), object_in_current_proc_y_inobj_q3(i), object_in_current_proc_z_inobj_q3(i))
+
+            ! if (SCA_state/=0) then
+            !     call decomp_objet_among_procs(xstart_ibm_inobj_sca(i,:), xend_ibm_inobj_sca(i,:), &
+            !                               ystart_ibm_inobj_sca(i,:), yend_ibm_inobj_sca(i,:), &
+            !                               zstart_ibm_inobj_sca(i,:), zend_ibm_inobj_sca(i,:), &
+            !                               xsize_ibm_inobj_sca(i,:), ysize_ibm_inobj_sca(i,:), zsize_ibm_inobj_sca(i,:), &
+            !                               xstart, xend, &
+            !                               ystart, yend, &
+            !                               zstart, zend, &
+            !                               i_start_obj_sca(i)-1, i_end_obj_sca(i)+1, &
+            !                               j_start_obj_sca(i)-1, j_end_obj_sca(i)+1, &
+            !                               k_start_obj_sca(i)-1, k_end_obj_sca(i)+1, &
+            !                               object_in_current_proc_x_inobj_sca(i), object_in_current_proc_y_inobj_sca(i), object_in_current_proc_z_inobj_sca(i))
+            ! endif
+
         enddo
+
+        ! if ((object_in_current_proc_z_inobj_q1(2)).or.(object_in_current_proc_y_inobj_q1(2)).or.(object_in_current_proc_x_inobj_q1(2))) then
+        !     write(*,*) 'for q1'
+        !     write(*,*) 'xstart_ibm_inobj_q1', xstart_ibm_inobj_q1
+        !     write(*,*) 'xend_ibm_inobj_q1', xend_ibm_inobj_q1
+        !     write(*,*) 'ystart_ibm_inobj_q1', ystart_ibm_inobj_q1
+        !     write(*,*) 'yend_ibm_inobj_q1', yend_ibm_inobj_q1
+        !     write(*,*) 'zstart_ibm_inobj_q1', zstart_ibm_inobj_q1
+        !     write(*,*) 'zend_ibm_inobj_q1', zend_ibm_inobj_q1
+        ! endif
+
+        ! if ((object_in_current_proc_z_inobj_q2(2)).or.(object_in_current_proc_y_inobj_q2(2)).or.(object_in_current_proc_x_inobj_q2(2))) then
+        !     write(*,*) 'for q1'
+        !     write(*,*) 'xstart_ibm_inobj_q2', xstart_ibm_inobj_q2
+        !     write(*,*) 'xend_ibm_inobj_q2', xend_ibm_inobj_q2
+        !     write(*,*) 'ystart_ibm_inobj_q2', ystart_ibm_inobj_q2
+        !     write(*,*) 'yend_ibm_inobj_q2', yend_ibm_inobj_q2
+        !     write(*,*) 'zstart_ibm_inobj_q2', zstart_ibm_inobj_q2
+        !     write(*,*) 'zend_ibm_inobj_q2', zend_ibm_inobj_q2
+        ! endif
+
+        ! if ((object_in_current_proc_z_inobj_q3(2)).or.(object_in_current_proc_y_inobj_q3(2)).or.(object_in_current_proc_x_inobj_q3(2))) then
+        !     write(*,*) 'for q1'
+        !     write(*,*) 'xstart_ibm_inobj_q3', xstart_ibm_inobj_q3
+        !     write(*,*) 'xend_ibm_inobj_q3', xend_ibm_inobj_q3
+        !     write(*,*) 'ystart_ibm_inobj_q3', ystart_ibm_inobj_q3
+        !     write(*,*) 'yend_ibm_inobj_q3', yend_ibm_inobj_q3
+        !     write(*,*) 'zstart_ibm_inobj_q3', zstart_ibm_inobj_q3
+        !     write(*,*) 'zend_ibm_inobj_q3', zend_ibm_inobj_q3
+        ! endif
+
 
         if (maxval(IBM_mask1_x).gt.1) call exit
         if (maxval(IBM_mask2_x).gt.1) call exit
@@ -1217,16 +1837,35 @@ contains
         endif
 
         call transpose_x_to_y(IBM_maskcc_x,IBM_maskcc_y)
+        call transpose_x_to_y(IBM_mask_boundscc_x,IBM_mask_boundscc_y)
+        call transpose_y_to_z(IBM_mask_boundscc_y,IBM_mask_boundscc_z)
+
+        if (interpol_type==ANTISYMMETRIC_INTERPOL) then
+            allocate(IBM_mask2_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+            IBM_mask2_y=0
+
+            allocate(IBM_mask3_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
+            IBM_mask3_y=0
+            allocate(IBM_mask3_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+            IBM_mask3_z=0
+
+            call transpose_x_to_y(IBM_mask2_x,IBM_mask2_y)
+
+            call transpose_x_to_y(IBM_mask3_x,IBM_mask3_y)
+            call transpose_y_to_z(IBM_mask3_y,IBM_mask3_z)
+        endif
 
         ! FOR DEBUGGING, export the mask array in snapshot directory
         call create_stretch_snapshot(COMMON_snapshot_path, "IBM", IBM_mask1_x, "mask1", 1, X1,X2c,X3c)
         call create_stretch_snapshot(COMMON_snapshot_path, "IBM", IBM_mask2_x, "mask2", 1, X1c,X2,X3c)
         call create_stretch_snapshot(COMMON_snapshot_path, "IBM", IBM_mask3_x, "mask3", 1, X1c,X2c,X3)
+        call create_stretch_snapshot(COMMON_snapshot_path, "IBM", IBM_maskcc_x, "IBM_maskcc_x", 1, X1c,X2c,X3c)
+        call create_stretch_snapshot(COMMON_snapshot_path, "IBM", IBM_mask_boundscc_x, "IBM_mask_boundscc_x", 1, X1c,X2c,X3c)
 
-        if (interpol_type == ANTISYMMETRIC_INTERPOL) then
-            call create_stretch_snapshot(COMMON_snapshot_path, "IBM", IBM_modulation_x, "modulation1", 1, X1,X2c,X3c)
-            call create_stretch_snapshot(COMMON_snapshot_path, "IBM", IBM_modulation_y, "modulation2", 1, X1c,X2,X3c)
-            call create_stretch_snapshot(COMMON_snapshot_path, "IBM", IBM_modulation_z, "modulation3", 1, X1c,X2c,X3)
+        if (interpol_type==ANTISYMMETRIC_INTERPOL) then
+            call create_stretch_snapshot(COMMON_snapshot_path, "IBM", IBM_mask_bounds1_x, "mask_bounds1", 1, X1,X2c,X3c)
+            call create_stretch_snapshot(COMMON_snapshot_path, "IBM", IBM_mask_bounds1_x, "mask_bounds2", 1, X1c,X2,X3c)
+            call create_stretch_snapshot(COMMON_snapshot_path, "IBM", IBM_mask_bounds1_x, "mask_bounds3", 1, X1c,X2c,X3)
         endif
 
         ! if (streamwise==3) then
@@ -2063,14 +2702,19 @@ contains
         use mesh
         use snapshot_writer
         use COMMON_workspace_view
+        use object_drawer
+        use object_file_reader
 
         implicit none
         integer, dimension(3), intent(in)           :: sz
-        real*8, dimension(:,:,:), intent(in)        :: q1,q2,q3
-        real*8, dimension(:,:,:), intent(out)       :: vel_term1, vel_term2, vel_term3
+        real*8, dimension(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)), intent(in)        :: q1,q2,q3
+        real*8, dimension(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)), intent(out)       :: vel_term1, vel_term2, vel_term3
         real*8  :: X1(n1), X2(n2), X3(n3)
         real*8  :: X1c(n1), X2c(n2), X3c(n3)
-        integer     :: i,j,k
+        integer     :: i,j,k,n
+        real*8, dimension(:,:), allocatable                 :: vertex
+        integer, dimension(:,:), allocatable                :: faces
+        integer                                             :: nb_faces, nb_vertex
 
         ! Z => X
         ! Y => Y
@@ -2109,21 +2753,73 @@ contains
         vel_term2 = 0.d0
         vel_term3 = 0.d0
 
-        call antisymmetric_interpol(vel_term1, IBM_modulation_x, q1, n1, n2, n3, X1, X2c, X3c, .true., .true., .true.)
+        do n=1,number_of_objects
 
-        call antisymmetric_interpol(vel_term2, IBM_modulation_y, q2, n1, n2, n3, X1c, X2, X3c, .true., .true., .true.)
+            ! READING OBJECT FILE
+            call read_object_size(trim(obj_file_path), nb_vertex, nb_faces)
+            call read_object(trim(obj_file_path), vertex, faces, nb_vertex, nb_faces)
 
-        call antisymmetric_interpol(vel_term3, IBM_modulation_z, q3, n1, n2, n3, X1c, X2c, X3, .true., .true., .true.)
+            ! Scale with H
+            vertex(:,1)=vertex(:,1)*body_scale_x1(n)+body_x1(n)
+            vertex(:,2)=vertex(:,2)*body_scale_x2(n)+body_x2(n)
+            vertex(:,3)=vertex(:,3)*body_scale_x3(n)+body_x3(n)
+
+            call get_objet_area(vertex, nb_vertex)
+
+            xs = max(0.d0,xs)
+            xe = min(L1,xe)
+            ys = max(0.d0,ys)
+            ye = min(L2,ye)
+            zs = max(0.d0,zs)
+            ze = min(L3,ze)
+
+            ! call antisymmetric_interpol_kim_choin_old(vel_term3, q3, n1, n2, n3, X1c, X2c, X3, & 
+            !     i_start_obj_q3(n),i_end_obj_q3(n),j_start_obj_q3(n),j_end_obj_q3(n),k_start_obj_q3(n),k_end_obj_q3(n), &
+            !     xstart_ibm_q3(n,:), xend_ibm_q3(n,:), ystart_ibm_q3(n,:), yend_ibm_q3(n,:), zstart_ibm_q3(n,:), zend_ibm_q3(n,:), &
+            !     object_in_current_proc_x_q3(n), object_in_current_proc_y_q3(n), object_in_current_proc_z_q3(n), &
+            !     xstart_ibm_inobj_q3(n,:), xend_ibm_inobj_q3(n,:), ystart_ibm_inobj_q3(n,:), yend_ibm_inobj_q3(n,:), zstart_ibm_inobj_q3(n,:), zend_ibm_inobj_q3(n,:), &
+            !     object_in_current_proc_x_inobj_q3(n), object_in_current_proc_y_inobj_q3(n), object_in_current_proc_z_inobj_q3(n))
+
+            ! call antisymmetric_interpol_kim_choin_old(vel_term2, q2, n1, n2, n3, X1c, X2, X3c, & 
+            !     i_start_obj_q2(n),i_end_obj_q2(n),j_start_obj_q2(n),j_end_obj_q2(n),k_start_obj_q2(n),k_end_obj_q2(n), &
+            !     xstart_ibm_q2(n,:), xend_ibm_q2(n,:), ystart_ibm_q2(n,:), yend_ibm_q2(n,:), zstart_ibm_q2(n,:), zend_ibm_q2(n,:), &
+            !     object_in_current_proc_x_q2(n), object_in_current_proc_y_q2(n), object_in_current_proc_z_q2(n), &
+            !     xstart_ibm_inobj_q2(n,:), xend_ibm_inobj_q2(n,:), ystart_ibm_inobj_q2(n,:), yend_ibm_inobj_q2(n,:), zstart_ibm_inobj_q2(n,:), zend_ibm_inobj_q2(n,:), &
+            !     object_in_current_proc_x_inobj_q2(n), object_in_current_proc_y_inobj_q2(n), object_in_current_proc_z_inobj_q2(n))
+
+            ! call antisymmetric_interpol_kim_choin_old(vel_term1, q1, n1, n2, n3, X1, X2c, X3c, & 
+            !     i_start_obj_q1(n),i_end_obj_q1(n),j_start_obj_q1(n),j_end_obj_q1(n),k_start_obj_q1(n),k_end_obj_q1(n), &
+            !     xstart_ibm_q1(n,:), xend_ibm_q1(n,:), ystart_ibm_q1(n,:), yend_ibm_q1(n,:), zstart_ibm_q1(n,:), zend_ibm_q1(n,:), &
+            !     object_in_current_proc_x_q1(n), object_in_current_proc_y_q1(n), object_in_current_proc_z_q1(n), &
+            !     xstart_ibm_inobj_q1(n,:), xend_ibm_inobj_q1(n,:), ystart_ibm_inobj_q1(n,:), yend_ibm_inobj_q1(n,:), zstart_ibm_inobj_q1(n,:), zend_ibm_inobj_q1(n,:), &
+            !     object_in_current_proc_x_inobj_q1(n), object_in_current_proc_y_inobj_q1(n), object_in_current_proc_z_inobj_q1(n))
+
+            call antisymmetric_interpol_kim_choin(vel_term3, q3, n1, n2, n3, X1c, .true., X3, & 
+                i_start_obj_q3(n),i_end_obj_q3(n),j_start_obj_q3(n),j_end_obj_q3(n),k_start_obj_q3(n),k_end_obj_q3(n), &
+                xstart_ibm_q3(n,:), xend_ibm_q3(n,:), ystart_ibm_q3(n,:), yend_ibm_q3(n,:), zstart_ibm_q3(n,:), zend_ibm_q3(n,:), &
+                object_in_current_proc_x_q3(n), object_in_current_proc_y_q3(n), object_in_current_proc_z_q3(n))
+
+            call antisymmetric_interpol_kim_choin(vel_term2, q2, n1, n2, n3, X1c, .false., X3c, & 
+                i_start_obj_q2(n),i_end_obj_q2(n),j_start_obj_q2(n),j_end_obj_q2(n),k_start_obj_q2(n),k_end_obj_q2(n), &
+                xstart_ibm_q2(n,:), xend_ibm_q2(n,:), ystart_ibm_q2(n,:), yend_ibm_q2(n,:), zstart_ibm_q2(n,:), zend_ibm_q2(n,:), &
+                object_in_current_proc_x_q2(n), object_in_current_proc_y_q2(n), object_in_current_proc_z_q2(n))
+
+            call antisymmetric_interpol_kim_choin(vel_term1, q1, n1, n2, n3, X1, .true., X3c, & 
+                i_start_obj_q1(n),i_end_obj_q1(n),j_start_obj_q1(n),j_end_obj_q1(n),k_start_obj_q1(n),k_end_obj_q1(n), &
+                xstart_ibm_q1(n,:), xend_ibm_q1(n,:), ystart_ibm_q1(n,:), yend_ibm_q1(n,:), zstart_ibm_q1(n,:), zend_ibm_q1(n,:), &
+                object_in_current_proc_x_q1(n), object_in_current_proc_y_q1(n), object_in_current_proc_z_q1(n))
+
+        enddo
 
 
-        call create_stretch_snapshot(COMMON_snapshot_path, "IBM", vel_term1, "vel_term1", 1, X1,X2c,X3c)
-        call create_stretch_snapshot(COMMON_snapshot_path, "IBM", vel_term2, "vel_term2", 1, X1c,X2,X3c)
-        call create_stretch_snapshot(COMMON_snapshot_path, "IBM", vel_term3, "vel_term3", 1, X1c,X2c,X3)
+        ! call create_stretch_snapshot(COMMON_snapshot_path, "IBM", vel_term1, "vel_term1", 1, X1,X2c,X3c)
+        ! call create_stretch_snapshot(COMMON_snapshot_path, "IBM", vel_term2, "vel_term2", 1, X1c,X2,X3c)
+        ! call create_stretch_snapshot(COMMON_snapshot_path, "IBM", vel_term3, "vel_term3", 1, X1c,X2c,X3)
 
 
-        do k=1, sz(3)
-            do j=1, sz(2)
-                do i=1, sz(1)
+        do k=xstart(3), xend(3)
+            do j=xstart(2), xend(2)
+                do i=xstart(1), xend(1)
 
                     vel_term1(i,j,k) = ( vel_term1(i,j,k) - q1(i,j,k) )  !* solid_cell(j,k)
                     vel_term2(i,j,k) = ( vel_term2(i,j,k) - q2(i,j,k) )  !* solid_cell(j,k)
@@ -2133,365 +2829,3503 @@ contains
             enddo
         enddo
 
+        ! call create_stretch_snapshot(COMMON_snapshot_path, "IBM", vel_term1, "vel_term1_aft", 1, X1,X2c,X3c)
+        ! call create_stretch_snapshot(COMMON_snapshot_path, "IBM", vel_term2, "vel_term2_aft", 1, X1c,X2,X3c)
+        ! call create_stretch_snapshot(COMMON_snapshot_path, "IBM", vel_term3, "vel_term3_aft", 1, X1c,X2c,X3)
+
         contains
 
-            subroutine antisymmetric_interpol(vel_term, IBM_modulation, q, n1, n2, n3, X, Y, Z, ax, ay, az) !vel_term correspond au terme (V^(n+1) - u^n )/dt
+            subroutine antisymmetric_interpol(vel_term, q, n1, n2, n3, X, Y, Z, &
+                i0, i1, j0, j1, k0, k1, &
+                xstart_ibm, xend_ibm, ystart_ibm, yend_ibm, zstart_ibm, zend_ibm, &
+                object_in_proc_x, object_in_proc_y, object_in_proc_z, &
+                xstart_ibm_inobj, xend_ibm_inobj, ystart_ibm_inobj, yend_ibm_inobj, zstart_ibm_inobj, zend_ibm_inobj, &
+                object_in_proc_x_inobj, object_in_proc_y_inobj, object_in_proc_z_inobj) !vel_term correspond au terme (V^(n+1) - u^n )/dt
                 use mpi
+                use mesh, only: L3
 
                 implicit none
                 integer                                                         :: i,j,k
                 integer                                                         :: n1, n2, n3
-                real*8, dimension(n1, xstart(2):xend(2), xstart(3):xend(3))     :: IBM_modulation, q, vel_term
-                real*8, dimension(ystart(1):yend(1), n2, ystart(3):yend(3))     :: q_y
-                real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), n3)     :: q_z
-                ! real*8, dimension(:,:,:), allocatable                           :: q_buffer
-                real*8                                                          :: x_c, y_c, z_c
-                real*8                                                          :: dimension_x, dimension_y, dimension_z
-                real*8, dimension(:)                                            :: X, Y, Z
-                integer                                                         :: i0, i1, j0, j1, k0, k1, mpi_err
-                real*8, dimension(:,:,:), allocatable                           :: velocity_x, velocity_y, velocity_z, velocity_y_x, velocity_z_x
-                real*8, dimension(:,:,:), allocatable                           :: corresponding_i_x, corresponding_i_y, corresponding_i_z
-                real*8, dimension(:,:,:), allocatable                           :: corresponding_j_x, corresponding_j_y, corresponding_j_z
-                real*8, dimension(:,:,:), allocatable                           :: corresponding_k_x, corresponding_k_y, corresponding_k_z
-                real*8, dimension(:,:,:), allocatable                           :: denom_x, denom_y, denom_z
-                logical                                                         :: extrapolate
-                logical                                                         :: ax, ay, az
-                ! integer                                                         :: size_q_buffer, size_q, errclass, resultlen
-                ! integer, dimension(3)                                           :: displs, recv_buffer
-                ! character(200)                  :: err_buffer
-
-                i0=1; i1=n1; j0=1; j1=n2; k0=1; k1=n3;
-
-                do i = 1, n1
-                    if (X(i)>=xs) then
-                        i0=i
-                        exit
-                    endif
-                end do
-
-                do i = n1, 1, -1
-                    if (X(i)<=xe) then
-                        i1=i
-                        exit
-                    endif
-                end do
-
-                do j = 1, n2
-                    if (Y(j)>=ys) then
-                        j0=j
-                        exit
-                    endif
-                end do
-
-                do j = n2, 1, -1
-                    if (Y(j)<=ye) then
-                        j1=j
-                        exit
-                    endif
-                end do
-
-                do k = 1, n3
-                    if (Z(k)>=zs) then
-                        k0=k
-                        exit
-                    endif
-                end do
-
-                do k = n3, 1, -1
-                    if (Z(k)<=ze) then
-                        k1=k
-                        exit
-                    endif
-                end do
-
-                if ((xs<0).and.(xe>L1)) then
-                    dimension_x = L1
-                    x_c = L1/2.d0
-                elseif (xs<0) then
-                    dimension_x = xe
-                    x_c = xe/2.d0
-                elseif (xe>L1) then
-                    dimension_x = L1 - xs
-                    x_c = xs + dimension_x/2.d0
-                else
-                    dimension_x = (xe - xs)
-                    x_c = xs + dimension_x/2.d0
-                endif
-
-                if ((ys<0).and.(ye>L2)) then
-                    dimension_y = L2
-                    y_c = L2/2.d0
-                elseif (ys<0) then
-                    dimension_y = ye
-                    y_c = ye/2.d0
-                elseif (ye>L2) then
-                    dimension_y = L2 - ys
-                    y_c = ys + dimension_y/2.d0
-                else
-                    dimension_y = (ye - ys)
-                    y_c = ys + dimension_y/2.d0
-                endif
-
-                if ((zs<0).and.(ze>L3)) then
-                    dimension_z = L3
-                    z_c = L3/2.d0
-                elseif (zs<0) then
-                    dimension_z = ze
-                    z_c = ze/2.d0
-                elseif (ze>L3) then
-                    dimension_z = L3 - zs
-                    z_c = zs + dimension_z/2.d0
-                else
-                    dimension_z = (ze - zs)
-                    z_c = zs + dimension_z/2.d0
-                endif
-
-                allocate(corresponding_i_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
-                allocate(corresponding_i_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
-                allocate(corresponding_i_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
-
-                allocate(corresponding_j_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
-                allocate(corresponding_j_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
-                allocate(corresponding_j_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
-
-                allocate(corresponding_k_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
-                allocate(corresponding_k_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
-                allocate(corresponding_k_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
-
-
-
-                ! allocate(corresponding_j(i0:i1, max(j0,xstart(2)):min(j1,xend(2)), max(k0,xstart(3)):min(k1,xend(3))))
-                ! allocate(corresponding_k(i0:i1, max(j0,xstart(2)):min(j1,xend(2)), max(k0,xstart(3)):min(k1,xend(3))))
-
-                ! allocate(velocity_x(i0:i1, max(j0,xstart(2)):min(j1,xend(2)), max(k0,xstart(3)):min(k1,xend(3))))
-                ! allocate(velocity_y(i0:i1, max(j0,xstart(2)):min(j1,xend(2)), max(k0,xstart(3)):min(k1,xend(3))))
-                ! allocate(velocity_z(i0:i1, max(j0,xstart(2)):min(j1,xend(2)), max(k0,xstart(3)):min(k1,xend(3))))
-
-                allocate(velocity_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
-                allocate(velocity_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
-                allocate(velocity_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
-
-                allocate(velocity_y_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
-                allocate(velocity_z_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
-
-                allocate(denom_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
-                allocate(denom_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
-                allocate(denom_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
-
-                corresponding_i_x=0.d0
-                corresponding_i_y=0.d0
-                corresponding_i_z=0.d0
-
-                corresponding_j_x=0.d0
-                corresponding_j_y=0.d0
-                corresponding_j_z=0.d0
-
-                corresponding_k_x=0.d0
-                corresponding_k_y=0.d0
-                corresponding_k_z=0.d0
-
-                velocity_x=0.d0
-                velocity_y=0.d0
-                velocity_z=0.d0
+                real*8, dimension(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3))     :: q, vel_term
+                real*8, dimension(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3))     :: q_y, vel_term_y
+                real*8, dimension(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3))     :: q_z, vel_term_z
+                integer, intent(in)                                             :: i0, i1, j0, j1, k0, k1
+                integer, dimension(:,:), allocatable                            :: tmp_k0, tmp_k1
+                integer                                                         :: k_bef, k_aft
+                real*8, dimension(:), intent(in)                                :: X, Y, Z
+                integer, dimension(3), intent(in)                               :: xstart_ibm, xend_ibm, ystart_ibm, yend_ibm, zstart_ibm, zend_ibm
+                logical, intent(in)                                             :: object_in_proc_x, object_in_proc_y, object_in_proc_z
+                integer, dimension(3), intent(in)                               :: xstart_ibm_inobj, xend_ibm_inobj, ystart_ibm_inobj, yend_ibm_inobj, zstart_ibm_inobj, zend_ibm_inobj
+                logical, intent(in)                                             :: object_in_proc_x_inobj, object_in_proc_y_inobj, object_in_proc_z_inobj
                 
-                denom_x=0.d0
-                denom_y=0.d0
-                denom_z=0.d0
+                if (k0.eq.1) then
+                    k_bef=n3-1
+                else
+                    k_bef=k0-1
+                endif
+                
+                if (k1.ge.(n3-1)) then
+                    k_aft=1
+                else
+                    k_aft=k1+1
+                endif
 
+                ! X-direction
+                if (object_in_proc_x) then
+                
+                    ! X-direction
+                    do j = xstart_ibm(2), xend_ibm(2)
+                        do k = xstart_ibm(3), xend_ibm(3)
 
-                ! allocate(q_buffer(n1,n2,n3))
-                ! q_buffer = 0.d0
-                ! allocate(q_buffer(n1,n2,n3))
-                ! q_buffer = 0.d0
+                            ! upstream the object
+                            vel_term(i0-1,j,k) = q(i0-2,j,k) * ( (X(i0)-dx1) - xs ) / ( (X(i0)-2.d0*dx1) - xs )
 
-                ! size_q = size(q)
-                ! size_q_buffer = size(q_buffer)
-                ! displs(1) = 0
-                ! displs(2) = xstart(2) - 1
-                ! displs(3) = xstart(3) - 1
+                            ! downstream the object
+                            vel_term(i1+1,j,k) = q(i1+2,j,k) * ( xe - (X(i1)+dx1) ) / ( xe - (X(i1)+2.d0*dx1) )
 
-                ! recv_buffer(1) = n1
-                ! recv_buffer(2) = xend(2) - xstart(2) + 1
-                ! recv_buffer(3) = xend(3) - xstart(3) + 1
-
-
-
-                ! write(*,*) 'nrank=', nrank, 'displs', displs
-                ! write(*,*) 'nrank=', nrank, 'recv_buffer', recv_buffer
-                ! write(*,*) 'nrank=', nrank, 'xsize', xsize
-                ! write(*,*) 'nrank=', nrank, recv_buffer(1)*recv_buffer(2)*recv_buffer(3), size_q
-
-                ! ! call MPI_ALLGATHER(q(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)), size_q, MPI_REAL8, & 
-                ! !     q_buffer(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)), size_q_buffer, MPI_REAL8, MPI_COMM_WORLD, mpi_err)
-
-                ! call MPI_ALLGATHERV(q(:,:,:), size_q, MPI_REAL8, & 
-                !     q_buffer(:,:,:), recv_buffer, displs, MPI_REAL8, MPI_COMM_WORLD, mpi_err)
-
-                ! ! call MPI_ALLGATHER(q(xstart(1):min(xend(1),n1m),xstart(2):min(xend(2),n2m),xstart(3):min(xend(3),n3m), size_q, MPI_REAL8, & 
-                ! !     q_buffer(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)), size_q_buffer, MPI_REAL8, MPI_COMM_WORLD, mpi_err)
-
-                ! write(*,*) 'after aie aie aie'
-
-                ! write(*,*) sum(abs(q_buffer))
-
-                ! Get the velocities from the x direction
-
-                if (ax) then
-
-                    do i=i0,i1
-                        do j = xstart(2), xend(2)
-                            do k = xstart(3), xend(3)
-
-                                if ((j.gt.j0).and.(j.lt.j1).and.(k.gt.k0).and.(k.lt.k1)) then
-
-                                    if ((X(i)-x_c).gt.0) then 
-                                        corresponding_i_x(i,j,k) = i1
-                                    else
-                                        corresponding_i_x(i,j,k) = i0
-                                    endif
-
-                                    if (((2*corresponding_i_x(i,j,k)-i).le.0).or.((2*corresponding_i_x(i,j,k)-i).ge.(n1-1))) then
-                                        velocity_x(i,j,k) = 0.d0
-                                    else
-                                        velocity_x(i,j,k) = q(2*int(corresponding_i_x(i,j,k))-i,j,k)
-                                        denom_x(i,j,k) = denom_x(i,j,k) + real(abs(corresponding_i_x(i,j,k)-i),8)
-                                    endif
-
-                                endif
-                            enddo
                         enddo
                     enddo
 
                 endif
 
-                ! Get the velocities from the y direction
+                ! Y-direction
                 call transpose_x_to_y(q, q_y)
-                call transpose_x_to_y(denom_x, denom_y)
+                call transpose_x_to_y(vel_term, vel_term_y)
 
-                if (ay) then
+                if (object_in_proc_y) then
 
-                    do i=ystart(1), yend(1)
-                        do j = j0,j1
-                            do k = ystart(3), yend(3)
+                    if (j0.gt.1) then
 
-                                if ((i.gt.i0).and.(i.lt.i1).and.(k.gt.k0).and.(k.lt.k1)) then
+                        do i = ystart_ibm(1), yend_ibm(1)
+                            do k = ystart_ibm(3), yend_ibm(3)
 
-                                    if ((Y(j)-y_c).gt.0) then 
-                                        corresponding_j_y(i,j,k) = j1
-                                    else
-                                        corresponding_j_y(i,j,k) = j0
-                                    endif
+                                ! upstream the object
+                                vel_term_y(i,j0-1,k) = q_y(i,j0-2,k) * ( Y(j0-1) - ys ) / ( Y(j0-2) - ys )
 
-                                    if (((2*corresponding_j_y(i,j,k)-j).le.0).or.((2*corresponding_j_y(i,j,k)-j).ge.(n2-1))) then
-                                        velocity_y(i,j,k) = 0.d0
-                                    else
-                                        velocity_y(i,j,k) = q_y(i, 2*int(corresponding_j_y(i,j,k))-j,k)
-                                        denom_y(i,j,k) = denom_y(i,j,k) + real(abs(corresponding_j_y(i,j,k)-j),8)
-                                    endif
-
-                                endif
                             enddo
                         enddo
-                    enddo
+
+                    endif
+
+                    if (j1.lt.(n2-1)) then
+
+                        do i = ystart_ibm(1), yend_ibm(1)
+                            do k = ystart_ibm(3), yend_ibm(3)
+
+                                ! downstream the object
+                                vel_term_y(i,j1+1,k) = q_y(i,j1+2,k) * ( ye - Y(j1+1) ) / ( ye - Y(j1+2) )
+
+                            enddo
+                        enddo
+
+                    endif
 
                 endif
 
-                ! Get the velocities from the z direction
+                ! Z-direction
                 call transpose_y_to_z(q_y, q_z)
-                call transpose_y_to_z(denom_y, denom_z)
+                call transpose_y_to_z(vel_term_y, vel_term_z)
 
-                if (az) then
+                if (object_in_proc_z) then
 
-                    do i=zstart(1), zend(1)
-                        do j = zstart(2), zend(2)
-                            do k = k0,k1
+                    if (k0.eq.1) then
 
-                                if ((i.gt.i0).and.(i.lt.i1).and.(j.gt.j0).and.(j.lt.j1)) then
+                        do i = zstart_ibm(1), zend_ibm(1)
+                            do j = zstart_ibm(2), zend_ibm(2)
 
-                                    if ((Z(k)-z_c).gt.0) then 
-                                        corresponding_k_z(i,j,k) = k1
-                                    else
-                                        corresponding_k_z(i,j,k) = k0
-                                    endif
+                                ! upstream the object
+                                vel_term_z(i,j,n3-1) = q_z(i,j,n3-2) * ( (Z(k0)-dx3) - zs ) / ( (Z(k0)-2.d0*dx3) - zs )
 
-                                    if (((2*corresponding_k_z(i,j,k)-k).le.0).or.((2*corresponding_k_z(i,j,k)-k).ge.(n3-1))) then
-                                        velocity_z(i,j,k) = 0.d0
-                                    else
-                                        velocity_z(i,j,k) = q_z(i,j, 2*int(corresponding_k_z(i,j,k))-k)
-                                        denom_z(i,j,k) = denom_z(i,j,k) + real(abs(corresponding_k_z(i,j,k)-k),8)
-                                    endif
-
-                                endif
                             enddo
                         enddo
-                    enddo
+
+                    else
+
+                        do i = zstart_ibm(1), zend_ibm(1)
+                            do j = zstart_ibm(2), zend_ibm(2)
+
+                                ! upstream the object
+                                vel_term_z(i,j,k0-1) = q_z(i,j,k0-2) * ( (Z(k0)-dx3) - zs ) / ( (Z(k0)-2.d0*dx3) - zs )
+
+                            enddo
+                        enddo
+
+                    endif
+
+                    if (k1.ge.(n3-1)) then
+
+                        do i = zstart_ibm(1), zend_ibm(1)
+                            do j = zstart_ibm(2), zend_ibm(2)
+
+                                ! downstream the object
+                                vel_term_z(i,j,1) = q_z(i,j,2) * ( ze - (Z(k1)+dx3) ) / ( ze - (Z(k1)+2.d0*dx3) )
+
+                            enddo
+                        enddo
+
+                    else
+
+                        do i = zstart_ibm(1), zend_ibm(1)
+                            do j = zstart_ibm(2), zend_ibm(2)
+
+                                ! downstream the object
+                                vel_term_z(i,j,k1+1) = q_z(i,j,k1+2) * ( ze - (Z(k1)+dx3) ) / ( ze - (Z(k1)+2.d0*dx3) )
+
+                            enddo
+                        enddo
+
+                    endif
 
                 endif
+                
+                call transpose_z_to_y(vel_term_z, vel_term_y)
+                call transpose_y_to_x(vel_term_y, vel_term)
 
-                call transpose_z_to_y(denom_z, denom_y)
-                call transpose_y_to_x(denom_y, denom_x)
-
-                call transpose_z_to_y(corresponding_k_z, corresponding_k_y)
-                call transpose_y_to_x(corresponding_k_y, corresponding_k_x)
-
-                call transpose_y_to_x(corresponding_j_y, corresponding_j_x)
-
-                ! Extrapolate the velocity inside the object
-                do i=i0,i1
-                    do j = xstart(2), xend(2)
-                        do k = xstart(3), xend(3)
-
-                            if ((j.gt.j0).and.(j.lt.j1).and.(k.gt.k0).and.(k.lt.k1)) then
-
-                                if (denom_x(i,j,k).eq.0) then
-                                    vel_term(i,j,k) = 0.d0
-                                else
-
-                                    vel_term(i,j,k) = - IBM_modulation(i,j,k) * ( &
-                                        (denom_x(i,j,k) - real(abs(corresponding_i_x(i,j,k)-i),8))/(2*denom_x(i,j,k)) * velocity_x(i,j,k) + &
-                                        (denom_x(i,j,k) - real(abs(corresponding_j_x(i,j,k)-j),8))/(2*denom_x(i,j,k)) * velocity_y_x(i,j,k) + &
-                                        (denom_x(i,j,k) - real(abs(corresponding_k_x(i,j,k)-k),8))/(2*denom_x(i,j,k)) * velocity_z_x(i,j,k) )
-                                endif
-
-                            endif
-                        enddo
-                    enddo
-                enddo
-
-                ! call create_stretch_snapshot(COMMON_snapshot_path, "IBM", denom_x, "denom_x", 1, X,Y,Z)
-
-                ! call create_stretch_snapshot(COMMON_snapshot_path, "IBM", velocity_x, "velocity_x", 1, X1,X2c,X3c)
-                ! call create_stretch_snapshot(COMMON_snapshot_path, "IBM", velocity_y_x, "velocity_y_x", 1, X1,X2c,X3c)
-                ! call create_stretch_snapshot(COMMON_snapshot_path, "IBM", velocity_z_x, "velocity_z_x", 1, X1,X2c,X3c)
-
-                ! call create_stretch_snapshot(COMMON_snapshot_path, "IBM", corresponding_i_x, "corresponding_i_x", 1, X1,X2c,X3c)
-                ! call create_stretch_snapshot(COMMON_snapshot_path, "IBM", corresponding_j_x, "corresponding_j_x", 1, X1,X2c,X3c)
-                ! call create_stretch_snapshot(COMMON_snapshot_path, "IBM", corresponding_k_x, "corresponding_k_x", 1, X1,X2c,X3c)
-
-                ! deallocate everything
-                deallocate(corresponding_i_x)
-                deallocate(corresponding_i_y)
-                deallocate(corresponding_i_z)
-
-                deallocate(corresponding_j_x)
-                deallocate(corresponding_j_y)
-                deallocate(corresponding_j_z)
-
-                deallocate(corresponding_k_x)
-                deallocate(corresponding_k_y)
-                deallocate(corresponding_k_z)
-
-                deallocate(velocity_x)
-                deallocate(velocity_y)
-                deallocate(velocity_z)
-
-                deallocate(denom_x)
-                deallocate(denom_y)
-                deallocate(denom_z)
 
             end subroutine antisymmetric_interpol
 
+            subroutine antisymmetric_interpol_kim_choin_old(vel_term_x, q_x, n1, n2, n3, X, Y, Z, &
+                i0, i1, j0, j1, k0, k1, &
+                xstart_ibm, xend_ibm, ystart_ibm, yend_ibm, zstart_ibm, zend_ibm, &
+                object_in_proc_x, object_in_proc_y, object_in_proc_z, &
+                xstart_ibm_inobj, xend_ibm_inobj, ystart_ibm_inobj, yend_ibm_inobj, zstart_ibm_inobj, zend_ibm_inobj, &
+                object_in_proc_x_inobj, object_in_proc_y_inobj, object_in_proc_z_inobj) !vel_term correspond au terme (V^(n+1) - u^n )/dt
+                
+                use mpi
+                use mesh, only: dx1, dx3
+
+                implicit none
+                integer                                                         :: i,j,k
+                integer                                                         :: n1, n2, n3
+                real*8, dimension(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3))     :: q_x, vel_term_x
+                real*8, dimension(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3))     :: q_y, vel_term_y
+                real*8, dimension(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3))     :: q_z, vel_term_z
+                integer, intent(in)                                             :: i0, i1, j0, j1, k0, k1
+                real*8, dimension(:), intent(in)                                :: X, Y, Z
+                integer, dimension(3), intent(in)                               :: xstart_ibm, xend_ibm, ystart_ibm, yend_ibm, zstart_ibm, zend_ibm
+                logical, intent(in)                                             :: object_in_proc_x, object_in_proc_y, object_in_proc_z
+                integer, dimension(3), intent(in)                               :: xstart_ibm_inobj, xend_ibm_inobj, ystart_ibm_inobj, yend_ibm_inobj, zstart_ibm_inobj, zend_ibm_inobj
+                logical, intent(in)                                             :: object_in_proc_x_inobj, object_in_proc_y_inobj, object_in_proc_z_inobj
+                real*8                                                          :: h, pos_first_node_flowfield, pos_second_node_flowfield
+                integer                                                         :: index_first_node_flowfield, index_second_node_flowfield
+
+                real*8                                                          :: alpha_i0_k0, alpha_i0_k1, alpha_i1_k0, alpha_i1_k1
+                real*8                                                          :: beta_i0_k0, beta_i0_k1, beta_i1_k0, beta_i1_k1
+                real*8                                                          :: beta_jr, gamma_jr
+                real*8                                                          :: alpha_i0_jr, alpha_i1_jr, alpha_k0_jr, alpha_k1_jr
+
+                integer                                                         :: start_index_i, end_index_i
+                integer                                                         :: start_index_j, end_index_j
+                integer                                                         :: start_index_k, end_index_k
+
+                integer                                                         :: j_remaining, j_first_node_outside
+                real*8                                                          :: y_p1
+
+                integer                                                         :: index_u2_i0_k0, index_u2_i0_k1, index_u2_i1_k0, index_u2_i1_k1
+                integer                                                         :: index_u4_i0_k0, index_u4_i0_k1, index_u4_i1_k0, index_u4_i1_k1
+                integer                                                         :: index_u4_i0_jr, index_u4_i1_jr
+                integer                                                         :: index_u4_k0_jr, index_u4_k1_jr
+
+                real*8, dimension(:), allocatable                               :: u2_i0_k0, u2_i0_k1, u2_i1_k0, u2_i1_k1
+                real*8, dimension(:), allocatable                               :: u3_i0_k0, u3_i0_k1, u3_i1_k0, u3_i1_k1
+                real*8, dimension(:), allocatable                               :: u4_i0_k0, u4_i0_k1, u4_i1_k0, u4_i1_k1
+                real*8, dimension(:), allocatable                               :: u2_i0_jr, u2_i1_jr, u2_k0_jr, u2_k1_jr
+                real*8, dimension(:), allocatable                               :: u3_i0_jr, u3_i1_jr, u3_k0_jr, u3_k1_jr
+                real*8, dimension(:), allocatable                               :: u4_i0_jr, u4_i1_jr, u4_k0_jr, u4_k1_jr
+
+                real*8                                                          :: u2_i0_k0_jr, u2_i0_k1_jr, u2_i1_k0_jr, u2_i1_k1_jr
+                real*8                                                          :: u3_i0_k0_jr, u3_i0_k1_jr, u3_i1_k0_jr, u3_i1_k1_jr
+                real*8                                                          :: u4_i0_k0_jr, u4_i0_k1_jr, u4_i1_k0_jr, u4_i1_k1_jr
+                real*8                                                          :: u5_i0_k0_jr, u5_i0_k1_jr, u5_i1_k0_jr, u5_i1_k1_jr
+                real*8                                                          :: u6_i0_k0_jr, u6_i0_k1_jr, u6_i1_k0_jr, u6_i1_k1_jr
+                real*8                                                          :: u7_i0_k0_jr, u7_i0_k1_jr, u7_i1_k0_jr, u7_i1_k1_jr
+                real*8                                                          :: u8_i0_k0_jr, u8_i0_k1_jr, u8_i1_k0_jr, u8_i1_k1_jr
+
+                integer                                                         :: real_j0, real_j1, k_aft
+                integer                                                         :: mpi_err
+
+                logical                                                         :: u2_i0_k0_flag, u2_i0_k1_flag, u2_i1_k0_flag, u2_i1_k1_flag
+                logical                                                         :: u3_i0_k0_flag, u3_i0_k1_flag, u3_i1_k0_flag, u3_i1_k1_flag
+                logical                                                         :: u4_i0_k0_flag, u4_i0_k1_flag, u4_i1_k0_flag, u4_i1_k1_flag
+                logical                                                         :: u2_i0_jr_flag, u2_i1_jr_flag, u2_k0_jr_flag, u2_k1_jr_flag
+                logical                                                         :: u3_i0_jr_flag, u3_i1_jr_flag, u3_k0_jr_flag, u3_k1_jr_flag
+                logical                                                         :: u4_i0_jr_flag, u4_i1_jr_flag, u4_k0_jr_flag, u4_k1_jr_flag
+
+                logical                                                         :: u2_i0_k0_jr_flag, u2_i0_k1_jr_flag, u2_i1_k0_jr_flag, u2_i1_k1_jr_flag
+                logical                                                         :: u3_i0_k0_jr_flag, u3_i0_k1_jr_flag, u3_i1_k0_jr_flag, u3_i1_k1_jr_flag
+                logical                                                         :: u4_i0_k0_jr_flag, u4_i0_k1_jr_flag, u4_i1_k0_jr_flag, u4_i1_k1_jr_flag
+                logical                                                         :: u5_i0_k0_jr_flag, u5_i0_k1_jr_flag, u5_i1_k0_jr_flag, u5_i1_k1_jr_flag
+                logical                                                         :: u6_i0_k0_jr_flag, u6_i0_k1_jr_flag, u6_i1_k0_jr_flag, u6_i1_k1_jr_flag
+                logical                                                         :: u7_i0_k0_jr_flag, u7_i0_k1_jr_flag, u7_i1_k0_jr_flag, u7_i1_k1_jr_flag
+                logical                                                         :: u8_i0_k0_jr_flag, u8_i0_k1_jr_flag, u8_i1_k0_jr_flag, u8_i1_k1_jr_flag 
+
+                ! if (nrank.eq.0) then
+                !     write(*,*) 'xs', xs, 'xe', xe
+                !     write(*,*) 'ys', ys, 'ye', ye
+                !     write(*,*) 'zs', zs, 'ze', ze
+                ! endif
+
+                real_j0 = j0
+                real_j1 = j1
+
+                if (j0.gt.1) real_j0 = real_j0 + 1
+                if (j1.lt.(n2-1)) real_j1 = real_j1 - 1
+
+                ! first linear interpolation for a point inside the area of a face ...
+                ! we begin with the upstream face
+                h = abs(X(i0)-xs)
+
+                if (i0.eq.1) then
+                    index_first_node_flowfield = n1-1
+                    index_second_node_flowfield = n1-2
+                elseif (i0.eq.2) then
+                    index_first_node_flowfield = i0-1
+                    index_second_node_flowfield = n1-1
+                else
+                    index_first_node_flowfield = i0-1
+                    index_second_node_flowfield = i0-2
+                endif
+
+                pos_first_node_flowfield = abs(X(i0)-dx1-xs)
+                pos_second_node_flowfield = abs(X(i0)-2.d0*dx1-xs)
+
+                ! if (nrank.eq.0) write(*,*) 'h', h, 'yA', pos_first_node_flowfield, 'h/yA', h/pos_first_node_flowfield
+
+                ! X-direction
+                if (object_in_proc_x) then
+
+                    if (h.le.pos_first_node_flowfield) then
+                
+                        do j = xstart_ibm(2), xend_ibm(2)
+                            do k = xstart_ibm(3), xend_ibm(3)
+
+                                if ((j.ge.real_j0).and.(j.le.real_j1).and.(k.gt.k0).and.(k.lt.k1)) vel_term_x(i0,j,k) = - (h/pos_first_node_flowfield) * q_x(index_first_node_flowfield,j,k)
+
+                            enddo
+                        enddo
+
+                    else
+                
+                        do j = xstart_ibm(2), xend_ibm(2)
+                            do k = xstart_ibm(3), xend_ibm(3)
+
+                                if ((j.ge.real_j0).and.(j.le.real_j1).and.(k.gt.k0).and.(k.lt.k1)) vel_term_x(i0,j,k) = - q_x(index_first_node_flowfield,j,k) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
+                                                   - q_x(index_second_node_flowfield,j,k) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
+
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                ! Then we focus on the downstream face
+                h = abs(X(i1)-xe)
+
+                if (i1.eq.(n1-1)) then
+                    index_first_node_flowfield = 1
+                    index_second_node_flowfield = 2
+                elseif (i1.eq.(n1-2)) then
+                    index_first_node_flowfield = i1+1
+                    index_second_node_flowfield = 1
+                else
+                    index_first_node_flowfield = i1+1
+                    index_second_node_flowfield = i1+2
+                endif
+
+                pos_first_node_flowfield = abs(X(i1)+dx1-xe)
+                pos_second_node_flowfield = abs(X(i1)+2.d0*dx1-xe)
+
+                ! if (nrank.eq.0) write(*,*) 'h', h, 'pos_first_node_flowfield', pos_first_node_flowfield
+
+                ! X-direction
+                if (object_in_proc_x) then
+
+                    if (h.le.pos_first_node_flowfield) then
+                
+                        do j = xstart_ibm(2), xend_ibm(2)
+                            do k = xstart_ibm(3), xend_ibm(3)
+
+                                if ((j.ge.real_j0).and.(j.le.real_j1).and.(k.gt.k0).and.(k.lt.k1)) vel_term_x(i1,j,k) = - (h/pos_first_node_flowfield) * q_x(index_first_node_flowfield,j,k)
+
+                            enddo
+                        enddo
+
+                    else
+                
+                        do j = xstart_ibm(2), xend_ibm(2)
+                            do k = xstart_ibm(3), xend_ibm(3)
+
+                                if ((j.ge.real_j0).and.(j.le.real_j1).and.(k.gt.k0).and.(k.lt.k1)) vel_term_x(i1,j,k) = - q_x(index_first_node_flowfield,j,k) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
+                                                   - q_x(index_second_node_flowfield,j,k) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
+
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                ! Y-direction
+                call transpose_x_to_y(q_x, q_y)
+                call transpose_x_to_y(vel_term_x, vel_term_y)
+
+                ! first linear interpolation for a point inside the area of a face ...
+                ! we begin with the upstream face
+                if (j0.gt.2) then
+
+                    h = abs(Y(j0)-ys)
+
+                    index_first_node_flowfield = j0-1
+                    index_second_node_flowfield = j0-2
+
+                    pos_first_node_flowfield = abs(Y(j0-1)-ys)
+                    pos_second_node_flowfield = abs(Y(j0-2)-ys)
+
+                    ! if (nrank.eq.0) write(*,*) 'h', h, 'pos_first_node_flowfield', pos_first_node_flowfield
+
+                    if (object_in_proc_y) then
+
+                        if (h.le.pos_first_node_flowfield) then
+
+                            do i = ystart_ibm(1), yend_ibm(1)
+                                do k = ystart_ibm(3), yend_ibm(3)
+
+                                    if ((i.gt.i0).and.(i.lt.i1).and.(k.gt.k0).and.(k.lt.k1)) vel_term_y(i,j0,k) = - (h/pos_first_node_flowfield) * q_y(i,index_first_node_flowfield,k)
+
+                                enddo
+                            enddo
+
+                        else
+
+                            do i = ystart_ibm(1), yend_ibm(1)
+                                do k = ystart_ibm(3), yend_ibm(3)
+
+                                    if ((i.gt.i0).and.(i.lt.i1).and.(k.gt.k0).and.(k.lt.k1)) vel_term_y(i,j0,k) = - q_y(i,index_first_node_flowfield,k) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
+                                                       - q_y(i,index_second_node_flowfield,k) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
+
+                                enddo
+                            enddo
+
+                        endif
+
+                    endif
+
+                endif
+
+                ! Then we focus on the downstream face
+                if (j1.lt.(n2-2)) then
+
+                    h = abs(Y(j1)-ye)
+
+                    index_first_node_flowfield = j1+1
+                    index_second_node_flowfield = j1+2
+
+                    pos_first_node_flowfield = abs(Y(j1+1)-ye)
+                    pos_second_node_flowfield = abs(Y(j1+2)-ye)
+
+                    ! if (nrank.eq.0) write(*,*) 'h', h, 'pos_first_node_flowfield', pos_first_node_flowfield
+
+                    if (object_in_proc_y) then
+
+                        if (h.le.pos_first_node_flowfield) then
+
+                            do i = ystart_ibm(1), yend_ibm(1)
+                                do k = ystart_ibm(3), yend_ibm(3)
+
+                                    if ((i.gt.i0).and.(i.lt.i1).and.(k.gt.k0).and.(k.lt.k1)) vel_term_y(i,j1,k) = - (h/pos_first_node_flowfield) * q_y(i,index_first_node_flowfield,k)
+
+                                enddo
+                            enddo
+
+                        else
+
+                            do i = ystart_ibm(1), yend_ibm(1)
+                                do k = ystart_ibm(3), yend_ibm(3)
+
+                                    if ((i.gt.i0).and.(i.lt.i1).and.(k.gt.k0).and.(k.lt.k1)) vel_term_y(i,j1,k) = - q_y(i,index_first_node_flowfield,k) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
+                                                       - q_y(i,index_second_node_flowfield,k) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
+
+                                enddo
+                            enddo
+
+                        endif
+
+                    endif
+
+                endif
+
+                ! Z-direction
+                call transpose_y_to_z(q_y, q_z)
+                call transpose_y_to_z(vel_term_y, vel_term_z)
+
+                ! we begin with the upstream face
+                h = abs(Z(k0)-zs)
+
+                if (k0.eq.1) then
+                    index_first_node_flowfield = n3-1
+                    index_second_node_flowfield = n3-2
+                elseif (k0.eq.2) then
+                    index_first_node_flowfield = k0-1
+                    index_second_node_flowfield = n3-1
+                else
+                    index_first_node_flowfield = k0-1
+                    index_second_node_flowfield = k0-2
+                endif
+
+                pos_first_node_flowfield = abs(Z(k0)-dx3-zs)
+                pos_second_node_flowfield = abs(Z(k0)-2.d0*dx3-zs)
+
+                ! if (nrank.eq.0) write(*,*) 'h', h, 'pos_first_node_flowfield', pos_first_node_flowfield
+
+                ! Z-direction
+                if (object_in_proc_z) then
+
+                    if (h.le.pos_first_node_flowfield) then
+                
+                        do i = zstart_ibm(1), zend_ibm(1)
+                            do j = zstart_ibm(2), zend_ibm(2)
+
+                                if ((i.gt.i0).and.(i.lt.i1).and.(j.ge.real_j0).and.(j.le.real_j1)) vel_term_z(i,j,k0) = - (h/pos_first_node_flowfield) * q_z(i,j,index_first_node_flowfield)
+
+                            enddo
+                        enddo
+
+                    else
+                
+                        do i = zstart_ibm(1), zend_ibm(1)
+                            do j = zstart_ibm(2), zend_ibm(2)
+
+                                if ((i.gt.i0).and.(i.lt.i1).and.(j.ge.real_j0).and.(j.le.real_j1)) vel_term_z(i,j,k0) = - q_z(i,j,index_first_node_flowfield) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
+                                                   - q_z(i,j,index_second_node_flowfield) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
+
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                ! Then we focus on the downstream face
+                ! /!\ Here, we assume that if there is a roughness in the second part of the channel in the x3 direction
+                ! It extends until L3
+                ! Because the grid is staggered, is the roughness extends until L3, then that means q1 and q2 are defined from k=1,...,n3-1
+                ! For q3, the fact that the roughness is extending until L3 means q3(k=n3) in on the bounds, so q3(k=1) by symmetry as k=n3 is non-physical
+
+                if (k1.eq.n3) then
+                    ! we already know that we are on the wall
+                    ! no need to compute anything, we set the velocities equal to 0
+
+                    if (object_in_proc_z) then
+                    
+                        do i = zstart_ibm(1), zend_ibm(1)
+                            do j = zstart_ibm(2), zend_ibm(2)
+
+                                if ((i.gt.i0).and.(i.lt.i1).and.(j.ge.real_j0).and.(j.le.real_j1)) vel_term_z(i,j,1) = 0.d0
+
+                            enddo
+                        enddo
+
+                    endif
+
+
+                else
+
+                    h = abs(Z(k1)-ze)
+
+                    if (k1.eq.(n3-1)) then
+                        index_first_node_flowfield = 1
+                        index_second_node_flowfield = 2
+                    elseif (k1.eq.(n3-2)) then
+                        index_first_node_flowfield = k1+1
+                        index_second_node_flowfield = 1
+                    else
+                        index_first_node_flowfield = k1+1
+                        index_second_node_flowfield = k1+2
+                    endif
+
+                    pos_first_node_flowfield = abs(Z(k1)+dx3-ze)
+                    pos_second_node_flowfield = abs(Z(k1)+2.d0*dx3-ze)
+
+                    ! if (nrank.eq.0) write(*,*) 'h', h, 'pos_first_node_flowfield', pos_first_node_flowfield
+
+                    if (object_in_proc_z) then
+
+                        if (h.le.pos_first_node_flowfield) then
+                    
+                            do i = zstart_ibm(1), zend_ibm(1)
+                                do j = zstart_ibm(2), zend_ibm(2)
+
+                                    if ((i.gt.i0).and.(i.lt.i1).and.(j.ge.real_j0).and.(j.le.real_j1)) vel_term_z(i,j,k1) = - (h/pos_first_node_flowfield) * q_z(i,j,index_first_node_flowfield)
+
+                                enddo
+                            enddo
+
+                        else
+                    
+                            do i = zstart_ibm(1), zend_ibm(1)
+                                do j = zstart_ibm(2), zend_ibm(2)
+
+                                    if ((i.gt.i0).and.(i.lt.i1).and.(j.ge.real_j0).and.(j.le.real_j1)) vel_term_z(i,j,k1) = - q_z(i,j,index_first_node_flowfield) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
+                                                       - q_z(i,j,index_second_node_flowfield) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
+
+                                enddo
+                            enddo
+
+                        endif
+
+                    endif
+
+                endif
+
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+                ! In z_configuration
+                ! we can deal with all 4 edges (i0,j0), (i0,j1), (i1,j0), (i1,j1) at the same time
+                ! From the start, we know that one pair of edge is on the wall, either at j0 or j1
+                ! So we treat everything with one index, j_remaining corresponding to the side the closest to the centerline
+
+                ! global information
+                ! used for all 4 edges
+                start_index_k = k0+1
+                end_index_k = k1-1
+
+                if (j0.eq.1) then
+                    j_remaining = j1
+                    j_first_node_outside = j1+1
+                    y_p1 = ye
+                endif
+
+                if (j1.ge.(n2-1)) then
+                    j_remaining = j0
+                    j_first_node_outside = j0-1
+                    y_p1 = ys
+                endif
+
+                ! now define correctly the indices for u4
+                ! starting with edge at i0
+                index_u4_i0_jr = i0-1
+
+                if (i0.eq.1) index_u4_i0_jr = n1-1
+
+                ! then, with edge at i1
+                index_u4_i1_jr = i1+1
+
+                if (i1.ge.(n1-1)) index_u4_i1_jr = 1
+
+                ! and, define correctly the alpha and beta coefficient
+                ! starting with edge at i0
+                alpha_i0_jr = abs( (X(i0)-dx1)-xs ) / dx1
+
+                ! then, with edge at i1
+                alpha_i1_jr = abs( (X(i1)+dx1)-xe ) / dx1
+
+                ! then, with edge at j_remaining
+                beta_jr = abs( Y(j_first_node_outside)-y_p1 ) / abs( Y(j_first_node_outside)-Y(j_remaining) )
+
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!! ATTENTION
+                ! caution to what is used here
+                ! Maybe better with inobj ...
+
+                allocate(u2_i0_jr(start_index_k:end_index_k))
+                u2_i0_jr=0.d0
+                u2_i0_jr_flag = .false.
+                allocate(u2_i1_jr(start_index_k:end_index_k))
+                u2_i1_jr=0.d0
+                u2_i1_jr_flag = .false.
+
+                allocate(u3_i0_jr(start_index_k:end_index_k))
+                u3_i0_jr=0.d0
+                u3_i0_jr_flag = .false.
+                allocate(u3_i1_jr(start_index_k:end_index_k))
+                u3_i1_jr=0.d0
+                u3_i1_jr_flag = .false.
+
+                allocate(u4_i0_jr(start_index_k:end_index_k))
+                u4_i0_jr=0.d0
+                u4_i0_jr_flag = .false.
+                allocate(u4_i1_jr(start_index_k:end_index_k))
+                u4_i1_jr=0.d0
+                u4_i1_jr_flag = .false.
+
+                call MPI_BARRIER(MPI_COMM_WORLD, mpi_err)
+
+                if (object_in_proc_z_inobj) then
+
+                    do i = zstart_ibm_inobj(1), zend_ibm_inobj(1)
+                        do j = zstart_ibm_inobj(2), zend_ibm_inobj(2)
+                            do k=start_index_k,end_index_k
+
+                                ! starting with edge at i0
+                                if ((i.eq.index_u4_i0_jr).and.(j.eq.j_remaining)) then
+                                    u4_i0_jr(k) = q_z(index_u4_i0_jr,j_remaining,k)
+                                    u4_i0_jr_flag = .true.
+                                endif
+
+                                if ((i.eq.i0).and.(j.eq.j_first_node_outside)) then
+                                    u2_i0_jr(k) = q_z(i0,j_first_node_outside,k)
+                                    u2_i0_jr_flag = .true.
+                                endif
+
+                                if ((i.eq.index_u4_i0_jr).and.(j.eq.j_first_node_outside)) then
+                                    u3_i0_jr(k) = q_z(index_u4_i0_jr,j_first_node_outside,k)
+                                    u3_i0_jr_flag = .true.
+                                endif
+
+                                ! starting with edge at i1
+                                if ((i.eq.index_u4_i1_jr).and.(j.eq.j_remaining)) then
+                                    u4_i1_jr(k) = q_z(index_u4_i1_jr,j_remaining,k)
+                                    u4_i1_jr_flag = .true.
+                                endif
+
+                                if ((i.eq.i1).and.(j.eq.j_first_node_outside)) then
+                                    u2_i1_jr(k) = q_z(i1,j_first_node_outside,k)
+                                    u2_i1_jr_flag = .true.
+                                endif
+
+                                if ((i.eq.index_u4_i1_jr).and.(j.eq.j_first_node_outside)) then
+                                    u3_i1_jr(k) = q_z(index_u4_i1_jr,j_first_node_outside,k)
+                                    u3_i1_jr_flag = .true.
+                                endif
+
+                            enddo
+                        enddo
+                    enddo
+
+                endif
+
+                call MPI_BARRIER(MPI_COMM_WORLD, mpi_err)
+
+                if (u2_i0_jr_flag) call MPI_BCAST (u2_i0_jr, size(u2_i0_jr), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u2_i1_jr_flag) call MPI_BCAST (u2_i1_jr, size(u2_i1_jr), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+
+                if (u3_i0_jr_flag) call MPI_BCAST (u3_i0_jr, size(u3_i0_jr), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u3_i1_jr_flag) call MPI_BCAST (u3_i1_jr, size(u3_i1_jr), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+
+                if (u4_i0_jr_flag) call MPI_BCAST (u4_i0_jr, size(u4_i0_jr), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u4_i1_jr_flag) call MPI_BCAST (u4_i1_jr, size(u4_i1_jr), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+
+                call MPI_BARRIER(MPI_COMM_WORLD, mpi_err)
+
+                if (object_in_proc_z_inobj) then
+
+                    do i = zstart_ibm_inobj(1), zend_ibm_inobj(1)
+                        do j = zstart_ibm_inobj(2), zend_ibm_inobj(2)
+                            do k=start_index_k,end_index_k
+
+                                ! starting with edge at i0
+                                if ((i.eq.i0).and.(j.eq.j_remaining)) vel_term_z(i0,j_remaining,k) = -(1.d0/(alpha_i0_jr*beta_jr)) * &
+                                                                ( beta_jr*(1.d0-alpha_i0_jr)*u4_i0_jr(k) &
+                                                                + (1.d0-beta_jr)*alpha_i0_jr*u2_i0_jr(k) &
+                                                                + (1.d0-beta_jr)*(1-alpha_i0_jr)*u3_i0_jr(k) )
+
+                                ! starting with edge at i1
+                                if ((i.eq.i1).and.(j.eq.j_remaining)) vel_term_z(i1,j_remaining,k) = -(1.d0/(alpha_i1_jr*beta_jr)) * &
+                                                                ( beta_jr*(1.d0-alpha_i1_jr)*u4_i1_jr(k) &
+                                                                + (1.d0-beta_jr)*alpha_i1_jr*u2_i1_jr(k) &
+                                                                + (1.d0-beta_jr)*(1-alpha_i1_jr)*u3_i1_jr(k) )
+
+                            enddo
+                        enddo
+                    enddo
+
+                endif
+
+                deallocate(u2_i0_jr)
+                deallocate(u2_i1_jr)
+
+                deallocate(u3_i0_jr)
+                deallocate(u3_i1_jr)
+
+                deallocate(u4_i0_jr)
+                deallocate(u4_i1_jr)
+                
+                call transpose_z_to_y(vel_term_z, vel_term_y)
+
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+                ! In y_configuration
+                ! we can deal with all 4 edges (i0,k0), (i0,k1), (i1,k0), (i1,k1) at the same time
+
+                ! global information
+                ! used for all 4 edges
+                start_index_j = j0+1
+                end_index_j = j1-1
+
+                if (j0.eq.1) start_index_j = j0
+                if (j1.ge.(n2-1)) end_index_j = j1
+
+                ! now define correctly the indices for u2 and u4
+                ! starting with edge at k0, i0
+                index_u2_i0_k0 = k0-1
+                index_u4_i0_k0 = i0-1
+
+                if (k0.eq.1) index_u2_i0_k0 = n3-1
+                if (i0.eq.1) index_u4_i0_k0 = n1-1
+
+                ! then, with edge at k1, i0
+                k_aft=k1
+                if (k1.eq.n3) k_aft=1
+
+                index_u2_i0_k1 = k1+1
+                index_u4_i0_k1 = i0-1
+
+                if (k1.ge.(n3-1)) index_u2_i0_k1 = 1
+                if (i0.eq.1) index_u4_i0_k1 = n1-1
+
+                ! then, with edge at k0, i1
+                index_u2_i1_k0 = k0-1
+                index_u4_i1_k0 = i1+1
+
+                if (k0.eq.1) index_u2_i1_k0 = n3-1
+                if (i1.ge.(n1-1)) index_u4_i1_k0 = 1
+
+                ! then, with edge at k1, i1
+                index_u2_i1_k1 = k1+1
+                index_u4_i1_k1 = i1+1
+
+                if (k1.ge.(n3-1)) index_u2_i1_k1 = 1
+                if (i1.ge.(n1-1)) index_u4_i1_k1 = 1
+
+                ! and, define correctly the alpha and beta coefficient
+                ! starting with edge at k0, i0
+                alpha_i0_k0 = abs( (X(i0)-dx1)-xs ) / dx1
+                beta_i0_k0 = abs( (Z(k0)-dx3)-zs ) / dx3
+
+                ! then, with edge at k1, i0
+                alpha_i0_k1 = abs( (X(i0)-dx1)-xs ) / dx1
+                beta_i0_k1 = abs( (Z(k1)+dx3)-ze ) / dx3
+
+                ! then, with edge at k0, i1
+                alpha_i1_k0 = abs( (X(i1)+dx1)-xe ) / dx1
+                beta_i1_k0 = abs( (Z(k0)-dx3)-zs ) / dx3
+
+                ! then, with edge at k1, i1
+                alpha_i1_k1 = abs( (X(i1)+dx1)-xe ) / dx1
+                beta_i1_k1 = abs( (Z(k1)+dx3)-ze ) / dx3
+
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!! ATTENTION
+                ! caution to what is used here
+                ! Maybe better with inobj ...
+
+                allocate(u2_i0_k0(start_index_j:end_index_j))
+                u2_i0_k0=0.d0
+                u2_i0_k0_flag=.false.
+                allocate(u2_i0_k1(start_index_j:end_index_j))
+                u2_i0_k1=0.d0
+                u2_i0_k1_flag=.false.
+                allocate(u2_i1_k0(start_index_j:end_index_j))
+                u2_i1_k0=0.d0
+                u2_i1_k0_flag=.false.
+                allocate(u2_i1_k1(start_index_j:end_index_j))
+                u2_i1_k1=0.d0
+                u2_i1_k1_flag=.false.
+
+                allocate(u3_i0_k0(start_index_j:end_index_j))
+                u3_i0_k0=0.d0
+                u3_i0_k0_flag=.false.
+                allocate(u3_i0_k1(start_index_j:end_index_j))
+                u3_i0_k1=0.d0
+                u3_i0_k1_flag=.false.
+                allocate(u3_i1_k0(start_index_j:end_index_j))
+                u3_i1_k0=0.d0
+                u3_i1_k0_flag=.false.
+                allocate(u3_i1_k1(start_index_j:end_index_j))
+                u3_i1_k1=0.d0
+                u3_i1_k1_flag=.false.
+
+                allocate(u4_i0_k0(start_index_j:end_index_j))
+                u4_i0_k0=0.d0
+                u4_i0_k0_flag=.false.
+                allocate(u4_i0_k1(start_index_j:end_index_j))
+                u4_i0_k1=0.d0
+                u4_i0_k1_flag=.false.
+                allocate(u4_i1_k0(start_index_j:end_index_j))
+                u4_i1_k0=0.d0
+                u4_i1_k0_flag=.false.
+                allocate(u4_i1_k1(start_index_j:end_index_j))
+                u4_i1_k1=0.d0
+                u4_i1_k1_flag=.false.
+
+                call MPI_BARRIER(MPI_COMM_WORLD, mpi_err)
+
+                if (object_in_proc_y_inobj) then
+
+                    do i = ystart_ibm_inobj(1), yend_ibm_inobj(1)
+                        do k = ystart_ibm_inobj(3), yend_ibm_inobj(3)
+                            do j=start_index_j,end_index_j
+
+                                ! starting with edge at k0, i0
+                                if ((i.eq.index_u4_i0_k0).and.(k.eq.k0)) then
+                                    u4_i0_k0(j) = q_y(index_u4_i0_k0,j,k0)
+                                    u4_i0_k0_flag = .true.
+                                endif
+
+                                if ((i.eq.i0).and.(k.eq.index_u2_i0_k0)) then
+                                    u2_i0_k0(j) = q_y(i0,j,index_u2_i0_k0)
+                                    u2_i0_k0_flag = .true.
+                                endif
+                                
+                                if ((i.eq.index_u4_i0_k0).and.(k.eq.index_u2_i0_k0)) then
+                                    u3_i0_k0(j) = q_y(index_u4_i0_k0,j,index_u2_i0_k0)
+                                    u3_i0_k0_flag = .true.
+                                endif
+                                
+
+                                ! then, with edge at k1, i0
+                                if ((i.eq.index_u4_i0_k1).and.(k.eq.k_aft)) then
+                                    u4_i0_k1(j) = q_y(index_u4_i0_k1,j,k_aft)
+                                    u4_i0_k1_flag = .true.
+                                endif
+                                
+                                if ((i.eq.i0).and.(k.eq.index_u2_i0_k1)) then
+                                    u2_i0_k1(j) = q_y(i0,j,index_u2_i0_k1)
+                                    u2_i0_k1_flag = .true.
+                                endif
+                                
+                                if ((i.eq.index_u4_i0_k1).and.(k.eq.index_u2_i0_k1)) then
+                                    u3_i0_k1(j) = q_y(index_u4_i0_k1,j,index_u2_i0_k1)
+                                    u3_i0_k1_flag = .true.
+                                endif
+                                
+
+                                ! starting with edge at k0, i1
+                                if ((i.eq.index_u4_i1_k0).and.(k.eq.k0)) then
+                                    u4_i1_k0(j) = q_y(index_u4_i1_k0,j,k0)
+                                    u4_i1_k0_flag = .true.
+                                endif
+                                
+                                if ((i.eq.i1).and.(k.eq.index_u2_i1_k0)) then
+                                    u2_i1_k0(j) = q_y(i1,j,index_u2_i1_k0)
+                                    u2_i1_k0_flag = .true.
+                                endif
+                                
+                                if ((i.eq.index_u4_i1_k0).and.(k.eq.index_u2_i1_k0)) then
+                                    u3_i1_k0(j) = q_y(index_u4_i1_k0,j,index_u2_i1_k0)
+                                    u3_i1_k0_flag = .true.
+                                endif
+                                
+
+                                ! then, with edge at k1, i1
+                                if ((i.eq.index_u4_i1_k1).and.(k.eq.k_aft)) then
+                                    u4_i1_k1(j) = q_y(index_u4_i1_k1,j,k_aft)
+                                    u4_i1_k1_flag = .true.
+                                endif
+                                
+                                if ((i.eq.i1).and.(k.eq.index_u2_i1_k1)) then
+                                    u2_i1_k1(j) = q_y(i1,j,index_u2_i1_k1)
+                                    u2_i1_k1_flag = .true.
+                                endif
+                                
+                                if ((i.eq.index_u4_i1_k1).and.(k.eq.index_u2_i1_k1)) then
+                                    u3_i1_k1(j) = q_y(index_u4_i1_k1,j,index_u2_i1_k1)
+                                    u3_i1_k1_flag = .true.
+                                endif
+                                
+
+                            enddo
+                        enddo
+                    enddo
+
+                endif
+
+                call MPI_BARRIER(MPI_COMM_WORLD, mpi_err)
+
+                if (u2_i0_k0_flag) call MPI_BCAST (u2_i0_k0, size(u2_i0_k0), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u3_i0_k0_flag) call MPI_BCAST (u3_i0_k0, size(u3_i0_k0), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u4_i0_k0_flag) call MPI_BCAST (u4_i0_k0, size(u4_i0_k0), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+
+                if (u2_i0_k1_flag) call MPI_BCAST (u2_i0_k1, size(u2_i0_k1), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u3_i0_k1_flag) call MPI_BCAST (u3_i0_k1, size(u3_i0_k1), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u4_i0_k1_flag) call MPI_BCAST (u4_i0_k1, size(u4_i0_k1), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+
+                if (u2_i1_k0_flag) call MPI_BCAST (u2_i1_k0, size(u2_i1_k0), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u3_i1_k0_flag) call MPI_BCAST (u3_i1_k0, size(u3_i1_k0), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u4_i1_k0_flag) call MPI_BCAST (u4_i1_k0, size(u4_i1_k0), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+
+                if (u2_i1_k1_flag) call MPI_BCAST (u2_i1_k1, size(u2_i1_k1), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u3_i1_k1_flag) call MPI_BCAST (u3_i1_k1, size(u3_i1_k1), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u4_i1_k1_flag) call MPI_BCAST (u4_i1_k1, size(u4_i1_k1), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+
+                call MPI_BARRIER(MPI_COMM_WORLD, mpi_err)
+
+                if (object_in_proc_y_inobj) then
+
+                    do i = ystart_ibm_inobj(1), yend_ibm_inobj(1)
+                        do k = ystart_ibm_inobj(3), yend_ibm_inobj(3)
+                            do j=start_index_j,end_index_j
+
+                                ! starting with edge at k0, i0
+                                if ((i.eq.i0).and.(k.eq.k0)) vel_term_y(i0,j,k0) = -(1.d0/(alpha_i0_k0*beta_i0_k0)) * &
+                                                                ( beta_i0_k0*(1.d0-alpha_i0_k0)*u4_i0_k0(j) &
+                                                                + (1.d0-beta_i0_k0)*alpha_i0_k0*u2_i0_k0(j) &
+                                                                + (1.d0-beta_i0_k0)*(1-alpha_i0_k0)*u3_i0_k0(j) )
+
+                                ! starting with edge at k1, i0
+                                if ((i.eq.i0).and.(k.eq.k_aft)) vel_term_y(i0,j,k_aft) = -(1.d0/(alpha_i0_k1*beta_i0_k1)) * &
+                                                                ( beta_i0_k1*(1.d0-alpha_i0_k1)*u4_i0_k1(j) &
+                                                                + (1.d0-beta_i0_k1)*alpha_i0_k1*u2_i0_k1(j) &
+                                                                + (1.d0-beta_i0_k1)*(1-alpha_i0_k1)*u3_i0_k1(j) )
+
+                                ! starting with edge at k0, i1
+                                if ((i.eq.i1).and.(k.eq.k0)) vel_term_y(i1,j,k0) = -(1.d0/(alpha_i1_k0*beta_i1_k0)) * &
+                                                                ( beta_i1_k0*(1.d0-alpha_i1_k0)*u4_i1_k0(j) &
+                                                                + (1.d0-beta_i1_k0)*alpha_i1_k0*u2_i1_k0(j) &
+                                                                + (1.d0-beta_i1_k0)*(1-alpha_i1_k0)*u3_i1_k0(j) )
+
+                                ! starting with edge at k1, i1
+                                if ((i.eq.i1).and.(k.eq.k_aft)) vel_term_y(i1,j,k_aft) = -(1.d0/(alpha_i1_k1*beta_i1_k1)) * &
+                                                                ( beta_i1_k1*(1.d0-alpha_i1_k1)*u4_i1_k1(j) &
+                                                                + (1.d0-beta_i1_k1)*alpha_i1_k1*u2_i1_k1(j) &
+                                                                + (1.d0-beta_i1_k1)*(1-alpha_i1_k1)*u3_i1_k1(j) )
+
+                            enddo
+                        enddo
+                    enddo
+
+                endif
+
+                deallocate(u2_i0_k0)
+                deallocate(u2_i0_k1)
+                deallocate(u2_i1_k0)
+                deallocate(u2_i1_k1)
+
+                deallocate(u3_i0_k0)
+                deallocate(u3_i0_k1)
+                deallocate(u3_i1_k0)
+                deallocate(u3_i1_k1)
+
+                deallocate(u4_i0_k0)
+                deallocate(u4_i0_k1)
+                deallocate(u4_i1_k0)
+                deallocate(u4_i1_k1)
+
+                if (k1.eq.n3) then
+                    ! we already know that we are on the wall
+                    ! no need to compute anything, we set the velocities equal to 0
+
+                    if (object_in_proc_y_inobj) then
+
+                        do i = ystart_ibm_inobj(1), yend_ibm_inobj(1)
+                            do k = ystart_ibm_inobj(3), yend_ibm_inobj(3)
+                                do j=start_index_j,end_index_j
+
+                                    ! starting with edge at k1, i0
+                                    if ((i.eq.i0).and.(k.eq.k_aft)) vel_term_y(i0,j,k_aft) = 0.d0
+
+                                    ! starting with edge at k1, i1
+                                    if ((i.eq.i1).and.(k.eq.k_aft)) vel_term_y(i1,j,k_aft) = 0.d0
+
+                                enddo
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+                
+                call transpose_y_to_x(vel_term_y, vel_term_x)
+
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+                ! In x_configuration
+                ! we can deal with all 4 edges (k0,j0), (k0,j1), (k1,j0), (k1,j1) at the same time
+                ! From the start, we know that one pair of edge is on the wall, either at j0 or j1
+                ! So we treat everything with one index, j_remaining corresponding to the side the closest to the centerline
+
+                ! global information
+                ! used for all 4 edges
+                start_index_i = i0+1
+                end_index_i = i1-1
+
+                if (j0.eq.1) then
+                    j_remaining = j1
+                    j_first_node_outside = j1+1
+                    y_p1 = ye
+                endif
+
+                if (j1.ge.(n2-1)) then
+                    j_remaining = j0
+                    j_first_node_outside = j0-1
+                    y_p1 = ys
+                endif
+
+                ! now define correctly the indices for u4
+                ! starting with edge at k0
+                index_u4_k0_jr = k0-1
+
+                if (k0.eq.1) index_u4_k0_jr = n3-1
+
+                ! then, with edge at k1
+                k_aft=k1
+                if (k1.eq.n3) k_aft=1
+
+                index_u4_k1_jr = k1+1
+
+                if (k1.ge.(n3-1)) index_u4_k1_jr = 1
+
+                ! and, define correctly the alpha and beta coefficient
+                ! starting with edge at k0
+                alpha_k0_jr = abs( (Z(k0)-dx3)-zs ) / dx3
+
+                ! then, with edge at k1
+                alpha_k1_jr = abs( (Z(k1)+dx3)-ze ) / dx3
+
+                ! then, with edge at j_remaining
+                beta_jr = abs( Y(j_first_node_outside)-y_p1 ) / abs( Y(j_first_node_outside)-Y(j_remaining) )
+
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!! ATTENTION
+                ! caution to what is used here
+                ! Maybe better with inobj ...
+
+                allocate(u2_k0_jr(start_index_i:end_index_i))
+                u2_k0_jr=0.d0
+                u2_k0_jr_flag = .false.
+                allocate(u2_k1_jr(start_index_i:end_index_i))
+                u2_k1_jr=0.d0
+                u2_k1_jr_flag = .false.
+
+                allocate(u3_k0_jr(start_index_i:end_index_i))
+                u3_k0_jr=0.d0
+                u3_k0_jr_flag = .false.
+                allocate(u3_k1_jr(start_index_i:end_index_i))
+                u3_k1_jr=0.d0
+                u3_k1_jr_flag = .false.
+
+                allocate(u4_k0_jr(start_index_i:end_index_i))
+                u4_k0_jr=0.d0
+                u4_k0_jr_flag = .false.
+                allocate(u4_k1_jr(start_index_i:end_index_i))
+                u4_k1_jr=0.d0
+                u4_k1_jr_flag = .false.
+
+                call MPI_BARRIER(MPI_COMM_WORLD, mpi_err)
+
+                if (object_in_proc_x_inobj) then
+
+                    do j = xstart_ibm_inobj(2), xend_ibm_inobj(2)
+                        do k = xstart_ibm_inobj(3), xend_ibm_inobj(3)
+                            do i=start_index_i,end_index_i
+
+                                ! starting with edge at k0
+                                if ((k.eq.index_u4_k0_jr).and.(j.eq.j_remaining)) then
+                                    u4_k0_jr(i) = q_x(i,j_remaining,index_u4_k0_jr)
+                                    u4_k0_jr_flag = .true.
+                                endif
+
+                                if ((k.eq.k0).and.(j.eq.j_first_node_outside)) then
+                                    u2_k0_jr(i) = q_x(i,j_first_node_outside,k0)
+                                    u2_k0_jr_flag = .true.
+                                endif
+                                
+                                if ((k.eq.index_u4_k0_jr).and.(j.eq.j_first_node_outside)) then
+                                    u3_k0_jr(i) = q_x(i,j_first_node_outside,index_u4_k0_jr)
+                                    u3_k0_jr_flag = .true.
+                                endif
+                                
+
+                                ! starting with edge at k1
+                                if ((k.eq.index_u4_k1_jr).and.(j.eq.j_remaining)) then
+                                    u4_k1_jr(i) = q_x(i,j_remaining,index_u4_k1_jr)
+                                    u4_k0_jr_flag = .true.
+                                endif
+                                
+                                if ((k.eq.k_aft).and.(j.eq.j_first_node_outside)) then
+                                    u2_k1_jr(i) = q_x(i,j_first_node_outside,k_aft)
+                                    u2_k1_jr_flag = .true.
+                                endif
+                                
+                                if ((k.eq.index_u4_k1_jr).and.(j.eq.j_first_node_outside)) then
+                                    u3_k1_jr(i) = q_x(i,j_first_node_outside,index_u4_k1_jr)
+                                    u3_k1_jr_flag = .true.
+                                endif
+                                
+
+                            enddo
+                        enddo
+                    enddo
+
+                endif
+
+                call MPI_BARRIER(MPI_COMM_WORLD, mpi_err)
+
+                if (u2_k0_jr_flag) call MPI_BCAST (u2_k0_jr, size(u2_k0_jr), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u3_k0_jr_flag) call MPI_BCAST (u3_k0_jr, size(u3_k0_jr), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u4_k0_jr_flag) call MPI_BCAST (u4_k0_jr, size(u4_k0_jr), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+
+                if (u2_k1_jr_flag) call MPI_BCAST (u2_k1_jr, size(u2_k1_jr), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u3_k1_jr_flag) call MPI_BCAST (u3_k1_jr, size(u3_k1_jr), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u4_k1_jr_flag) call MPI_BCAST (u4_k1_jr, size(u4_k1_jr), MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+
+                call MPI_BARRIER(MPI_COMM_WORLD, mpi_err)
+
+                if (object_in_proc_x_inobj) then
+
+                    do j = xstart_ibm_inobj(2), xend_ibm_inobj(2)
+                        do k = xstart_ibm_inobj(3), xend_ibm_inobj(3)
+                            do i=start_index_i,end_index_i
+
+                                ! starting with edge at k0
+                                if ((k.eq.k0).and.(j.eq.j_remaining)) vel_term_x(i,j_remaining,k0) = -(1.d0/(alpha_k0_jr*beta_jr)) * &
+                                                                ( beta_jr*(1.d0-alpha_k0_jr)*u4_k0_jr(i) &
+                                                                + (1.d0-beta_jr)*alpha_k0_jr*u2_k0_jr(i) &
+                                                                + (1.d0-beta_jr)*(1-alpha_k0_jr)*u3_k0_jr(i) )
+
+                                ! starting with edge at k1
+                                if ((k.eq.k_aft).and.(j.eq.j_remaining)) vel_term_x(i,j_remaining,k_aft) = -(1.d0/(alpha_k1_jr*beta_jr)) * &
+                                                                ( beta_jr*(1.d0-alpha_k1_jr)*u4_k1_jr(i) &
+                                                                + (1.d0-beta_jr)*alpha_k1_jr*u2_k1_jr(i) &
+                                                                + (1.d0-beta_jr)*(1-alpha_k1_jr)*u3_k1_jr(i) )
+
+                            enddo
+                        enddo
+                    enddo
+
+                endif
+
+                deallocate(u2_k0_jr)
+                deallocate(u2_k1_jr)
+
+                deallocate(u3_k0_jr)
+                deallocate(u3_k1_jr)
+
+                deallocate(u4_k0_jr)
+                deallocate(u4_k1_jr)
+
+                if (k1.eq.n3) then
+                    ! we already know that we are on the wall
+                    ! no need to compute anything, we set the velocities equal to 0
+
+                    if (object_in_proc_x_inobj) then
+
+                        do j = xstart_ibm_inobj(2), xend_ibm_inobj(2)
+                            do k = xstart_ibm_inobj(3), xend_ibm_inobj(3)
+                                do i=start_index_i,end_index_i
+
+                                    ! starting with edge at k1
+                                    if ((k.eq.k_aft).and.(j.eq.j_remaining)) vel_term_x(i,j_remaining,k_aft) = 0.d0
+
+                                enddo
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                call transpose_x_to_y(vel_term_x, vel_term_y)
+
+                ! For corners ...
+
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+                ! finally, we deal with the corners
+                ! use triple interpolation for that ...
+
+                ! we can deal with all 4 corners (i0,k0,jr), (i0,k1,jr), (i1,k0,jr), (i1,k1,jr) at the same time
+                ! From the start, we know that one pair of edge is on the wall, either at j0 or j1
+                ! So we treat everything with one index, j_remaining corresponding to the side the closest to the centerline
+
+                if (j0.eq.1) then
+                    j_remaining = j1
+                    j_first_node_outside = j1+1
+                    y_p1 = ye
+                endif
+
+                if (j1.ge.(n2-1)) then
+                    j_remaining = j0
+                    j_first_node_outside = j0-1
+                    y_p1 = ys
+                endif
+
+                ! now define correctly the indices for u2 and u4
+                ! starting with edge at k0, i0
+                index_u2_i0_k0 = k0-1
+                index_u4_i0_k0 = i0-1
+
+                if (k0.eq.1) index_u2_i0_k0 = n3-1
+                if (i0.eq.1) index_u4_i0_k0 = n1-1
+
+                ! then, with edge at k1, i0
+                k_aft=k1
+                if (k1.eq.n3) k_aft=1
+
+                index_u2_i0_k1 = k1+1
+                index_u4_i0_k1 = i0-1
+
+                if (k1.ge.(n3-1)) index_u2_i0_k1 = 1
+                if (i0.eq.1) index_u4_i0_k1 = n1-1
+
+                ! then, with edge at k0, i1
+                index_u2_i1_k0 = k0-1
+                index_u4_i1_k0 = i1+1
+
+                if (k0.eq.1) index_u2_i1_k0 = n3-1
+                if (i1.ge.(n1-1)) index_u4_i1_k0 = 1
+
+                ! then, with edge at k1, i1
+                index_u2_i1_k1 = k1+1
+                index_u4_i1_k1 = i1+1
+
+                if (k1.ge.(n3-1)) index_u2_i1_k1 = 1
+                if (i1.ge.(n1-1)) index_u4_i1_k1 = 1
+
+                ! and, define correctly the alpha and beta coefficient
+                ! starting with edge at k0, i0
+                alpha_i0_k0 = abs( (X(i0)-dx1)-xs ) / dx1
+                beta_i0_k0 = abs( (Z(k0)-dx3)-zs ) / dx3
+
+                ! then, with edge at k1, i0
+                alpha_i0_k1 = abs( (X(i0)-dx1)-xs ) / dx1
+                beta_i0_k1 = abs( (Z(k1)+dx3)-ze ) / dx3
+
+                ! then, with edge at k0, i1
+                alpha_i1_k0 = abs( (X(i1)+dx1)-xe ) / dx1
+                beta_i1_k0 = abs( (Z(k0)-dx3)-zs ) / dx3
+
+                ! then, with edge at k1, i1
+                alpha_i1_k1 = abs( (X(i1)+dx1)-xe ) / dx1
+                beta_i1_k1 = abs( (Z(k1)+dx3)-ze ) / dx3
+
+                ! then, with edge at j_remaining
+                gamma_jr = abs( Y(j_first_node_outside)-y_p1 ) / abs( Y(j_first_node_outside)-Y(j_remaining) )
+                
+                u2_i0_k0_jr = 0.d0
+                u3_i0_k0_jr = 0.d0
+                u4_i0_k0_jr = 0.d0
+                u5_i0_k0_jr = 0.d0
+                u6_i0_k0_jr = 0.d0
+                u7_i0_k0_jr = 0.d0
+                u8_i0_k0_jr = 0.d0
+                u2_i0_k0_jr_flag = .false.
+                u3_i0_k0_jr_flag = .false.
+                u4_i0_k0_jr_flag = .false.
+                u5_i0_k0_jr_flag = .false.
+                u6_i0_k0_jr_flag = .false.
+                u7_i0_k0_jr_flag = .false.
+                u8_i0_k0_jr_flag = .false.
+
+                u2_i0_k1_jr = 0.d0
+                u3_i0_k1_jr = 0.d0
+                u4_i0_k1_jr = 0.d0
+                u5_i0_k1_jr = 0.d0
+                u6_i0_k1_jr = 0.d0
+                u7_i0_k1_jr = 0.d0
+                u8_i0_k1_jr = 0.d0
+                u2_i0_k1_jr_flag = .false.
+                u3_i0_k1_jr_flag = .false.
+                u4_i0_k1_jr_flag = .false.
+                u5_i0_k1_jr_flag = .false.
+                u6_i0_k1_jr_flag = .false.
+                u7_i0_k1_jr_flag = .false.
+                u8_i0_k1_jr_flag = .false.
+
+                u2_i1_k0_jr = 0.d0
+                u3_i1_k0_jr = 0.d0
+                u4_i1_k0_jr = 0.d0
+                u5_i1_k0_jr = 0.d0
+                u6_i1_k0_jr = 0.d0
+                u7_i1_k0_jr = 0.d0
+                u8_i1_k0_jr = 0.d0
+                u2_i1_k0_jr_flag = .false.
+                u3_i1_k0_jr_flag = .false.
+                u4_i1_k0_jr_flag = .false.
+                u5_i1_k0_jr_flag = .false.
+                u6_i1_k0_jr_flag = .false.
+                u7_i1_k0_jr_flag = .false.
+                u8_i1_k0_jr_flag = .false.
+
+                u2_i1_k1_jr = 0.d0
+                u3_i1_k1_jr = 0.d0
+                u4_i1_k1_jr = 0.d0
+                u5_i1_k1_jr = 0.d0
+                u6_i1_k1_jr = 0.d0
+                u7_i1_k1_jr = 0.d0
+                u8_i1_k1_jr = 0.d0
+                u2_i1_k1_jr_flag = .false.
+                u3_i1_k1_jr_flag = .false.
+                u4_i1_k1_jr_flag = .false.
+                u5_i1_k1_jr_flag = .false.
+                u6_i1_k1_jr_flag = .false.
+                u7_i1_k1_jr_flag = .false.
+                u8_i1_k1_jr_flag = .false.
+
+                call MPI_BARRIER(MPI_COMM_WORLD, mpi_err)
+
+                ! first, for i0,j0,k0
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!! ATTENTION
+                ! caution to what is used here
+                ! Maybe better with inobj ...
+                if (object_in_proc_y_inobj) then
+
+                    do i = ystart_ibm_inobj(1), yend_ibm_inobj(1)
+                        do k = ystart_ibm_inobj(3), yend_ibm_inobj(3)
+
+                            ! starting with edge at k0, i0
+                            if ((i.eq.index_u4_i0_k0).and.(k.eq.k0)) then
+                                u4_i0_k0_jr = q_y(index_u4_i0_k0,j_remaining,k0)
+                                u4_i0_k0_jr_flag = .true.
+                                u7_i0_k0_jr = q_y(index_u4_i0_k0,j_first_node_outside,k0)
+                                u7_i0_k0_jr_flag = .true.
+                            endif
+
+                            if ((i.eq.i0).and.(k.eq.index_u2_i0_k0)) then
+                                u2_i0_k0_jr = q_y(i0,j_remaining,index_u2_i0_k0)
+                                u2_i0_k0_jr_flag = .true.
+                                u6_i0_k0_jr = q_y(i0,j_first_node_outside,index_u2_i0_k0)
+                                u6_i0_k0_jr_flag = .true.
+                            endif
+
+                            if ((i.eq.index_u4_i0_k0).and.(k.eq.index_u2_i0_k0)) then
+                                u3_i0_k0_jr = q_y(index_u4_i0_k0,j_remaining,index_u2_i0_k0)
+                                u3_i0_k0_jr_flag = .true.
+                                u8_i0_k0_jr = q_y(index_u4_i0_k0,j_first_node_outside,index_u2_i0_k0)
+                                u8_i0_k0_jr_flag = .true.
+                            endif
+
+                            if ((i.eq.i0).and.(k.eq.k0)) then
+                                u5_i0_k0_jr = q_y(i0,j_first_node_outside,k0)
+                                u5_i0_k0_jr_flag = .true.
+                            endif
+
+                            ! then, with edge at k1, i0
+                            if ((i.eq.index_u4_i0_k1).and.(k.eq.k_aft)) then
+                                u4_i0_k1_jr = q_y(index_u4_i0_k1,j_remaining,k_aft)
+                                u4_i0_k1_jr_flag = .true.
+                                u7_i0_k1_jr = q_y(index_u4_i0_k1,j_first_node_outside,k_aft)
+                                u7_i0_k1_jr_flag = .true.
+                            endif
+
+                            if ((i.eq.i0).and.(k.eq.index_u2_i0_k1)) then
+                                u2_i0_k1_jr = q_y(i0,j_remaining,index_u2_i0_k1)
+                                u2_i0_k1_jr_flag = .true.
+                                u6_i0_k1_jr = q_y(i0,j_first_node_outside,index_u2_i0_k1)
+                                u6_i0_k1_jr_flag = .true.
+                            endif
+
+                            if ((i.eq.index_u4_i0_k1).and.(k.eq.index_u2_i0_k1)) then
+                                u3_i0_k1_jr = q_y(index_u4_i0_k1,j_remaining,index_u2_i0_k1)
+                                u3_i0_k1_jr_flag = .true.
+                                u8_i0_k1_jr = q_y(index_u4_i0_k1,j_first_node_outside,index_u2_i0_k1)
+                                u8_i0_k1_jr_flag = .true.
+                            endif
+
+                            if ((i.eq.i0).and.(k.eq.k_aft)) then
+                                u5_i0_k1_jr = q_y(i0,j_first_node_outside,k_aft)
+                                u5_i0_k1_jr_flag = .true.
+                            endif
+
+                            ! starting with edge at k0, i1
+                            if ((i.eq.index_u4_i1_k0).and.(k.eq.k0)) then
+                                u4_i1_k0_jr = q_y(index_u4_i1_k0,j_remaining,k0)
+                                u4_i1_k0_jr_flag = .true.
+                                u7_i1_k0_jr = q_y(index_u4_i1_k0,j_first_node_outside,k0)
+                                u7_i1_k0_jr_flag = .true.
+                            endif
+
+                            if ((i.eq.i1).and.(k.eq.index_u2_i1_k0)) then
+                                u2_i1_k0_jr = q_y(i1,j_remaining,index_u2_i1_k0)
+                                u2_i1_k0_jr_flag = .true.
+                                u6_i1_k0_jr = q_y(i1,j_first_node_outside,index_u2_i1_k0)
+                                u6_i1_k0_jr_flag = .true.
+                            endif
+
+                            if ((i.eq.index_u4_i1_k0).and.(k.eq.index_u2_i1_k0)) then
+                                u3_i1_k0_jr = q_y(index_u4_i1_k0,j_remaining,index_u2_i1_k0)
+                                u3_i1_k0_jr_flag = .true.
+                                u8_i1_k0_jr = q_y(index_u4_i1_k0,j_first_node_outside,index_u2_i1_k0)
+                                u8_i1_k0_jr_flag = .true.
+                            endif
+
+                            if ((i.eq.i1).and.(k.eq.k0)) then
+                                u5_i1_k0_jr = q_y(i1,j_first_node_outside,k0)
+                                u5_i1_k0_jr_flag = .true.
+                            endif
+
+                            ! then, with edge at k1, i1
+                            if ((i.eq.index_u4_i1_k1).and.(k.eq.k_aft)) then
+                                u4_i1_k1_jr = q_y(index_u4_i1_k1,j_remaining,k_aft)
+                                u4_i1_k1_jr_flag = .true.
+                                u7_i1_k1_jr = q_y(index_u4_i1_k1,j_first_node_outside,k_aft)
+                                u7_i1_k1_jr_flag = .true.
+                            endif
+
+                            if ((i.eq.i1).and.(k.eq.index_u2_i1_k1)) then
+                                u2_i1_k1_jr = q_y(i1,j_remaining,index_u2_i1_k1)
+                                u2_i1_k1_jr_flag = .true.
+                                u6_i1_k1_jr = q_y(i1,j_first_node_outside,index_u2_i1_k1)
+                                u6_i1_k1_jr_flag = .true.
+                            endif
+
+                            if ((i.eq.index_u4_i1_k1).and.(k.eq.index_u2_i1_k1)) then
+                                u3_i1_k1_jr = q_y(index_u4_i1_k1,j_remaining,index_u2_i1_k1)
+                                u3_i1_k1_jr_flag = .true.
+                                u8_i1_k1_jr = q_y(index_u4_i1_k1,j_first_node_outside,index_u2_i1_k1)
+                                u8_i1_k1_jr_flag = .true.
+                            endif
+
+                            if ((i.eq.i1).and.(k.eq.k_aft)) then
+                                u5_i1_k1_jr = q_y(i1,j_first_node_outside,k_aft)
+                                u5_i1_k1_jr_flag = .true.
+                            endif
+
+                        enddo
+                    enddo
+
+                endif
+
+                call MPI_BARRIER(MPI_COMM_WORLD, mpi_err)
+
+                if (u2_i0_k0_jr_flag) call MPI_BCAST (u2_i0_k0_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u3_i0_k0_jr_flag) call MPI_BCAST (u3_i0_k0_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u4_i0_k0_jr_flag) call MPI_BCAST (u4_i0_k0_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u5_i0_k0_jr_flag) call MPI_BCAST (u5_i0_k0_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u6_i0_k0_jr_flag) call MPI_BCAST (u6_i0_k0_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u7_i0_k0_jr_flag) call MPI_BCAST (u7_i0_k0_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u8_i0_k0_jr_flag) call MPI_BCAST (u8_i0_k0_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+
+                if (u2_i0_k1_jr_flag) call MPI_BCAST (u2_i0_k1_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u3_i0_k1_jr_flag) call MPI_BCAST (u3_i0_k1_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u4_i0_k1_jr_flag) call MPI_BCAST (u4_i0_k1_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u5_i0_k1_jr_flag) call MPI_BCAST (u5_i0_k1_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u6_i0_k1_jr_flag) call MPI_BCAST (u6_i0_k1_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u7_i0_k1_jr_flag) call MPI_BCAST (u7_i0_k1_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u8_i0_k1_jr_flag) call MPI_BCAST (u8_i0_k1_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+
+                if (u2_i1_k0_jr_flag) call MPI_BCAST (u2_i1_k0_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u3_i1_k0_jr_flag) call MPI_BCAST (u3_i1_k0_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u4_i1_k0_jr_flag) call MPI_BCAST (u4_i1_k0_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u5_i1_k0_jr_flag) call MPI_BCAST (u5_i1_k0_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u6_i1_k0_jr_flag) call MPI_BCAST (u6_i1_k0_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u7_i1_k0_jr_flag) call MPI_BCAST (u7_i1_k0_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u8_i1_k0_jr_flag) call MPI_BCAST (u8_i1_k0_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+
+                if (u2_i1_k1_jr_flag) call MPI_BCAST (u2_i1_k1_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u3_i1_k1_jr_flag) call MPI_BCAST (u3_i1_k1_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u4_i1_k1_jr_flag) call MPI_BCAST (u4_i1_k1_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u5_i1_k1_jr_flag) call MPI_BCAST (u5_i1_k1_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u6_i1_k1_jr_flag) call MPI_BCAST (u6_i1_k1_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u7_i1_k1_jr_flag) call MPI_BCAST (u7_i1_k1_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+                if (u8_i1_k1_jr_flag) call MPI_BCAST (u8_i1_k1_jr, 1, MPI_DOUBLE_PRECISION, nrank, MPI_COMM_WORLD ,mpi_err)
+
+                call MPI_BARRIER(MPI_COMM_WORLD, mpi_err)
+
+                ! if (nrank.eq.0) then
+
+                !     write(*,*) 'j_remaining', j_remaining
+                !     write(*,*) 'j_first_node_outside', j_first_node_outside
+                !     write(*,*) 'y_p1', y_p1
+
+                !     write(*,*) 'alpha_i0_k0', alpha_i0_k0
+                !     write(*,*) 'beta_i0_k0', beta_i0_k0
+                !     write(*,*) 'alpha_i0_k1', alpha_i0_k1
+                !     write(*,*) 'beta_i0_k1', beta_i0_k1
+                !     write(*,*) 'alpha_i1_k0', alpha_i1_k0
+                !     write(*,*) 'beta_i1_k0', beta_i1_k0
+                !     write(*,*) 'alpha_i1_k1', alpha_i1_k1
+                !     write(*,*) 'beta_i1_k1', beta_i1_k1
+                !     write(*,*) 'gamma_jr', gamma_jr
+
+                ! endif
+
+                if (object_in_proc_y_inobj) then
+
+                    do i = ystart_ibm_inobj(1), yend_ibm_inobj(1)
+                        do k = ystart_ibm_inobj(3), yend_ibm_inobj(3)
+
+                            ! starting with edge at k0, i0
+                            if ((i.eq.i0).and.(k.eq.k0)) then
+                                vel_term_y(i0,j_remaining,k0) = -(1.d0/(alpha_i0_k0*beta_i0_k0*gamma_jr)) * &
+                                                            ( beta_i0_k0*(1.d0-alpha_i0_k0)*gamma_jr*u4_i0_k0_jr &
+                                                            + (1.d0-beta_i0_k0)*alpha_i0_k0*gamma_jr*u2_i0_k0_jr &
+                                                            + (1.d0-beta_i0_k0)*(1-alpha_i0_k0)*gamma_jr*u3_i0_k0_jr &
+                                                            + (1.d0-gamma_jr)*beta_i0_k0*alpha_i0_k0*u5_i0_k0_jr &
+                                                            + (1.d0-gamma_jr)*beta_i0_k0*(1.d0-alpha_i0_k0)*u7_i0_k0_jr &
+                                                            + (1.d0-gamma_jr)*(1.d0-beta_i0_k0)*alpha_i0_k0*u6_i0_k0_jr &
+                                                            + (1.d0-gamma_jr)*(1.d0-beta_i0_k0)*(1-alpha_i0_k0)*u8_i0_k0_jr )
+
+                                ! write(*,*) 'i0', i0, 'k0', k0
+                                ! write(*,*) 'u2_i0_k0_jr', u2_i0_k0_jr
+                                ! write(*,*) 'u3_i0_k0_jr', u3_i0_k0_jr
+                                ! write(*,*) 'u4_i0_k0_jr', u4_i0_k0_jr
+                                ! write(*,*) 'u5_i0_k0_jr', u5_i0_k0_jr
+                                ! write(*,*) 'u6_i0_k0_jr', u6_i0_k0_jr
+                                ! write(*,*) 'u7_i0_k0_jr', u7_i0_k0_jr
+                                ! write(*,*) 'u8_i0_k0_jr', u8_i0_k0_jr
+
+                            endif
+
+                            ! starting with edge at k1, i0
+                            if ((i.eq.i0).and.(k.eq.k_aft)) then
+                                vel_term_y(i0,j_remaining,k_aft) = -(1.d0/(alpha_i0_k1*beta_i0_k1*gamma_jr)) * &
+                                                            ( beta_i0_k1*(1.d0-alpha_i0_k1)*gamma_jr*u4_i0_k1_jr &
+                                                            + (1.d0-beta_i0_k1)*alpha_i0_k1*gamma_jr*u2_i0_k1_jr &
+                                                            + (1.d0-beta_i0_k1)*(1-alpha_i0_k1)*gamma_jr*u3_i0_k1_jr &
+                                                            + (1.d0-gamma_jr)*beta_i0_k1*alpha_i0_k1*u5_i0_k1_jr &
+                                                            + (1.d0-gamma_jr)*beta_i0_k1*(1.d0-alpha_i0_k1)*u7_i0_k1_jr &
+                                                            + (1.d0-gamma_jr)*(1.d0-beta_i0_k1)*alpha_i0_k1*u6_i0_k1_jr &
+                                                            + (1.d0-gamma_jr)*(1.d0-beta_i0_k1)*(1-alpha_i0_k1)*u8_i0_k1_jr )
+
+                                ! write(*,*) 'i0', i0, 'k1', k1
+                                ! write(*,*) 'u2_i0_k1_jr', u2_i0_k1_jr
+                                ! write(*,*) 'u3_i0_k1_jr', u3_i0_k1_jr
+                                ! write(*,*) 'u4_i0_k1_jr', u4_i0_k1_jr
+                                ! write(*,*) 'u5_i0_k1_jr', u5_i0_k1_jr
+                                ! write(*,*) 'u6_i0_k1_jr', u6_i0_k1_jr
+                                ! write(*,*) 'u7_i0_k1_jr', u7_i0_k1_jr
+                                ! write(*,*) 'u8_i0_k1_jr', u8_i0_k1_jr
+
+                            endif
+
+                            ! starting with edge at k0, i1
+                            if ((i.eq.i1).and.(k.eq.k0)) then
+                                vel_term_y(i1,j_remaining,k0) = -(1.d0/(alpha_i1_k0*beta_i1_k0*gamma_jr)) * &
+                                                            ( beta_i1_k0*(1.d0-alpha_i1_k0)*gamma_jr*u4_i1_k0_jr &
+                                                            + (1.d0-beta_i1_k0)*alpha_i1_k0*gamma_jr*u2_i1_k0_jr &
+                                                            + (1.d0-beta_i1_k0)*(1-alpha_i1_k0)*gamma_jr*u3_i1_k0_jr &
+                                                            + (1.d0-gamma_jr)*beta_i1_k0*alpha_i1_k0*u5_i1_k0_jr &
+                                                            + (1.d0-gamma_jr)*beta_i1_k0*(1.d0-alpha_i1_k0)*u7_i1_k0_jr &
+                                                            + (1.d0-gamma_jr)*(1.d0-beta_i1_k0)*alpha_i1_k0*u6_i1_k0_jr &
+                                                            + (1.d0-gamma_jr)*(1.d0-beta_i1_k0)*(1-alpha_i1_k0)*u8_i1_k0_jr )
+
+                                ! write(*,*) 'i1', i1, 'k0', k0
+                                ! write(*,*) 'u2_i1_k0_jr', u2_i1_k0_jr
+                                ! write(*,*) 'u3_i1_k0_jr', u3_i1_k0_jr
+                                ! write(*,*) 'u4_i1_k0_jr', u4_i1_k0_jr
+                                ! write(*,*) 'u5_i1_k0_jr', u5_i1_k0_jr
+                                ! write(*,*) 'u6_i1_k0_jr', u6_i1_k0_jr
+                                ! write(*,*) 'u7_i1_k0_jr', u7_i1_k0_jr
+                                ! write(*,*) 'u8_i1_k0_jr', u8_i1_k0_jr
+
+                            endif
+
+                            ! starting with edge at k1, i1
+                            if ((i.eq.i1).and.(k.eq.k_aft)) then
+                                vel_term_y(i1,j_remaining,k_aft) = -(1.d0/(alpha_i1_k1*beta_i1_k1*gamma_jr)) * &
+                                                            ( beta_i1_k1*(1.d0-alpha_i1_k1)*gamma_jr*u4_i1_k1_jr &
+                                                            + (1.d0-beta_i1_k1)*alpha_i1_k1*gamma_jr*u2_i1_k1_jr &
+                                                            + (1.d0-beta_i1_k1)*(1-alpha_i1_k1)*gamma_jr*u3_i1_k1_jr &
+                                                            + (1.d0-gamma_jr)*beta_i1_k1*alpha_i1_k1*u5_i1_k1_jr &
+                                                            + (1.d0-gamma_jr)*beta_i1_k1*(1.d0-alpha_i1_k1)*u7_i1_k1_jr &
+                                                            + (1.d0-gamma_jr)*(1.d0-beta_i1_k1)*alpha_i1_k1*u6_i1_k1_jr &
+                                                            + (1.d0-gamma_jr)*(1.d0-beta_i1_k1)*(1-alpha_i1_k1)*u8_i1_k1_jr )
+
+                                ! write(*,*) 'i1', i1, 'k1', k1
+                                ! write(*,*) 'u2_i1_k1_jr', u2_i1_k1_jr
+                                ! write(*,*) 'u3_i1_k1_jr', u3_i1_k1_jr
+                                ! write(*,*) 'u4_i1_k1_jr', u4_i1_k1_jr
+                                ! write(*,*) 'u5_i1_k1_jr', u5_i1_k1_jr
+                                ! write(*,*) 'u6_i1_k1_jr', u6_i1_k1_jr
+                                ! write(*,*) 'u7_i1_k1_jr', u7_i1_k1_jr
+                                ! write(*,*) 'u8_i1_k1_jr', u8_i1_k1_jr
+
+                            endif
+
+                        enddo
+                    enddo
+
+                endif
+
+                if (k1.eq.n3) then
+                    ! we already know that we are on the wall
+                    ! no need to compute anything, we set the velocities equal to 0
+
+                    if (object_in_proc_y_inobj) then
+
+                        do i = ystart_ibm_inobj(1), yend_ibm_inobj(1)
+                            do k = ystart_ibm_inobj(3), yend_ibm_inobj(3)
+
+                                ! starting with edge at k1, i0
+                                if ((i.eq.i0).and.(k.eq.k_aft)) vel_term_y(i0,j_remaining,k_aft) = 0.d0
+
+                                ! starting with edge at k1, i1
+                                if ((i.eq.i1).and.(k.eq.k_aft)) vel_term_y(i1,j_remaining,k_aft) = 0.d0
+
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                call transpose_y_to_x(vel_term_y, vel_term_x)
+
+                ! ! Now, we reset the velocity where the nodes are on the object boundary
+                ! ! X-direction
+                ! if (object_in_proc_x) then
+
+                !     if (abs(X(i0)-xs).lt.10e-5) then
+                
+                !         do j = xstart_ibm(2), xend_ibm(2)
+                !             do k = xstart_ibm(3), xend_ibm(3)
+
+                !                 if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) vel_term_x(i0,j,k) = 0.d0
+
+                !             enddo
+                !         enddo
+
+                !     endif
+
+                !     if (abs(X(i1)-xe).lt.10e-5) then
+                
+                !         do j = xstart_ibm(2), xend_ibm(2)
+                !             do k = xstart_ibm(3), xend_ibm(3)
+
+                !                 if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) vel_term_x(i1,j,k) = 0.d0
+
+                !             enddo
+                !         enddo
+
+                !     endif
+
+                ! endif
+
+                ! call transpose_x_to_y(vel_term_x, vel_term_y)
+
+                ! ! Y-direction
+                ! ! if (object_in_proc_y) then
+
+                ! !     if (abs(Y(i0)-xs).lt.10e-6) then
+                
+                ! !         do j = xstart_ibm(2), xend_ibm(2)
+                ! !             do k = xstart_ibm(3), xend_ibm(3)
+
+                ! !                 if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) vel_term_x(i0,j,k) = 0.d0
+
+                ! !             enddo
+                ! !         enddo
+
+                ! !     endif
+
+                ! !     if (abs(X(i1)-xe).lt.10e-6) then
+                
+                ! !         do j = xstart_ibm(2), xend_ibm(2)
+                ! !             do k = xstart_ibm(3), xend_ibm(3)
+
+                ! !                 if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) vel_term_x(i1,j,k) = 0.d0
+
+                ! !             enddo
+                ! !         enddo
+
+                ! !     endif
+
+                ! ! endif
+
+                ! call transpose_y_to_z(vel_term_y, vel_term_z)
+
+                ! ! if (nrank.eq.0) then
+                ! !     write(*,*) 'abs(Z(k0)-zs)', abs(Z(k0)-zs)
+                ! !     write(*,*) 'abs(Z(k1)-ze)', abs(Z(k1)-ze)
+                ! ! endif
+
+                ! ! Z-direction
+                ! if (object_in_proc_z) then
+
+                !     if (abs(Z(k0)-zs).lt.10e-5) then
+
+                !         ! write(*,*) 'reset at k0'
+                
+                !         do i = zstart_ibm(1), zend_ibm(1)
+                !             do j = zstart_ibm(2), zend_ibm(2)
+
+                !                 if ((j.ge.j0).and.(j.le.j1).and.(i.ge.i0).and.(i.le.i1)) vel_term_z(i,j,k0) = 0.d0
+
+                !             enddo
+                !         enddo
+
+                !     endif
+
+                !     if (abs(Z(k1)-ze).lt.10e-5) then
+
+                !         ! write(*,*) 'reset at k1'
+                
+                !         do i = zstart_ibm(1), zend_ibm(1)
+                !             do j = zstart_ibm(2), zend_ibm(2)
+
+                !                 if ((j.ge.j0).and.(j.le.j1).and.(i.ge.i0).and.(i.le.i1)) vel_term_z(i,j,k1) = 0.d0
+
+                !             enddo
+                !         enddo
+
+                !     endif
+
+                ! endif
+
+                ! if (j0.eq.1) then
+                !     j_remaining = j1
+                !     j_first_node_outside = j1+1
+                !     y_p1 = ye
+                ! endif
+
+                ! if (j1.ge.(n2-1)) then
+                !     j_remaining = j0
+                !     j_first_node_outside = j0-1
+                !     y_p1 = ys
+                ! endif
+
+                ! if (k1.ge.(n3-1)) then
+                
+                !     do i = zstart_ibm(1), zend_ibm(1)
+                !         do j = zstart_ibm(2), zend_ibm(2)
+
+                !             if ((j.gt.j0).and.(j.lt.j1).and.(i.gt.i0).and.(i.lt.i1)) vel_term_z(i,j,k1) = -q_z(i,j,1)
+                !             if ((j.eq.j_remaining).and.(i.ge.i0).and.(i.le.i1)) vel_term_z(i,j,k1) = 0.d0
+                !             if ((j.ge.j0).and.(j.le.j1).and.(i.eq.i0)) vel_term_z(i,j,k1) = 0.d0
+                !             if ((j.ge.j0).and.(j.le.j1).and.(i.eq.i1)) vel_term_z(i,j,k1) = 0.d0
+
+                !         enddo
+                !     enddo
+
+                ! endif
+
+                ! call transpose_z_to_y(vel_term_z, vel_term_y)
+                ! call transpose_y_to_x(vel_term_y, vel_term_x)
+
+            end subroutine antisymmetric_interpol_kim_choin_old
+
+            subroutine antisymmetric_interpol_kim_choin(vel_term_x, q_x, n1, n2, n3, X, cell_center_y, Z, &
+                i0, i1, j0, j1, k0, k1, &
+                xstart_ibm, xend_ibm, ystart_ibm, yend_ibm, zstart_ibm, zend_ibm, &
+                object_in_proc_x, object_in_proc_y, object_in_proc_z) !vel_term correspond au terme (V^(n+1) - u^n )/dt
+                
+                use mpi
+                use mesh, only: dx1, dx3, L3
+                use mesh_interface
+
+                implicit none
+                integer                                                         :: i,j,k
+                integer                                                         :: n1, n2, n3
+                real*8, dimension(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3))     :: q_x, vel_term_x
+                real*8, dimension(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3))     :: q_y, vel_term_y
+                real*8, dimension(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3))     :: q_z, vel_term_z
+                integer, intent(in)                                             :: i0, i1, j0, j1, k0, k1
+                real*8, dimension(:), intent(in)                                :: X, Z
+                logical                                                         :: cell_center_y
+                integer, dimension(3), intent(in)                               :: xstart_ibm, xend_ibm, ystart_ibm, yend_ibm, zstart_ibm, zend_ibm
+                logical, intent(in)                                             :: object_in_proc_x, object_in_proc_y, object_in_proc_z
+                real*8                                                          :: h, pos_first_node_flowfield, pos_second_node_flowfield
+                integer                                                         :: index_first_node_flowfield, index_second_node_flowfield
+
+                integer                                                         :: start_index_i, end_index_i
+                integer                                                         :: start_index_j, end_index_j
+                integer                                                         :: start_index_k, end_index_k
+
+                integer                                                         :: j_remaining, j_first_node_outside
+                real*8                                                          :: y_p1, displacement
+
+                integer                                                         :: real_j0, real_j1, k_aft
+                integer                                                         :: mpi_err
+
+
+                ! first linear interpolation for a point inside the area of a face ...
+                ! we begin with the upstream face
+                h = abs(X(i0)-xs)
+
+                if (i0.eq.1) then
+                    index_first_node_flowfield = n1-1
+                    index_second_node_flowfield = n1-2
+                elseif (i0.eq.2) then
+                    index_first_node_flowfield = i0-1
+                    index_second_node_flowfield = n1-1
+                else
+                    index_first_node_flowfield = i0-1
+                    index_second_node_flowfield = i0-2
+                endif
+
+                pos_first_node_flowfield = abs(X(i0)-dx1-xs)
+                pos_second_node_flowfield = abs(X(i0)-2.d0*dx1-xs)
+
+                ! X-direction
+                if (object_in_proc_x) then
+
+                    if (h.le.pos_first_node_flowfield) then
+                
+                        do j = xstart_ibm(2), xend_ibm(2)
+                            do k = xstart_ibm(3), xend_ibm(3)
+
+                                if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) vel_term_x(i0,j,k) = - (h/pos_first_node_flowfield) * q_x(index_first_node_flowfield,j,k)
+
+                            enddo
+                        enddo
+
+                    else
+                
+                        do j = xstart_ibm(2), xend_ibm(2)
+                            do k = xstart_ibm(3), xend_ibm(3)
+
+                                if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) vel_term_x(i0,j,k) = - q_x(index_first_node_flowfield,j,k) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
+                                                   - q_x(index_second_node_flowfield,j,k) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
+
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                ! Then we focus on the downstream face
+                h = abs(X(i1)-xe)
+
+                if (i1.eq.(n1-1)) then
+                    index_first_node_flowfield = 1
+                    index_second_node_flowfield = 2
+                elseif (i1.eq.(n1-2)) then
+                    index_first_node_flowfield = i1+1
+                    index_second_node_flowfield = 1
+                else
+                    index_first_node_flowfield = i1+1
+                    index_second_node_flowfield = i1+2
+                endif
+
+                pos_first_node_flowfield = abs(X(i1)+dx1-xe)
+                pos_second_node_flowfield = abs(X(i1)+2.d0*dx1-xe)
+
+                ! if (nrank.eq.0) write(*,*) 'h', h, 'pos_first_node_flowfield', pos_first_node_flowfield
+
+                ! X-direction
+                if (object_in_proc_x) then
+
+                    if (h.le.pos_first_node_flowfield) then
+                
+                        do j = xstart_ibm(2), xend_ibm(2)
+                            do k = xstart_ibm(3), xend_ibm(3)
+
+                                if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) vel_term_x(i1,j,k) = - (h/pos_first_node_flowfield) * q_x(index_first_node_flowfield,j,k)
+
+                            enddo
+                        enddo
+
+                    else
+                
+                        do j = xstart_ibm(2), xend_ibm(2)
+                            do k = xstart_ibm(3), xend_ibm(3)
+
+                                if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) vel_term_x(i1,j,k) = - q_x(index_first_node_flowfield,j,k) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
+                                                   - q_x(index_second_node_flowfield,j,k) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
+
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                ! Y-direction
+                call transpose_x_to_y(q_x, q_y)
+                call transpose_x_to_y(vel_term_x, vel_term_y)
+
+                displacement = 0.d0
+                if (cell_center_y) displacement=0.5d0
+
+                ! first linear interpolation for a point inside the area of a face ...
+                ! we begin with the upstream face
+                if (j0.gt.2) then
+
+                    !  /!\ use eta direction instead of y-direction to be fully consistent with all the code
+                    ! h = abs(Y(j0)-ys)
+
+                    ! index_first_node_flowfield = j0-1
+                    ! index_second_node_flowfield = j0-2
+
+                    ! pos_first_node_flowfield = abs(Y(j0-1)-ys)
+                    ! pos_second_node_flowfield = abs(Y(j0-2)-ys)
+
+                    h = abs(get_computational_coords(j0*1.d0+displacement, n2)-get_computational_coords_from_physical(ys))
+                    ! h = abs(get_computational_coords(j0*1.d0+displacement, n2)-ys)
+
+                    index_first_node_flowfield = j0-1
+                    index_second_node_flowfield = j0-2
+
+                    pos_first_node_flowfield = abs(get_computational_coords((j0-1)*1.d0+displacement, n2)-get_computational_coords_from_physical(ys))
+                    pos_second_node_flowfield = abs(get_computational_coords((j0-2)*1.d0+displacement, n2)-get_computational_coords_from_physical(ys))
+                    ! pos_first_node_flowfield = abs(get_computational_coords((j0-1)*1.d0+displacement, n2)-ys)
+                    ! pos_second_node_flowfield = abs(get_computational_coords((j0-2)*1.d0+displacement, n2)-ys)
+
+                    if (object_in_proc_y) then
+
+                        if (h.le.pos_first_node_flowfield) then
+
+                            do i = ystart_ibm(1), yend_ibm(1)
+                                do k = ystart_ibm(3), yend_ibm(3)
+
+                                    if ((i.ge.i0).and.(i.le.i1).and.(k.ge.k0).and.(k.le.k1)) vel_term_y(i,j0,k) = vel_term_y(i,j0,k) - (h/pos_first_node_flowfield) * q_y(i,index_first_node_flowfield,k)
+
+                                enddo
+                            enddo
+
+                        else
+
+                            do i = ystart_ibm(1), yend_ibm(1)
+                                do k = ystart_ibm(3), yend_ibm(3)
+
+                                    if ((i.ge.i0).and.(i.le.i1).and.(k.ge.k0).and.(k.le.k1)) vel_term_y(i,j0,k) = vel_term_y(i,j0,k) - q_y(i,index_first_node_flowfield,k) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
+                                                       - q_y(i,index_second_node_flowfield,k) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
+
+                                enddo
+                            enddo
+
+                        endif
+
+                    endif
+
+                endif
+
+                ! Then we focus on the downstream face
+                if (j1.lt.(n2-2)) then
+
+                    !  /!\ use eta direction instead of y-direction to be fully consistent with all the code
+                    ! h = abs(Y(j1)-ye)
+
+                    ! index_first_node_flowfield = j1+1
+                    ! index_second_node_flowfield = j1+2
+
+                    ! pos_first_node_flowfield = abs(Y(j1+1)-ye)
+                    ! pos_second_node_flowfield = abs(Y(j1+2)-ye)
+
+                    h = abs(get_computational_coords(j1*1.d0+displacement, n2)-get_computational_coords_from_physical(ye))
+                    ! h = abs(get_computational_coords(j1*1.d0+displacement, n2)-ye)
+
+                    index_first_node_flowfield = j1+1
+                    index_second_node_flowfield = j1+2
+
+                    pos_first_node_flowfield = abs(get_computational_coords((j1+1)*1.d0+displacement, n2)-get_computational_coords_from_physical(ye))
+                    pos_second_node_flowfield = abs(get_computational_coords((j1+2)*1.d0+displacement, n2)-get_computational_coords_from_physical(ye))
+                    ! pos_first_node_flowfield = abs(get_computational_coords((j1+1)*1.d0+displacement, n2)-ye)
+                    ! pos_second_node_flowfield = abs(get_computational_coords((j1+2)*1.d0+displacement, n2)-ye)
+
+                    if (object_in_proc_y) then
+
+                        if (h.le.pos_first_node_flowfield) then
+
+                            do i = ystart_ibm(1), yend_ibm(1)
+                                do k = ystart_ibm(3), yend_ibm(3)
+
+                                    if ((i.ge.i0).and.(i.le.i1).and.(k.ge.k0).and.(k.le.k1)) vel_term_y(i,j1,k) = vel_term_y(i,j1,k) - (h/pos_first_node_flowfield) * q_y(i,index_first_node_flowfield,k)
+
+                                enddo
+                            enddo
+
+                        else
+
+                            do i = ystart_ibm(1), yend_ibm(1)
+                                do k = ystart_ibm(3), yend_ibm(3)
+
+                                    if ((i.ge.i0).and.(i.le.i1).and.(k.ge.k0).and.(k.le.k1)) vel_term_y(i,j1,k) = vel_term_y(i,j1,k)- q_y(i,index_first_node_flowfield,k) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
+                                                       - q_y(i,index_second_node_flowfield,k) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
+
+                                enddo
+                            enddo
+
+                        endif
+
+                    endif
+
+                endif
+
+                ! Z-direction
+                call transpose_y_to_z(q_y, q_z)
+                call transpose_y_to_z(vel_term_y, vel_term_z)
+
+                ! we begin with the upstream face
+                h = abs(Z(k0)-zs)
+
+                if (k0.eq.1) then
+                    index_first_node_flowfield = n3-1
+                    index_second_node_flowfield = n3-2
+                elseif (k0.eq.2) then
+                    index_first_node_flowfield = k0-1
+                    index_second_node_flowfield = n3-1
+                else
+                    index_first_node_flowfield = k0-1
+                    index_second_node_flowfield = k0-2
+                endif
+
+                pos_first_node_flowfield = abs(Z(k0)-dx3-zs)
+                pos_second_node_flowfield = abs(Z(k0)-2.d0*dx3-zs)
+
+                ! if (nrank.eq.0) write(*,*) 'h', h, 'pos_first_node_flowfield', pos_first_node_flowfield
+
+                ! Z-direction
+                if (object_in_proc_z) then
+
+                    if (h.le.pos_first_node_flowfield) then
+                
+                        do i = zstart_ibm(1), zend_ibm(1)
+                            do j = zstart_ibm(2), zend_ibm(2)
+
+                                if ((i.ge.i0).and.(i.le.i1).and.(j.ge.j0).and.(j.le.j1)) vel_term_z(i,j,k0) = vel_term_z(i,j,k0) - (h/pos_first_node_flowfield) * q_z(i,j,index_first_node_flowfield)
+
+                            enddo
+                        enddo
+
+                    else
+                
+                        do i = zstart_ibm(1), zend_ibm(1)
+                            do j = zstart_ibm(2), zend_ibm(2)
+
+                                if ((i.ge.i0).and.(i.le.i1).and.(j.ge.j0).and.(j.le.j1)) vel_term_z(i,j,k0) = vel_term_z(i,j,k0) - q_z(i,j,index_first_node_flowfield) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
+                                                   - q_z(i,j,index_second_node_flowfield) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
+
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                ! Then we focus on the downstream face
+                ! /!\ Here, we assume that if there is a roughness in the second part of the channel in the x3 direction
+                ! It extends until L3
+                ! Because the grid is staggered, is the roughness extends until L3, then that means q1 and q2 are defined from k=1,...,n3-1
+                ! For q3, the fact that the roughness is extending until L3 means q3(k=n3) in on the bounds, so q3(k=1) by symmetry as k=n3 is non-physical
+
+                if (k1.eq.n3) then
+                    ! we already know that we are on the wall
+                    ! no need to compute anything, we set the velocities equal to 0
+
+                    if (object_in_proc_z) then
+                    
+                        do i = zstart_ibm(1), zend_ibm(1)
+                            do j = zstart_ibm(2), zend_ibm(2)
+
+                                if ((i.ge.i0).and.(i.le.i1).and.(j.ge.j0).and.(j.le.j1)) vel_term_z(i,j,1) = 0.d0
+
+                            enddo
+                        enddo
+
+                    endif
+
+
+                else
+
+                    h = abs(Z(k1)-ze)
+
+                    if (k1.eq.(n3-1)) then
+                        index_first_node_flowfield = 1
+                        index_second_node_flowfield = 2
+                    elseif (k1.eq.(n3-2)) then
+                        index_first_node_flowfield = k1+1
+                        index_second_node_flowfield = 1
+                    else
+                        index_first_node_flowfield = k1+1
+                        index_second_node_flowfield = k1+2
+                    endif
+
+                    pos_first_node_flowfield = abs(Z(k1)+dx3-ze)
+                    pos_second_node_flowfield = abs(Z(k1)+2.d0*dx3-ze)
+
+                    ! if (nrank.eq.0) write(*,*) 'h', h, 'pos_first_node_flowfield', pos_first_node_flowfield
+
+                    if (object_in_proc_z) then
+
+                        if (h.le.pos_first_node_flowfield) then
+                    
+                            do i = zstart_ibm(1), zend_ibm(1)
+                                do j = zstart_ibm(2), zend_ibm(2)
+
+                                    if ((i.ge.i0).and.(i.le.i1).and.(j.ge.j0).and.(j.le.j1)) vel_term_z(i,j,k1) = vel_term_z(i,j,k1) - (h/pos_first_node_flowfield) * q_z(i,j,index_first_node_flowfield)
+
+                                enddo
+                            enddo
+
+                        else
+                    
+                            do i = zstart_ibm(1), zend_ibm(1)
+                                do j = zstart_ibm(2), zend_ibm(2)
+
+                                    if ((i.ge.i0).and.(i.le.i1).and.(j.ge.j0).and.(j.le.j1)) vel_term_z(i,j,k1) = vel_term_z(i,j,k1) - q_z(i,j,index_first_node_flowfield) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
+                                                       - q_z(i,j,index_second_node_flowfield) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
+
+                                enddo
+                            enddo
+
+                        endif
+
+                    endif
+
+                endif
+
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+                ! Now average the edges and the corners ...
+
+                ! In z_configuration
+                ! we can deal with all 4 edges (i0,j0), (i0,j1), (i1,j0), (i1,j1) at the same time
+                ! From the start, we know that one pair of edge is on the wall, either at j0 or j1
+                ! So we treat everything with one index, j_remaining corresponding to the side the closest to the centerline
+
+                ! global information
+                ! used for all 4 edges
+                start_index_k = k0+1
+                end_index_k = k1-1
+
+                if (j0.eq.1) then
+                    j_remaining = j1
+                endif
+
+                if (j1.ge.(n2-1)) then
+                    j_remaining = j0
+                endif
+
+                if (object_in_proc_z) then
+
+                    do i = zstart_ibm(1), zend_ibm(1)
+                        do j = zstart_ibm(2), zend_ibm(2)
+                            do k=start_index_k,end_index_k
+
+                                ! starting with edge at i0
+                                if ((i.eq.i0).and.(j.eq.j_remaining)) vel_term_z(i0,j_remaining,k) = (1.d0/2.d0) * vel_term_z(i0,j_remaining,k)
+
+                                ! starting with edge at i1
+                                if ((i.eq.i1).and.(j.eq.j_remaining)) vel_term_z(i1,j_remaining,k) = (1.d0/2.d0) * vel_term_z(i1,j_remaining,k)
+
+                            enddo
+                        enddo
+                    enddo
+
+                endif
+                
+                call transpose_z_to_y(vel_term_z, vel_term_y)
+
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+                ! In y_configuration
+                ! we can deal with all 4 edges (i0,k0), (i0,k1), (i1,k0), (i1,k1) at the same time
+
+                ! global information
+                ! used for all 4 edges
+                start_index_j = j0+1
+                end_index_j = j1-1
+
+                ! then, with edge at k1
+                k_aft=k1
+                if (k1.eq.n3) k_aft=1
+
+                if (object_in_proc_y) then
+
+                    do i = ystart_ibm(1), yend_ibm(1)
+                        do k = ystart_ibm(3), yend_ibm(3)
+                            do j=start_index_j,end_index_j
+
+                                ! starting with edge at k0, i0
+                                if ((i.eq.i0).and.(k.eq.k0)) vel_term_y(i0,j,k0) = (1.d0/2.d0) * vel_term_y(i0,j,k0)
+
+                                ! starting with edge at k1, i0
+                                if ((i.eq.i0).and.(k.eq.k_aft)) vel_term_y(i0,j,k_aft) = (1.d0/2.d0) * vel_term_y(i0,j,k_aft)
+
+                                ! starting with edge at k0, i1
+                                if ((i.eq.i1).and.(k.eq.k0)) vel_term_y(i1,j,k0) = (1.d0/2.d0) * vel_term_y(i1,j,k0)
+
+                                ! starting with edge at k1, i1
+                                if ((i.eq.i1).and.(k.eq.k_aft)) vel_term_y(i1,j,k_aft) = (1.d0/2.d0) * vel_term_y(i1,j,k_aft)
+
+                            enddo
+                        enddo
+                    enddo
+
+                endif
+
+                if (k1.eq.n3) then
+                    ! we already know that we are on the wall
+                    ! no need to compute anything, we set the velocities equal to 0
+
+                    if (object_in_proc_y) then
+
+                        do i = ystart_ibm(1), yend_ibm(1)
+                            do k = ystart_ibm(3), yend_ibm(3)
+                                do j=start_index_j,end_index_j
+
+                                    ! starting with edge at k1, i0
+                                    if ((i.eq.i0).and.(k.eq.k_aft)) vel_term_y(i0,j,k_aft) = 0.d0
+
+                                    ! starting with edge at k1, i1
+                                    if ((i.eq.i1).and.(k.eq.k_aft)) vel_term_y(i1,j,k_aft) = 0.d0
+
+                                enddo
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+                
+                call transpose_y_to_x(vel_term_y, vel_term_x)
+
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+                ! In x_configuration
+                ! we can deal with all 4 edges (k0,j0), (k0,j1), (k1,j0), (k1,j1) at the same time
+                ! From the start, we know that one pair of edge is on the wall, either at j0 or j1
+                ! So we treat everything with one index, j_remaining corresponding to the side the closest to the centerline
+
+                ! global information
+                ! used for all 4 edges
+                start_index_i = i0+1
+                end_index_i = i1-1
+
+                if (j0.eq.1) then
+                    j_remaining = j1
+                endif
+
+                if (j1.ge.(n2-1)) then
+                    j_remaining = j0
+                endif
+
+                ! then, with edge at k1
+                k_aft=k1
+                if (k1.eq.n3) k_aft=1
+
+                if (object_in_proc_x) then
+
+                    do j = xstart_ibm(2), xend_ibm(2)
+                        do k = xstart_ibm(3), xend_ibm(3)
+                            do i=start_index_i,end_index_i
+
+                                ! starting with edge at k0
+                                if ((k.eq.k0).and.(j.eq.j_remaining)) vel_term_x(i,j_remaining,k0) = (1.d0/2.d0) * vel_term_x(i,j_remaining,k0)
+
+                                ! starting with edge at k1
+                                if ((k.eq.k_aft).and.(j.eq.j_remaining)) vel_term_x(i,j_remaining,k_aft) = (1.d0/2.d0) * vel_term_x(i,j_remaining,k_aft)
+
+                            enddo
+                        enddo
+                    enddo
+
+                endif
+
+                if (k1.eq.n3) then
+                    ! we already know that we are on the wall
+                    ! no need to compute anything, we set the velocities equal to 0
+
+                    if (object_in_proc_x) then
+
+                        do j = xstart_ibm(2), xend_ibm(2)
+                            do k = xstart_ibm(3), xend_ibm(3)
+                                do i=start_index_i,end_index_i
+
+                                    ! starting with edge at k1
+                                    if ((k.eq.k_aft).and.(j.eq.j_remaining)) vel_term_x(i,j_remaining,k_aft) = 0.d0
+
+                                enddo
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                call transpose_x_to_y(vel_term_x, vel_term_y)
+
+                ! For corners ...
+
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+                ! finally, we deal with the corners
+                ! use triple interpolation for that ...
+
+                ! we can deal with all 4 corners (i0,k0,jr), (i0,k1,jr), (i1,k0,jr), (i1,k1,jr) at the same time
+                ! From the start, we know that one pair of edge is on the wall, either at j0 or j1
+                ! So we treat everything with one index, j_remaining corresponding to the side the closest to the centerline
+
+                if (j0.eq.1) then
+                    j_remaining = j1
+                endif
+
+                if (j1.ge.(n2-1)) then
+                    j_remaining = j0
+                endif
+
+                ! then, with edge at k1, i0
+                k_aft=k1
+                if (k1.eq.n3) k_aft=1
+
+                if (object_in_proc_y) then
+
+                    do i = ystart_ibm(1), yend_ibm(1)
+                        do k = ystart_ibm(3), yend_ibm(3)
+
+                            ! starting with edge at k0, i0
+                            if ((i.eq.i0).and.(k.eq.k0)) vel_term_y(i0,j_remaining,k0) = (1.d0/3.d0) * vel_term_y(i0,j_remaining,k0)
+
+                            ! starting with edge at k1, i0
+                            if ((i.eq.i0).and.(k.eq.k_aft)) vel_term_y(i0,j_remaining,k_aft) = (1.d0/3.d0) * vel_term_y(i0,j_remaining,k_aft)
+
+                            ! starting with edge at k0, i1
+                            if ((i.eq.i1).and.(k.eq.k0)) vel_term_y(i1,j_remaining,k0) = (1.d0/3.d0) * vel_term_y(i1,j_remaining,k0)
+
+                            ! starting with edge at k1, i1
+                            if ((i.eq.i1).and.(k.eq.k_aft)) vel_term_y(i1,j_remaining,k_aft) = (1.d0/3.d0) * vel_term_y(i1,j_remaining,k_aft)
+
+                        enddo
+                    enddo
+
+                endif
+
+                if (k1.eq.n3) then
+                    ! we already know that we are on the wall
+                    ! no need to compute anything, we set the velocities equal to 0
+
+                    if (object_in_proc_y) then
+
+                        do i = ystart_ibm(1), yend_ibm(1)
+                            do k = ystart_ibm(3), yend_ibm(3)
+
+                                ! starting with edge at k1, i0
+                                if ((i.eq.i0).and.(k.eq.k_aft)) vel_term_y(i0,j_remaining,k_aft) = 0.d0
+
+                                ! starting with edge at k1, i1
+                                if ((i.eq.i1).and.(k.eq.k_aft)) vel_term_y(i1,j_remaining,k_aft) = 0.d0
+
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                call transpose_y_to_x(vel_term_y, vel_term_x)
+
+                ! Now, we reset the velocity where the nodes are on the object boundary
+                ! X-direction
+                if (object_in_proc_x) then
+
+                    if (abs(X(i0)-xs).lt.10e-5) then
+                
+                        do j = xstart_ibm(2), xend_ibm(2)
+                            do k = xstart_ibm(3), xend_ibm(3)
+
+                                if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) vel_term_x(i0,j,k) = 0.d0
+
+                            enddo
+                        enddo
+
+                    endif
+
+                    if (abs(X(i1)-xe).lt.10e-5) then
+                
+                        do j = xstart_ibm(2), xend_ibm(2)
+                            do k = xstart_ibm(3), xend_ibm(3)
+
+                                if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) vel_term_x(i1,j,k) = 0.d0
+
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                call transpose_x_to_y(vel_term_x, vel_term_y)
+
+                ! Y-direction
+                if (object_in_proc_y) then
+
+                    if (abs(Y(j0)-ys).lt.10e-5) then
+                
+                        do i = ystart_ibm(1), yend_ibm(1)
+                            do k = ystart_ibm(3), yend_ibm(3)
+
+                                if ((i.ge.i0).and.(i.le.i1).and.(k.ge.k0).and.(k.le.k1)) vel_term_y(i,j0,k) = 0.d0
+
+                            enddo
+                        enddo
+
+                    endif
+
+                    if (abs(Y(j1)-ye).lt.10e-5) then
+                
+                        do i = ystart_ibm(1), yend_ibm(1)
+                            do k = ystart_ibm(3), yend_ibm(3)
+
+                                if ((i.ge.i0).and.(i.le.i1).and.(k.ge.k0).and.(k.le.k1)) vel_term_y(i,j1,k) = 0.d0
+
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                call transpose_y_to_z(vel_term_y, vel_term_z)
+
+                ! Z-direction
+                if (object_in_proc_z) then
+
+                    if (abs(Z(k0)-zs).lt.10e-5) then
+                
+                        do i = zstart_ibm(1), zend_ibm(1)
+                            do j = zstart_ibm(2), zend_ibm(2)
+
+                                if ((j.ge.j0).and.(j.le.j1).and.(i.ge.i0).and.(i.le.i1)) vel_term_z(i,j,k0) = 0.d0
+
+                            enddo
+                        enddo
+
+                    endif
+
+                    if ((abs(Z(k_aft)-ze).lt.10e-5).or.(abs(Z(k_aft)-ze+L3).lt.10e-5)) then
+                
+                        do i = zstart_ibm(1), zend_ibm(1)
+                            do j = zstart_ibm(2), zend_ibm(2)
+
+                                if ((j.ge.j0).and.(j.le.j1).and.(i.ge.i0).and.(i.le.i1)) vel_term_z(i,j,k_aft) = 0.d0
+
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                call transpose_z_to_y(vel_term_z, vel_term_y)
+                call transpose_y_to_x(vel_term_y, vel_term_x)
+
+            end subroutine antisymmetric_interpol_kim_choin
+
     end subroutine compute_antisymmetric_velocity
+
+
+    subroutine compute_antisymmetric_temperature(sca_x, sz, sca_term, deltaT)
+
+        use mesh
+        use snapshot_writer
+        use COMMON_workspace_view
+        use object_drawer
+        use object_file_reader
+
+        implicit none
+        integer, dimension(3), intent(in)           :: sz
+        real*8, dimension(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)), intent(in)        :: sca_x
+        real*8, dimension(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3))                    :: transformed_sca_x, transformed_sca_term
+        real*8, dimension(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)), intent(out)       :: sca_term
+        real*8  :: X1(n1), X2(n2), X3(n3)
+        real*8  :: X1c(n1), X2c(n2), X3c(n3)
+        integer     :: i,j,k,n
+        real*8, dimension(:,:), allocatable                 :: vertex
+        integer, dimension(:,:), allocatable                :: faces
+        integer                                             :: nb_faces, nb_vertex
+        real*8, intent(in)                                  :: deltaT
+
+        ! Z => X
+        ! Y => Y
+        ! X => Z
+        ! In this context, the mesh array must be n1,n2 or n3-array even for the staggered ones
+        ! (because of subroutine perform_mask)
+        do i = 1, n1
+            X1(i)=Z(i)
+        end do
+
+        do j = 1, n2
+            X2(j)=Y(j)
+        end do
+
+        do k = 1, n3
+            X3(k)=X(k)
+        end do
+
+        do i = 1, n1-1
+            X1c(i)=Zc(i)
+        end do
+
+        do j = 1, n2-1
+            X2c(j)=Yc(j)
+        end do
+
+        do k = 1, n3-1
+            X3c(k)=Xc(k)
+        end do
+
+        X1c(n1)=X1c(n1-1)+dx1
+        X2c(n2)=X2c(n2-1)+Y(n2)-Y(n2-1)
+        X3c(n3)=X3c(n3-1)+dx3
+
+        do k=xstart(3), xend(3)
+            do j=xstart(2), xend(2)
+                do i=xstart(1), xend(1)
+
+                    if (j.le.(n2/2)) then
+                        transformed_sca_x(i,j,k) = ( sca_term(i,j,k) - deltaT )
+                    else
+                        transformed_sca_x(i,j,k) = ( sca_term(i,j,k) + deltaT )
+                    endif
+
+                enddo
+            enddo
+        enddo
+
+        sca_term = 0.d0
+
+        do n=1,number_of_objects
+
+            ! READING OBJECT FILE
+            call read_object_size(trim(obj_file_path), nb_vertex, nb_faces)
+            call read_object(trim(obj_file_path), vertex, faces, nb_vertex, nb_faces)
+
+            ! Scale with H
+            vertex(:,1)=vertex(:,1)*body_scale_x1(n)+body_x1(n)
+            vertex(:,2)=vertex(:,2)*body_scale_x2(n)+body_x2(n)
+            vertex(:,3)=vertex(:,3)*body_scale_x3(n)+body_x3(n)
+
+            call get_objet_area(vertex, nb_vertex)
+
+            xs = max(0.d0,xs)
+            xe = min(L1,xe)
+            ys = max(0.d0,ys)
+            ye = min(L2,ye)
+            zs = max(0.d0,zs)
+            ze = min(L3,ze)
+
+            ! call antisymmetric_interpol_T(sca_term, sca_x, n1, n2, n3, X1c, X2c, X3c, & 
+            !     i_start_obj_sca(n),i_end_obj_sca(n),j_start_obj_sca(n),j_end_obj_sca(n),k_start_obj_sca(n),k_end_obj_sca(n), &
+            !     xstart_ibm_sca(n,:), xend_ibm_sca(n,:), ystart_ibm_sca(n,:), yend_ibm_sca(n,:), zstart_ibm_sca(n,:), zend_ibm_sca(n,:), &
+            !     object_in_current_proc_x_sca(n), object_in_current_proc_y_sca(n), object_in_current_proc_z_sca(n), &
+            !     xstart_ibm_inobj_sca(n,:), xend_ibm_inobj_sca(n,:), ystart_ibm_inobj_sca(n,:), yend_ibm_inobj_sca(n,:), zstart_ibm_inobj_sca(n,:), zend_ibm_inobj_sca(n,:), &
+            !     object_in_current_proc_x_inobj_sca(n), object_in_current_proc_y_inobj_sca(n), object_in_current_proc_z_inobj_sca(n), &
+            !     deltaT)
+
+            call antisymmetric_interpol_kim_choin(sca_term, transformed_sca_x, n1, n2, n3, X1c, .true., X3c, & 
+                i_start_obj_sca(n),i_end_obj_sca(n),j_start_obj_sca(n),j_end_obj_sca(n),k_start_obj_sca(n),k_end_obj_sca(n), &
+                xstart_ibm_sca(n,:), xend_ibm_sca(n,:), ystart_ibm_sca(n,:), yend_ibm_sca(n,:), zstart_ibm_sca(n,:), zend_ibm_sca(n,:), &
+                object_in_current_proc_x_sca(n), object_in_current_proc_y_sca(n), object_in_current_proc_z_sca(n))
+
+        enddo
+
+        call create_stretch_snapshot(COMMON_snapshot_path, "IBM", sca_term, "sca_term", 1, X1c,X2c,X3c)
+
+        do k=xstart(3), xend(3)
+            do j=xstart(2), xend(2)
+                do i=xstart(1), xend(1)
+
+                    sca_term(i,j,k) = ( transformed_sca_term(i,j,k) - transformed_sca_x(i,j,k) )  !* solid_cell(j,k)
+
+                enddo
+            enddo
+        enddo
+
+        call create_stretch_snapshot(COMMON_snapshot_path, "IBM", sca_term, "sca_term_after", 1, X1c,X2c,X3c)
+
+        contains
+
+            subroutine antisymmetric_interpol_T(vel_term, q, n1, n2, n3, X, Y, Z, &
+                i0, i1, j0, j1, k0, k1, &
+                xstart_ibm, xend_ibm, ystart_ibm, yend_ibm, zstart_ibm, zend_ibm, &
+                object_in_proc_x, object_in_proc_y, object_in_proc_z, &
+                xstart_ibm_inobj, xend_ibm_inobj, ystart_ibm_inobj, yend_ibm_inobj, zstart_ibm_inobj, zend_ibm_inobj, &
+                object_in_proc_x_inobj, object_in_proc_y_inobj, object_in_proc_z_inobj, &
+                deltaT) !vel_term correspond au terme (V^(n+1) - u^n )/dt
+                use mpi
+                use mesh, only: L3
+
+                implicit none
+                integer                                                         :: i,j,k
+                integer                                                         :: n1, n2, n3
+                real*8, dimension(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3))     :: q, vel_term
+                real*8, dimension(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3))     :: q_y, vel_term_y
+                real*8, dimension(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3))     :: q_z, vel_term_z
+                integer, intent(in)                                             :: i0, i1, j0, j1, k0, k1
+                integer, dimension(:,:), allocatable                            :: tmp_k0, tmp_k1
+                integer                                                         :: k_bef, k_aft
+                real*8, dimension(:), intent(in)                                :: X, Y, Z
+                integer, dimension(3), intent(in)                               :: xstart_ibm, xend_ibm, ystart_ibm, yend_ibm, zstart_ibm, zend_ibm
+                logical, intent(in)                                             :: object_in_proc_x, object_in_proc_y, object_in_proc_z
+                integer, dimension(3), intent(in)                               :: xstart_ibm_inobj, xend_ibm_inobj, ystart_ibm_inobj, yend_ibm_inobj, zstart_ibm_inobj, zend_ibm_inobj
+                logical, intent(in)                                             :: object_in_proc_x_inobj, object_in_proc_y_inobj, object_in_proc_z_inobj
+                real*8, intent(in)                                              :: deltaT
+                real*8, dimension(n2)                                           :: sca_theo
+                
+                if (k0.eq.1) then
+                    k_bef=n3-1
+                else
+                    k_bef=k0-1
+                endif
+                
+                if (k1.ge.(n3-1)) then
+                    k_aft=1
+                else
+                    k_aft=k1+1
+                endif
+
+                do j=1,n2
+                    if (j.le.(n2/2)) then
+                        sca_theo(j) = -deltaT
+                    else
+                        sca_theo(j) = deltaT
+                    endif
+                enddo
+
+                ! ! X-direction
+                ! if (object_in_proc_x) then
+                
+                !     ! X-direction
+                !     do j = xstart_ibm(2), xend_ibm(2)
+                !         do k = xstart_ibm(3), xend_ibm(3)
+
+                !             ! upstream the object
+                !             vel_term(i0-1,j,k) = (q(i0-2,j,k)-sca_theo(j)) * ( X(i0-1) - xs ) / ( X(i0-2) - xs ) + sca_theo(j)
+
+                !             ! downstream the object
+                !             vel_term(i1+1,j,k) = (q(i1+2,j,k)-sca_theo(j)) * ( xe - X(i1+1) ) / ( xe - X(i1+2) ) + sca_theo(j)
+
+                !         enddo
+                !     enddo
+
+                ! endif
+
+                ! Y-direction
+                call transpose_x_to_y(q, q_y)
+                call transpose_x_to_y(vel_term, vel_term_y)
+
+                ! if (object_in_proc_y) then
+
+                !     if (j0.gt.1) then
+
+                !         do i = ystart_ibm(1), yend_ibm(1)
+                !             do k = ystart_ibm(3), yend_ibm(3)
+
+                !                 ! upstream the object
+                !                 vel_term_y(i,j0-1,k) = (q_y(i,j0-2,k)-sca_theo(j0)) * ( Y(j0-1) - ys ) / ( Y(j0-2) - ys ) + sca_theo(j0)
+
+                !             enddo
+                !         enddo
+
+                !     endif
+
+                !     if (j1.lt.(n2-1)) then
+
+                !         do i = ystart_ibm(1), yend_ibm(1)
+                !             do k = ystart_ibm(3), yend_ibm(3)
+
+                !                 ! downstream the object
+                !                 vel_term_y(i,j1+1,k) = (q_y(i,j1+2,k)-sca_theo(j1)) * ( ye - Y(j1+1) ) / ( ye - Y(j1+2) ) + sca_theo(j1)
+
+                !             enddo
+                !         enddo
+
+                !     endif
+
+                ! endif
+
+                ! Z-direction
+                call transpose_y_to_z(q_y, q_z)
+                call transpose_y_to_z(vel_term_y, vel_term_z)
+
+                ! allocate(tmp_k0(zstart_ibm(1):zend_ibm(1),zstart_ibm(2):zend_ibm(2)))
+                ! tmp_k0 = 0
+                ! allocate(tmp_k1(zstart_ibm(1):zend_ibm(1),zstart_ibm(2):zend_ibm(2)))
+                ! tmp_k1 = 0
+
+                ! if (object_in_proc_z) then
+
+                !     if (k0.eq.1) then
+
+                !         do i = zstart_ibm(1), zend_ibm(1)
+                !             do j = zstart_ibm(2), zend_ibm(2)
+
+                !                 ! upstream the object
+                !                 vel_term_z(i,j,n3-1) = (q_z(i,j,n3-2)-sca_theo(j)) * ( (Z(n3-1)-L3) - zs ) / ( (Z(n3-2)-L3) - zs ) + sca_theo(j)
+
+                !             enddo
+                !         enddo
+
+                !     else
+
+                !         do i = zstart_ibm(1), zend_ibm(1)
+                !             do j = zstart_ibm(2), zend_ibm(2)
+
+                !                 ! upstream the object
+                !                 vel_term_z(i,j,k0-1) = (q_z(i,j,k0-2)-sca_theo(j)) * ( Z(k0-1) - zs ) / ( Z(k0-2) - zs ) + sca_theo(j)
+
+                !             enddo
+                !         enddo
+
+                !     endif
+
+                !     if (k1.ge.(n3-1)) then
+
+                !         do i = zstart_ibm(1), zend_ibm(1)
+                !             do j = zstart_ibm(2), zend_ibm(2)
+
+                !                 ! downstream the object
+                !                 vel_term_z(i,j,1) = (q_z(i,j,2)-sca_theo(j)) * ( ze - (Z(1)+L3) ) / ( ze - (Z(2)+L3) ) + sca_theo(j)
+
+                !             enddo
+                !         enddo
+
+                !     else
+
+                !         do i = zstart_ibm(1), zend_ibm(1)
+                !             do j = zstart_ibm(2), zend_ibm(2)
+
+                !                 ! downstream the object
+                !                 vel_term_z(i,j,k1+1) = (q_z(i,j,k1+2)-sca_theo(j)) * ( ze - Z(k1+1) ) / ( ze - Z(k1+2) ) + sca_theo(j)
+
+                !             enddo
+                !         enddo
+
+                !     endif
+
+                ! endif
+                
+                call transpose_z_to_y(vel_term_z, vel_term_y)
+                call transpose_y_to_x(vel_term_y, vel_term)
+
+                ! Then fill data in the object
+                
+                if (object_in_proc_x) then
+                
+                    ! X-direction
+                    do i = xstart_ibm(1), xend_ibm(1)
+                        do j = xstart_ibm(2), xend_ibm(2)
+                            do k = xstart_ibm(3), xend_ibm(3)
+
+                                if ((i.ge.i0).and.(i.le.i1).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) vel_term(i,j,k) = sca_theo(j)
+
+                                ! sca_theo
+
+                                ! ! upstream the object
+                                ! vel_term(i0-1,j,k) = (q(i0-2,j,k)-sca_theo(j)) * ( X(i0-1) - xs ) / ( X(i0-2) - xs ) + sca_theo(j)
+
+                                ! ! downstream the object
+                                ! vel_term(i1+1,j,k) = (q(i1+2,j,k)-sca_theo(j)) * ( xe - X(i1+1) ) / ( xe - X(i1+2) ) + sca_theo(j)
+
+                            enddo
+                        enddo
+                    enddo
+
+                endif
+
+
+            end subroutine antisymmetric_interpol_T
+
+            subroutine antisymmetric_interpol_kim_choin(vel_term_x, q_x, n1, n2, n3, X, cell_center_y, Z, &
+                i0, i1, j0, j1, k0, k1, &
+                xstart_ibm, xend_ibm, ystart_ibm, yend_ibm, zstart_ibm, zend_ibm, &
+                object_in_proc_x, object_in_proc_y, object_in_proc_z) !vel_term correspond au terme (V^(n+1) - u^n )/dt
+                
+                use mpi
+                use mesh, only: dx1, dx3, L3
+                use mesh_interface
+
+                implicit none
+                integer                                                         :: i,j,k
+                integer                                                         :: n1, n2, n3
+                real*8, dimension(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3))     :: q_x, vel_term_x
+                real*8, dimension(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3))     :: q_y, vel_term_y
+                real*8, dimension(zstart(1):zend(1),zstart(2):zend(2),zstart(3):zend(3))     :: q_z, vel_term_z
+                integer, intent(in)                                             :: i0, i1, j0, j1, k0, k1
+                real*8, dimension(:), intent(in)                                :: X, Z
+                logical                                                         :: cell_center_y
+                integer, dimension(3), intent(in)                               :: xstart_ibm, xend_ibm, ystart_ibm, yend_ibm, zstart_ibm, zend_ibm
+                logical, intent(in)                                             :: object_in_proc_x, object_in_proc_y, object_in_proc_z
+                real*8                                                          :: h, pos_first_node_flowfield, pos_second_node_flowfield
+                integer                                                         :: index_first_node_flowfield, index_second_node_flowfield
+
+                integer                                                         :: start_index_i, end_index_i
+                integer                                                         :: start_index_j, end_index_j
+                integer                                                         :: start_index_k, end_index_k
+
+                integer                                                         :: j_remaining, j_first_node_outside
+                real*8                                                          :: y_p1, displacement
+
+                integer                                                         :: real_j0, real_j1, k_aft
+                integer                                                         :: mpi_err
+
+
+                ! first linear interpolation for a point inside the area of a face ...
+                ! we begin with the upstream face
+                h = abs(X(i0)-xs)
+
+                if (i0.eq.1) then
+                    index_first_node_flowfield = n1-1
+                    index_second_node_flowfield = n1-2
+                elseif (i0.eq.2) then
+                    index_first_node_flowfield = i0-1
+                    index_second_node_flowfield = n1-1
+                else
+                    index_first_node_flowfield = i0-1
+                    index_second_node_flowfield = i0-2
+                endif
+
+                pos_first_node_flowfield = abs(X(i0)-dx1-xs)
+                pos_second_node_flowfield = abs(X(i0)-2.d0*dx1-xs)
+
+                ! X-direction
+                if (object_in_proc_x) then
+
+                    if (h.le.pos_first_node_flowfield) then
+                
+                        do j = xstart_ibm(2), xend_ibm(2)
+                            do k = xstart_ibm(3), xend_ibm(3)
+
+                                if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) vel_term_x(i0,j,k) = - (h/pos_first_node_flowfield) * q_x(index_first_node_flowfield,j,k)
+
+                            enddo
+                        enddo
+
+                    else
+                
+                        do j = xstart_ibm(2), xend_ibm(2)
+                            do k = xstart_ibm(3), xend_ibm(3)
+
+                                if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) vel_term_x(i0,j,k) = - q_x(index_first_node_flowfield,j,k) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
+                                                   - q_x(index_second_node_flowfield,j,k) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
+
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                ! Then we focus on the downstream face
+                h = abs(X(i1)-xe)
+
+                if (i1.eq.(n1-1)) then
+                    index_first_node_flowfield = 1
+                    index_second_node_flowfield = 2
+                elseif (i1.eq.(n1-2)) then
+                    index_first_node_flowfield = i1+1
+                    index_second_node_flowfield = 1
+                else
+                    index_first_node_flowfield = i1+1
+                    index_second_node_flowfield = i1+2
+                endif
+
+                pos_first_node_flowfield = abs(X(i1)+dx1-xe)
+                pos_second_node_flowfield = abs(X(i1)+2.d0*dx1-xe)
+
+                ! if (nrank.eq.0) write(*,*) 'h', h, 'pos_first_node_flowfield', pos_first_node_flowfield
+
+                ! X-direction
+                if (object_in_proc_x) then
+
+                    if (h.le.pos_first_node_flowfield) then
+                
+                        do j = xstart_ibm(2), xend_ibm(2)
+                            do k = xstart_ibm(3), xend_ibm(3)
+
+                                if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) vel_term_x(i1,j,k) = - (h/pos_first_node_flowfield) * q_x(index_first_node_flowfield,j,k)
+
+                            enddo
+                        enddo
+
+                    else
+                
+                        do j = xstart_ibm(2), xend_ibm(2)
+                            do k = xstart_ibm(3), xend_ibm(3)
+
+                                if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) vel_term_x(i1,j,k) = - q_x(index_first_node_flowfield,j,k) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
+                                                   - q_x(index_second_node_flowfield,j,k) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
+
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                ! Y-direction
+                call transpose_x_to_y(q_x, q_y)
+                call transpose_x_to_y(vel_term_x, vel_term_y)
+
+                displacement = 0.d0
+                if (cell_center_y) displacement=0.5d0
+
+                ! first linear interpolation for a point inside the area of a face ...
+                ! we begin with the upstream face
+                if (j0.gt.2) then
+
+                    !  /!\ use eta direction instead of y-direction to be fully consistent with all the code
+                    ! h = abs(Y(j0)-ys)
+
+                    ! index_first_node_flowfield = j0-1
+                    ! index_second_node_flowfield = j0-2
+
+                    ! pos_first_node_flowfield = abs(Y(j0-1)-ys)
+                    ! pos_second_node_flowfield = abs(Y(j0-2)-ys)
+
+                    h = abs(get_computational_coords(j0*1.d0+displacement, n2)-get_computational_coords_from_physical(ys))
+                    ! h = abs(get_computational_coords(j0*1.d0+displacement, n2)-ys)
+
+                    index_first_node_flowfield = j0-1
+                    index_second_node_flowfield = j0-2
+
+                    pos_first_node_flowfield = abs(get_computational_coords((j0-1)*1.d0+displacement, n2)-get_computational_coords_from_physical(ys))
+                    pos_second_node_flowfield = abs(get_computational_coords((j0-2)*1.d0+displacement, n2)-get_computational_coords_from_physical(ys))
+                    ! pos_first_node_flowfield = abs(get_computational_coords((j0-1)*1.d0+displacement, n2)-ys)
+                    ! pos_second_node_flowfield = abs(get_computational_coords((j0-2)*1.d0+displacement, n2)-ys)
+
+                    if (object_in_proc_y) then
+
+                        if (h.le.pos_first_node_flowfield) then
+
+                            do i = ystart_ibm(1), yend_ibm(1)
+                                do k = ystart_ibm(3), yend_ibm(3)
+
+                                    if ((i.ge.i0).and.(i.le.i1).and.(k.ge.k0).and.(k.le.k1)) vel_term_y(i,j0,k) = vel_term_y(i,j0,k) - (h/pos_first_node_flowfield) * q_y(i,index_first_node_flowfield,k)
+
+                                enddo
+                            enddo
+
+                        else
+
+                            do i = ystart_ibm(1), yend_ibm(1)
+                                do k = ystart_ibm(3), yend_ibm(3)
+
+                                    if ((i.ge.i0).and.(i.le.i1).and.(k.ge.k0).and.(k.le.k1)) vel_term_y(i,j0,k) = vel_term_y(i,j0,k) - q_y(i,index_first_node_flowfield,k) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
+                                                       - q_y(i,index_second_node_flowfield,k) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
+
+                                enddo
+                            enddo
+
+                        endif
+
+                    endif
+
+                endif
+
+                ! Then we focus on the downstream face
+                if (j1.lt.(n2-2)) then
+
+                    !  /!\ use eta direction instead of y-direction to be fully consistent with all the code
+                    ! h = abs(Y(j1)-ye)
+
+                    ! index_first_node_flowfield = j1+1
+                    ! index_second_node_flowfield = j1+2
+
+                    ! pos_first_node_flowfield = abs(Y(j1+1)-ye)
+                    ! pos_second_node_flowfield = abs(Y(j1+2)-ye)
+
+                    h = abs(get_computational_coords(j1*1.d0+displacement, n2)-get_computational_coords_from_physical(ye))
+                    ! h = abs(get_computational_coords(j1*1.d0+displacement, n2)-ye)
+
+                    index_first_node_flowfield = j1+1
+                    index_second_node_flowfield = j1+2
+
+                    pos_first_node_flowfield = abs(get_computational_coords((j1+1)*1.d0+displacement, n2)-get_computational_coords_from_physical(ye))
+                    pos_second_node_flowfield = abs(get_computational_coords((j1+2)*1.d0+displacement, n2)-get_computational_coords_from_physical(ye))
+                    ! pos_first_node_flowfield = abs(get_computational_coords((j1+1)*1.d0+displacement, n2)-ye)
+                    ! pos_second_node_flowfield = abs(get_computational_coords((j1+2)*1.d0+displacement, n2)-ye)
+
+                    if (object_in_proc_y) then
+
+                        if (h.le.pos_first_node_flowfield) then
+
+                            do i = ystart_ibm(1), yend_ibm(1)
+                                do k = ystart_ibm(3), yend_ibm(3)
+
+                                    if ((i.ge.i0).and.(i.le.i1).and.(k.ge.k0).and.(k.le.k1)) vel_term_y(i,j1,k) = vel_term_y(i,j1,k) - (h/pos_first_node_flowfield) * q_y(i,index_first_node_flowfield,k)
+
+                                enddo
+                            enddo
+
+                        else
+
+                            do i = ystart_ibm(1), yend_ibm(1)
+                                do k = ystart_ibm(3), yend_ibm(3)
+
+                                    if ((i.ge.i0).and.(i.le.i1).and.(k.ge.k0).and.(k.le.k1)) vel_term_y(i,j1,k) = vel_term_y(i,j1,k)- q_y(i,index_first_node_flowfield,k) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
+                                                       - q_y(i,index_second_node_flowfield,k) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
+
+                                enddo
+                            enddo
+
+                        endif
+
+                    endif
+
+                endif
+
+                ! Z-direction
+                call transpose_y_to_z(q_y, q_z)
+                call transpose_y_to_z(vel_term_y, vel_term_z)
+
+                ! we begin with the upstream face
+                h = abs(Z(k0)-zs)
+
+                if (k0.eq.1) then
+                    index_first_node_flowfield = n3-1
+                    index_second_node_flowfield = n3-2
+                elseif (k0.eq.2) then
+                    index_first_node_flowfield = k0-1
+                    index_second_node_flowfield = n3-1
+                else
+                    index_first_node_flowfield = k0-1
+                    index_second_node_flowfield = k0-2
+                endif
+
+                pos_first_node_flowfield = abs(Z(k0)-dx3-zs)
+                pos_second_node_flowfield = abs(Z(k0)-2.d0*dx3-zs)
+
+                ! if (nrank.eq.0) write(*,*) 'h', h, 'pos_first_node_flowfield', pos_first_node_flowfield
+
+                ! Z-direction
+                if (object_in_proc_z) then
+
+                    if (h.le.pos_first_node_flowfield) then
+                
+                        do i = zstart_ibm(1), zend_ibm(1)
+                            do j = zstart_ibm(2), zend_ibm(2)
+
+                                if ((i.ge.i0).and.(i.le.i1).and.(j.ge.j0).and.(j.le.j1)) vel_term_z(i,j,k0) = vel_term_z(i,j,k0) - (h/pos_first_node_flowfield) * q_z(i,j,index_first_node_flowfield)
+
+                            enddo
+                        enddo
+
+                    else
+                
+                        do i = zstart_ibm(1), zend_ibm(1)
+                            do j = zstart_ibm(2), zend_ibm(2)
+
+                                if ((i.ge.i0).and.(i.le.i1).and.(j.ge.j0).and.(j.le.j1)) vel_term_z(i,j,k0) = vel_term_z(i,j,k0) - q_z(i,j,index_first_node_flowfield) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
+                                                   - q_z(i,j,index_second_node_flowfield) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
+
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                ! Then we focus on the downstream face
+                ! /!\ Here, we assume that if there is a roughness in the second part of the channel in the x3 direction
+                ! It extends until L3
+                ! Because the grid is staggered, is the roughness extends until L3, then that means q1 and q2 are defined from k=1,...,n3-1
+                ! For q3, the fact that the roughness is extending until L3 means q3(k=n3) in on the bounds, so q3(k=1) by symmetry as k=n3 is non-physical
+
+                if (k1.eq.n3) then
+                    ! we already know that we are on the wall
+                    ! no need to compute anything, we set the velocities equal to 0
+
+                    if (object_in_proc_z) then
+                    
+                        do i = zstart_ibm(1), zend_ibm(1)
+                            do j = zstart_ibm(2), zend_ibm(2)
+
+                                if ((i.ge.i0).and.(i.le.i1).and.(j.ge.j0).and.(j.le.j1)) vel_term_z(i,j,1) = 0.d0
+
+                            enddo
+                        enddo
+
+                    endif
+
+
+                else
+
+                    h = abs(Z(k1)-ze)
+
+                    if (k1.eq.(n3-1)) then
+                        index_first_node_flowfield = 1
+                        index_second_node_flowfield = 2
+                    elseif (k1.eq.(n3-2)) then
+                        index_first_node_flowfield = k1+1
+                        index_second_node_flowfield = 1
+                    else
+                        index_first_node_flowfield = k1+1
+                        index_second_node_flowfield = k1+2
+                    endif
+
+                    pos_first_node_flowfield = abs(Z(k1)+dx3-ze)
+                    pos_second_node_flowfield = abs(Z(k1)+2.d0*dx3-ze)
+
+                    ! if (nrank.eq.0) write(*,*) 'h', h, 'pos_first_node_flowfield', pos_first_node_flowfield
+
+                    if (object_in_proc_z) then
+
+                        if (h.le.pos_first_node_flowfield) then
+                    
+                            do i = zstart_ibm(1), zend_ibm(1)
+                                do j = zstart_ibm(2), zend_ibm(2)
+
+                                    if ((i.ge.i0).and.(i.le.i1).and.(j.ge.j0).and.(j.le.j1)) vel_term_z(i,j,k1) = vel_term_z(i,j,k1) - (h/pos_first_node_flowfield) * q_z(i,j,index_first_node_flowfield)
+
+                                enddo
+                            enddo
+
+                        else
+                    
+                            do i = zstart_ibm(1), zend_ibm(1)
+                                do j = zstart_ibm(2), zend_ibm(2)
+
+                                    if ((i.ge.i0).and.(i.le.i1).and.(j.ge.j0).and.(j.le.j1)) vel_term_z(i,j,k1) = vel_term_z(i,j,k1) - q_z(i,j,index_first_node_flowfield) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
+                                                       - q_z(i,j,index_second_node_flowfield) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
+
+                                enddo
+                            enddo
+
+                        endif
+
+                    endif
+
+                endif
+
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+                ! Now average the edges and the corners ...
+
+                ! In z_configuration
+                ! we can deal with all 4 edges (i0,j0), (i0,j1), (i1,j0), (i1,j1) at the same time
+                ! From the start, we know that one pair of edge is on the wall, either at j0 or j1
+                ! So we treat everything with one index, j_remaining corresponding to the side the closest to the centerline
+
+                ! global information
+                ! used for all 4 edges
+                start_index_k = k0+1
+                end_index_k = k1-1
+
+                if (j0.eq.1) then
+                    j_remaining = j1
+                endif
+
+                if (j1.ge.(n2-1)) then
+                    j_remaining = j0
+                endif
+
+                if (object_in_proc_z) then
+
+                    do i = zstart_ibm(1), zend_ibm(1)
+                        do j = zstart_ibm(2), zend_ibm(2)
+                            do k=start_index_k,end_index_k
+
+                                ! starting with edge at i0
+                                if ((i.eq.i0).and.(j.eq.j_remaining)) vel_term_z(i0,j_remaining,k) = (1.d0/2.d0) * vel_term_z(i0,j_remaining,k)
+
+                                ! starting with edge at i1
+                                if ((i.eq.i1).and.(j.eq.j_remaining)) vel_term_z(i1,j_remaining,k) = (1.d0/2.d0) * vel_term_z(i1,j_remaining,k)
+
+                            enddo
+                        enddo
+                    enddo
+
+                endif
+                
+                call transpose_z_to_y(vel_term_z, vel_term_y)
+
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+                ! In y_configuration
+                ! we can deal with all 4 edges (i0,k0), (i0,k1), (i1,k0), (i1,k1) at the same time
+
+                ! global information
+                ! used for all 4 edges
+                start_index_j = j0+1
+                end_index_j = j1-1
+
+                ! then, with edge at k1
+                k_aft=k1
+                if (k1.eq.n3) k_aft=1
+
+                if (object_in_proc_y) then
+
+                    do i = ystart_ibm(1), yend_ibm(1)
+                        do k = ystart_ibm(3), yend_ibm(3)
+                            do j=start_index_j,end_index_j
+
+                                ! starting with edge at k0, i0
+                                if ((i.eq.i0).and.(k.eq.k0)) vel_term_y(i0,j,k0) = (1.d0/2.d0) * vel_term_y(i0,j,k0)
+
+                                ! starting with edge at k1, i0
+                                if ((i.eq.i0).and.(k.eq.k_aft)) vel_term_y(i0,j,k_aft) = (1.d0/2.d0) * vel_term_y(i0,j,k_aft)
+
+                                ! starting with edge at k0, i1
+                                if ((i.eq.i1).and.(k.eq.k0)) vel_term_y(i1,j,k0) = (1.d0/2.d0) * vel_term_y(i1,j,k0)
+
+                                ! starting with edge at k1, i1
+                                if ((i.eq.i1).and.(k.eq.k_aft)) vel_term_y(i1,j,k_aft) = (1.d0/2.d0) * vel_term_y(i1,j,k_aft)
+
+                            enddo
+                        enddo
+                    enddo
+
+                endif
+
+                if (k1.eq.n3) then
+                    ! we already know that we are on the wall
+                    ! no need to compute anything, we set the velocities equal to 0
+
+                    if (object_in_proc_y) then
+
+                        do i = ystart_ibm(1), yend_ibm(1)
+                            do k = ystart_ibm(3), yend_ibm(3)
+                                do j=start_index_j,end_index_j
+
+                                    ! starting with edge at k1, i0
+                                    if ((i.eq.i0).and.(k.eq.k_aft)) vel_term_y(i0,j,k_aft) = 0.d0
+
+                                    ! starting with edge at k1, i1
+                                    if ((i.eq.i1).and.(k.eq.k_aft)) vel_term_y(i1,j,k_aft) = 0.d0
+
+                                enddo
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+                
+                call transpose_y_to_x(vel_term_y, vel_term_x)
+
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+                ! In x_configuration
+                ! we can deal with all 4 edges (k0,j0), (k0,j1), (k1,j0), (k1,j1) at the same time
+                ! From the start, we know that one pair of edge is on the wall, either at j0 or j1
+                ! So we treat everything with one index, j_remaining corresponding to the side the closest to the centerline
+
+                ! global information
+                ! used for all 4 edges
+                start_index_i = i0+1
+                end_index_i = i1-1
+
+                if (j0.eq.1) then
+                    j_remaining = j1
+                endif
+
+                if (j1.ge.(n2-1)) then
+                    j_remaining = j0
+                endif
+
+                ! then, with edge at k1
+                k_aft=k1
+                if (k1.eq.n3) k_aft=1
+
+                if (object_in_proc_x) then
+
+                    do j = xstart_ibm(2), xend_ibm(2)
+                        do k = xstart_ibm(3), xend_ibm(3)
+                            do i=start_index_i,end_index_i
+
+                                ! starting with edge at k0
+                                if ((k.eq.k0).and.(j.eq.j_remaining)) vel_term_x(i,j_remaining,k0) = (1.d0/2.d0) * vel_term_x(i,j_remaining,k0)
+
+                                ! starting with edge at k1
+                                if ((k.eq.k_aft).and.(j.eq.j_remaining)) vel_term_x(i,j_remaining,k_aft) = (1.d0/2.d0) * vel_term_x(i,j_remaining,k_aft)
+
+                            enddo
+                        enddo
+                    enddo
+
+                endif
+
+                if (k1.eq.n3) then
+                    ! we already know that we are on the wall
+                    ! no need to compute anything, we set the velocities equal to 0
+
+                    if (object_in_proc_x) then
+
+                        do j = xstart_ibm(2), xend_ibm(2)
+                            do k = xstart_ibm(3), xend_ibm(3)
+                                do i=start_index_i,end_index_i
+
+                                    ! starting with edge at k1
+                                    if ((k.eq.k_aft).and.(j.eq.j_remaining)) vel_term_x(i,j_remaining,k_aft) = 0.d0
+
+                                enddo
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                call transpose_x_to_y(vel_term_x, vel_term_y)
+
+                ! For corners ...
+
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+                ! finally, we deal with the corners
+                ! use triple interpolation for that ...
+
+                ! we can deal with all 4 corners (i0,k0,jr), (i0,k1,jr), (i1,k0,jr), (i1,k1,jr) at the same time
+                ! From the start, we know that one pair of edge is on the wall, either at j0 or j1
+                ! So we treat everything with one index, j_remaining corresponding to the side the closest to the centerline
+
+                if (j0.eq.1) then
+                    j_remaining = j1
+                endif
+
+                if (j1.ge.(n2-1)) then
+                    j_remaining = j0
+                endif
+
+                ! then, with edge at k1, i0
+                k_aft=k1
+                if (k1.eq.n3) k_aft=1
+
+                if (object_in_proc_y) then
+
+                    do i = ystart_ibm(1), yend_ibm(1)
+                        do k = ystart_ibm(3), yend_ibm(3)
+
+                            ! starting with edge at k0, i0
+                            if ((i.eq.i0).and.(k.eq.k0)) vel_term_y(i0,j_remaining,k0) = (1.d0/3.d0) * vel_term_y(i0,j_remaining,k0)
+
+                            ! starting with edge at k1, i0
+                            if ((i.eq.i0).and.(k.eq.k_aft)) vel_term_y(i0,j_remaining,k_aft) = (1.d0/3.d0) * vel_term_y(i0,j_remaining,k_aft)
+
+                            ! starting with edge at k0, i1
+                            if ((i.eq.i1).and.(k.eq.k0)) vel_term_y(i1,j_remaining,k0) = (1.d0/3.d0) * vel_term_y(i1,j_remaining,k0)
+
+                            ! starting with edge at k1, i1
+                            if ((i.eq.i1).and.(k.eq.k_aft)) vel_term_y(i1,j_remaining,k_aft) = (1.d0/3.d0) * vel_term_y(i1,j_remaining,k_aft)
+
+                        enddo
+                    enddo
+
+                endif
+
+                if (k1.eq.n3) then
+                    ! we already know that we are on the wall
+                    ! no need to compute anything, we set the velocities equal to 0
+
+                    if (object_in_proc_y) then
+
+                        do i = ystart_ibm(1), yend_ibm(1)
+                            do k = ystart_ibm(3), yend_ibm(3)
+
+                                ! starting with edge at k1, i0
+                                if ((i.eq.i0).and.(k.eq.k_aft)) vel_term_y(i0,j_remaining,k_aft) = 0.d0
+
+                                ! starting with edge at k1, i1
+                                if ((i.eq.i1).and.(k.eq.k_aft)) vel_term_y(i1,j_remaining,k_aft) = 0.d0
+
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                call transpose_y_to_x(vel_term_y, vel_term_x)
+
+                ! Now, we reset the velocity where the nodes are on the object boundary
+                ! X-direction
+                if (object_in_proc_x) then
+
+                    if (abs(X(i0)-xs).lt.10e-5) then
+                
+                        do j = xstart_ibm(2), xend_ibm(2)
+                            do k = xstart_ibm(3), xend_ibm(3)
+
+                                if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) vel_term_x(i0,j,k) = 0.d0
+
+                            enddo
+                        enddo
+
+                    endif
+
+                    if (abs(X(i1)-xe).lt.10e-5) then
+                
+                        do j = xstart_ibm(2), xend_ibm(2)
+                            do k = xstart_ibm(3), xend_ibm(3)
+
+                                if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) vel_term_x(i1,j,k) = 0.d0
+
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                call transpose_x_to_y(vel_term_x, vel_term_y)
+
+                ! Y-direction
+                if (object_in_proc_y) then
+
+                    if (abs(Y(j0)-ys).lt.10e-5) then
+                
+                        do i = ystart_ibm(1), yend_ibm(1)
+                            do k = ystart_ibm(3), yend_ibm(3)
+
+                                if ((i.ge.i0).and.(i.le.i1).and.(k.ge.k0).and.(k.le.k1)) vel_term_y(i,j0,k) = 0.d0
+
+                            enddo
+                        enddo
+
+                    endif
+
+                    if (abs(Y(j1)-ye).lt.10e-5) then
+                
+                        do i = ystart_ibm(1), yend_ibm(1)
+                            do k = ystart_ibm(3), yend_ibm(3)
+
+                                if ((i.ge.i0).and.(i.le.i1).and.(k.ge.k0).and.(k.le.k1)) vel_term_y(i,j1,k) = 0.d0
+
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                call transpose_y_to_z(vel_term_y, vel_term_z)
+
+                ! Z-direction
+                if (object_in_proc_z) then
+
+                    if (abs(Z(k0)-zs).lt.10e-5) then
+                
+                        do i = zstart_ibm(1), zend_ibm(1)
+                            do j = zstart_ibm(2), zend_ibm(2)
+
+                                if ((j.ge.j0).and.(j.le.j1).and.(i.ge.i0).and.(i.le.i1)) vel_term_z(i,j,k0) = 0.d0
+
+                            enddo
+                        enddo
+
+                    endif
+
+                    if ((abs(Z(k_aft)-ze).lt.10e-5).or.(abs(Z(k_aft)-ze+L3).lt.10e-5)) then
+                
+                        do i = zstart_ibm(1), zend_ibm(1)
+                            do j = zstart_ibm(2), zend_ibm(2)
+
+                                if ((j.ge.j0).and.(j.le.j1).and.(i.ge.i0).and.(i.le.i1)) vel_term_z(i,j,k_aft) = 0.d0
+
+                            enddo
+                        enddo
+
+                    endif
+
+                endif
+
+                call transpose_z_to_y(vel_term_z, vel_term_y)
+                call transpose_y_to_x(vel_term_y, vel_term_x)
+
+            end subroutine antisymmetric_interpol_kim_choin
+
+    end subroutine compute_antisymmetric_temperature
 
     ! return bounds of the object, depending on the location of the variable
     subroutine get_ijk_IBM(X,Y,Z,i_IBM_start,i_IBM_end,j_IBM_start,j_IBM_end,k_IBM_start,k_IBM_end)
@@ -2507,42 +6341,42 @@ contains
 
         i_IBM_start=1; i_IBM_end=n1; j_IBM_start=1; j_IBM_end=n2; k_IBM_start=1; k_IBM_end=n3;
 
-        do i = 1, n1-1
+        do i = 1, n1
             if (X(i)>=xs) then
                 i_IBM_start=i
                 exit
             endif
         end do
 
-        do i = n1-1, 1, -1
+        do i = n1, 1, -1
             if (X(i)<=xe) then
                 i_IBM_end=i
                 exit
             endif
         end do
 
-        do j = 1, n2-1
+        do j = 1, n2
             if (Y(j)>=ys) then
                 j_IBM_start=j
                 exit
             endif
         end do
 
-        do j = n2-1, 1, -1
+        do j = n2, 1, -1
             if (Y(j)<=ye) then
                 j_IBM_end=j
                 exit
             endif
         end do
 
-        do k = 1, n3-1
+        do k = 1, n3
             if (Z(k)>=zs) then
                 k_IBM_start=k
                 exit
             endif
         end do
 
-        do k = n3-1, 1, -1
+        do k = n3, 1, -1
             if (Z(k)<=ze) then
                 k_IBM_end=k
                 exit
@@ -2552,7 +6386,7 @@ contains
     end subroutine get_ijk_IBM
 
     ! return bounds of the object, depending on the location of the variable
-    subroutine get_n_start_IBM(mask_ibm,n,n_IBM_start,n_objects)
+    subroutine get_n_start_IBM(mask_ibm,n,n_IBM_start,n_IBM_end,n_objects)
 
         use mesh, only:n1,n2,n3
         use snapshot_writer
@@ -2564,6 +6398,7 @@ contains
         integer, intent(in)                                     :: n
         integer, intent(inout)                                  :: n_objects
         integer, dimension(number_of_objects), intent(inout)    :: n_IBM_start
+        integer, dimension(number_of_objects), intent(inout)    :: n_IBM_end
 
         !if (dir=='X') then
         !    allocate(array_1D(n1))
@@ -2589,6 +6424,10 @@ contains
             if ((mask_ibm(index)-mask_ibm(index-1)).gt.(0.d0)) then
                 n_IBM_start(n_objects) = index
                 n_objects = n_objects + 1
+            endif
+
+            if ((mask_ibm(index)-mask_ibm(index-1)).lt.(0.d0)) then
+                n_IBM_end(n_objects) = index
             endif
         end do
 
