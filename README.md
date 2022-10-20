@@ -220,7 +220,7 @@ HDF5_LIB=/path/to/libraries/hdf5/hdf5/lib/libhdf5_fortran.a /path/to/libraries/h
 Then, from here, create a folder DNS/MULTIFAST++. This folder will contain the code, so put the code here. Edit the following line of Makefile.inc as follows:
 
 ```bash
-ROOT =/bettik/umairm/WORKSPACE
+ROOT =/fsnet/people/arrondea7b/project/21MULTIFAST/WORKSPACE
 ```
 to
 
