@@ -37,17 +37,19 @@ contains
 
                 L1 = L1*(1+fringe_length)
                 n_interest_region = int(n1/(1+fringe_length))
-                n_fringe_region = n1 - n_interest_region - delta_activation - 1
-                n_fringe_end = n1
+                ! n_fringe_region = n1 - n_interest_region - delta_activation - 1
+                ! n_fringe_end = n1
+
+                n_fringe_region = n1 - n_interest_region - 1
             endif
 
-            if (streamwise==3) then
+            ! if (streamwise==3) then
 
-                L3 = L3*(1+fringe_length)
-                n_interest_region = int(n3/(1+fringe_length))
-                n_fringe_region = n3 - n_interest_region - delta_activation - 1
-                n_fringe_end = n3
-            endif
+            !     L3 = L3*(1+fringe_length)
+            !     n_interest_region = int(n3/(1+fringe_length))
+            !     n_fringe_region = n3 - n_interest_region - delta_activation - 1
+            !     n_fringe_end = n3
+            ! endif
     
             ! update the number of cells
             n1m=n1-1                !number of spanwise cells
@@ -57,8 +59,13 @@ contains
             ! At this stage, L1/L3/n1 and n3 have not been updated
             n_delta_rise = int(delta_rise*n_fringe_region)
             n_delta_fall = int(delta_fall*n_fringe_region)
-            n_fringe_start = n_interest_region + delta_activation 
-            n_delta_fall = 1
+            ! n_fringe_start = n_interest_region + delta_activation 
+            ! n_delta_fall = 1
+
+            ! with fringe at the start
+            n_fringe_start = 1
+            n_fringe_end = n_fringe_region !+ delta_activation
+            n_interest_region_start = n_fringe_region + 1
 
         endif
 
@@ -83,7 +90,7 @@ contains
         if (nrank==0) then
             write(*,*) 'FRINGE INFOS___________________________'
             write(*,*)'fringe_length:',fringe_length
-            write(*,*)'n_interest_region:',n_fringe_start-delta_activation, 'n_fringe_region:',n_fringe_region
+            write(*,*)'n_interest_region:',n_interest_region, 'n_fringe_region:',n_fringe_region
             write(*,*)'n_fringe_start:', n_fringe_start, 'n_fringe_end:', n_fringe_end
             write(*,*)'n_delta_rise', n_delta_rise
             write(*,*)'n_delta_fall', n_delta_fall

@@ -2,7 +2,7 @@ include $(ENVIRONMENT_FILE)
 
 FFLAGS		= -c $(COMPILER_OPTIONS) $(DECOMP2D_INC)
 SOURCES		= sources
-INCS 		= $(FLAG_FFT) $(HDF5_INC) $(IO_INC) $(SOLVERS_INC) $(MISCELLANEOUS_INC) $(SCHEMES_INC) -I $(COMMON)
+INCS 		= $(FLAG_FFT) $(HDF5_INC) $(IO_INC) $(SOLVERS_INC) $(MISCELLANEOUS_INC) $(SCHEMES_INC) -I $(COMMON) -I $(CORE)/passive_scalar
 DATA		=./data
 
 OBJ=$(DATA)/FRINGE_data.o $(DATA)/workspace_view.o IO.o initializer.o solver.o Lifecycle.o interfaces.o

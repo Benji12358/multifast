@@ -16,9 +16,9 @@
 # In most case, you only have to edit this section
 
 
-ROOT				    =/home/users/arrondea7b/WORKSPACE
+ROOT				    =/fsnet/people/arrondea7b/project/21MULTIFAST/WORKSPACE
 CODES_PATH			    =$(ROOT)/Codes
-MULTIFAST_PATH			=$(CODES_PATH)/DNS/MULTIFAST_MHD_v2_IBM
+MULTIFAST_PATH			=$(CODES_PATH)/DNS/multifast
 ENVIRONMENT_FILE		=$(MULTIFAST_PATH)/Makefile.inc
 
 
@@ -28,12 +28,11 @@ COMPIL_OPT_LEVEL		= HIGH
 COMPIL_CHECK_LEVEL		= ZERO
 
 # Default number of processes for a simulation NB_PROCS=PROW*PCOL (set PCOL=PROW=0 to let decomp2D to chose the decomposition)
-NB_PROCS=2
 PROW=0
 PCOL=0
 
 # Comment this line to see details at compilation time
-# MUTE=@
+MUTE=@
 
 
 ####################################################################################################################################
@@ -53,7 +52,6 @@ EXTERN_LIBS=$(CODES_PATH)/libs.$(COMPILER)
 
 # Utilities paths *************************************************************************************
 
-
 UTILITIES=$(MULTIFAST_PATH)/Code/Utilities
 
 LOC_SOLVERS= $(UTILITIES)/Matrix_solver
@@ -72,7 +70,6 @@ IO_LIB= -L $(UTILITIES)/IO/.lib -lIO
 
 MISCELLANEOUS_INC=-I $(UTILITIES)/Miscellaneous
 MISCELLANEOUS_LIB=-L $(UTILITIES)/Miscellaneous/.lib -lmiscellaneous
-
 
 include $(SYSTEM_INFO_FILE)
 include $(COMPILER_OPTIONS_FILE)

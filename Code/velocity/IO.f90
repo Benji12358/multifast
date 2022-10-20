@@ -228,38 +228,44 @@ contains
         file_path=trim(fields_dir)//"/P"
         call hdf_write_3Dfield(file_path, dp_x(:,:,:), "P", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
 
+        ! file_path=trim(fields_dir)//"/source_term"
+        ! call hdf_write_3Dfield(file_path, source_term(:,:,:), "source_term", nx_global, ny_global, nz_global, zstart(1),zend(1),zstart(2),zend(2),zstart(3),zend(3))
+
+        ! file_path=trim(fields_dir)//"/divu_z"
+        ! call hdf_write_3Dfield(file_path, divu_z(:,:,:), "divu_z", nx_global, ny_global, nz_global, zstart(1),zend(1),zstart(2),zend(2),zstart(3),zend(3))
+
 !        file_path=trim(fields_dir)//"/void"
 !        call hdf_write_3Dfield(file_path, void_x(:,:,:), "void", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
 
-        ! Save boundary conditions
-        file_path=trim(fields_dir)//"/Wall"
-        if(nrank==0)  call hdf_create_emptyfile(file_path)
-        if(nrank==0)  call hdf_addgroup(file_path, "Wall10")
-        call hdf_add_2Dfield(file_path, q1_wall10(:,:), "Wall10/q1", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
-        call hdf_add_2Dfield(file_path, q2_wall10(:,:), "Wall10/q2", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
-        call hdf_add_2Dfield(file_path, q3_wall10(:,:), "Wall10/q3", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
-        if(nrank==0)  call hdf_addgroup(file_path, "Wall11")
-        call hdf_add_2Dfield(file_path, q1_wall11(:,:), "Wall11/q1", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
-        call hdf_add_2Dfield(file_path, q2_wall11(:,:), "Wall11/q2", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
-        call hdf_add_2Dfield(file_path, q3_wall11(:,:), "Wall11/q3", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
+        ! ! Save boundary conditions
+        ! file_path=trim(fields_dir)//"/Wall"
+        ! if(nrank==0)  call hdf_create_emptyfile(file_path)
+        ! if(nrank==0)  call hdf_addgroup(file_path, "Wall10")
+        ! call hdf_add_2Dfield(file_path, q1_wall10(:,:), "Wall10/q1", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
+        ! call hdf_add_2Dfield(file_path, q2_wall10(:,:), "Wall10/q2", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
+        ! call hdf_add_2Dfield(file_path, q3_wall10(:,:), "Wall10/q3", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
+        ! if(nrank==0)  call hdf_addgroup(file_path, "Wall11")
+        ! call hdf_add_2Dfield(file_path, q1_wall11(:,:), "Wall11/q1", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
+        ! call hdf_add_2Dfield(file_path, q2_wall11(:,:), "Wall11/q2", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
+        ! call hdf_add_2Dfield(file_path, q3_wall11(:,:), "Wall11/q3", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
 
-        if(nrank==0)  call hdf_addgroup(file_path, "Wall20")
-        call hdf_add_2Dfield(file_path, q1_wall20(:,:), "Wall20/q1", nx_global, nz_global, ystart(1),yend(1), ystart(3),yend(3))
-        call hdf_add_2Dfield(file_path, q2_wall20(:,:), "Wall20/q2", nx_global, nz_global, ystart(1),yend(1), ystart(3),yend(3))
-        call hdf_add_2Dfield(file_path, q3_wall20(:,:), "Wall20/q3", nx_global, nz_global, ystart(1),yend(1), ystart(3),yend(3))
-        if(nrank==0)  call hdf_addgroup(file_path, "Wall21")
-        call hdf_add_2Dfield(file_path, q1_wall21(:,:), "Wall21/q1", nx_global, nz_global, ystart(1),yend(1), ystart(3),yend(3))
-        call hdf_add_2Dfield(file_path, q2_wall21(:,:), "Wall21/q2", nx_global, nz_global, ystart(1),yend(1), ystart(3),yend(3))
-        call hdf_add_2Dfield(file_path, q3_wall21(:,:), "Wall21/q3", nx_global, nz_global, ystart(1),yend(1), ystart(3),yend(3))
+        ! if(nrank==0)  call hdf_addgroup(file_path, "Wall20")
+        ! call hdf_add_2Dfield(file_path, q1_wall20(:,:), "Wall20/q1", nx_global, nz_global, ystart(1),yend(1), ystart(3),yend(3))
+        ! call hdf_add_2Dfield(file_path, q2_wall20(:,:), "Wall20/q2", nx_global, nz_global, ystart(1),yend(1), ystart(3),yend(3))
+        ! call hdf_add_2Dfield(file_path, q3_wall20(:,:), "Wall20/q3", nx_global, nz_global, ystart(1),yend(1), ystart(3),yend(3))
+        ! if(nrank==0)  call hdf_addgroup(file_path, "Wall21")
+        ! call hdf_add_2Dfield(file_path, q1_wall21(:,:), "Wall21/q1", nx_global, nz_global, ystart(1),yend(1), ystart(3),yend(3))
+        ! call hdf_add_2Dfield(file_path, q2_wall21(:,:), "Wall21/q2", nx_global, nz_global, ystart(1),yend(1), ystart(3),yend(3))
+        ! call hdf_add_2Dfield(file_path, q3_wall21(:,:), "Wall21/q3", nx_global, nz_global, ystart(1),yend(1), ystart(3),yend(3))
 
-        if(nrank==0)  call hdf_addgroup(file_path, "Wall30")
-        call hdf_add_2Dfield(file_path, q1_wall30(:,:), "Wall30/q1", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
-        call hdf_add_2Dfield(file_path, q2_wall30(:,:), "Wall30/q2", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
-        call hdf_add_2Dfield(file_path, q3_wall30(:,:), "Wall30/q3", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
-        if(nrank==0)  call hdf_addgroup(file_path, "Wall31")
-        call hdf_add_2Dfield(file_path, q1_wall31(:,:), "Wall31/q1", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
-        call hdf_add_2Dfield(file_path, q2_wall31(:,:), "Wall31/q2", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
-        call hdf_add_2Dfield(file_path, q3_wall31(:,:), "Wall31/q3", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
+        ! if(nrank==0)  call hdf_addgroup(file_path, "Wall30")
+        ! call hdf_add_2Dfield(file_path, q1_wall30(:,:), "Wall30/q1", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
+        ! call hdf_add_2Dfield(file_path, q2_wall30(:,:), "Wall30/q2", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
+        ! call hdf_add_2Dfield(file_path, q3_wall30(:,:), "Wall30/q3", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
+        ! if(nrank==0)  call hdf_addgroup(file_path, "Wall31")
+        ! call hdf_add_2Dfield(file_path, q1_wall31(:,:), "Wall31/q1", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
+        ! call hdf_add_2Dfield(file_path, q2_wall31(:,:), "Wall31/q2", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
+        ! call hdf_add_2Dfield(file_path, q3_wall31(:,:), "Wall31/q3", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
 
     end subroutine write_fields
 
@@ -293,30 +299,30 @@ contains
         call hdf_read_3Dfield(file_path, dp_x_XYZ, "P", decomp_XYZ%xsz(1),decomp_XYZ%ysz(2),decomp_XYZ%zsz(3), decomp_XYZ%xst(1),decomp_XYZ%xen(1),  decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
 
 
-        file_path=trim(fields_dir)//"/Wall"
-        call hdf_read_2Dfield(file_path, q1_wall10(:,:), "Wall10/q1", decomp_XYZ%yen(2), decomp_XYZ%zen(3), decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
-        call hdf_read_2Dfield(file_path, q2_wall10(:,:), "Wall10/q2", decomp_XYZ%yen(2), decomp_XYZ%zen(3), decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
-        call hdf_read_2Dfield(file_path, q3_wall10(:,:), "Wall10/q3", decomp_XYZ%yen(2), decomp_XYZ%zen(3), decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
+        ! file_path=trim(fields_dir)//"/Wall"
+        ! call hdf_read_2Dfield(file_path, q1_wall10(:,:), "Wall10/q1", decomp_XYZ%yen(2), decomp_XYZ%zen(3), decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
+        ! call hdf_read_2Dfield(file_path, q2_wall10(:,:), "Wall10/q2", decomp_XYZ%yen(2), decomp_XYZ%zen(3), decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
+        ! call hdf_read_2Dfield(file_path, q3_wall10(:,:), "Wall10/q3", decomp_XYZ%yen(2), decomp_XYZ%zen(3), decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
 
-        call hdf_read_2Dfield(file_path, q1_wall11(:,:), "Wall11/q1", decomp_XYZ%yen(2), decomp_XYZ%zen(3), decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
-        call hdf_read_2Dfield(file_path, q2_wall11(:,:), "Wall11/q2", decomp_XYZ%yen(2), decomp_XYZ%zen(3), decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
-        call hdf_read_2Dfield(file_path, q3_wall11(:,:), "Wall11/q3", decomp_XYZ%yen(2), decomp_XYZ%zen(3), decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
+        ! call hdf_read_2Dfield(file_path, q1_wall11(:,:), "Wall11/q1", decomp_XYZ%yen(2), decomp_XYZ%zen(3), decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
+        ! call hdf_read_2Dfield(file_path, q2_wall11(:,:), "Wall11/q2", decomp_XYZ%yen(2), decomp_XYZ%zen(3), decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
+        ! call hdf_read_2Dfield(file_path, q3_wall11(:,:), "Wall11/q3", decomp_XYZ%yen(2), decomp_XYZ%zen(3), decomp_XYZ%xst(2),decomp_XYZ%xen(2), decomp_XYZ%xst(3),decomp_XYZ%xen(3))
 
-        call hdf_read_2Dfield(file_path, q1_wall20(:,:), "Wall20/q1", decomp_XYZ%xen(1), decomp_XYZ%zen(3), decomp_XYZ%yst(1),decomp_XYZ%yen(1), decomp_XYZ%yst(3),decomp_XYZ%yen(3))
-        call hdf_read_2Dfield(file_path, q2_wall20(:,:), "Wall20/q2", decomp_XYZ%xen(1), decomp_XYZ%zen(3), decomp_XYZ%yst(1),decomp_XYZ%yen(1), decomp_XYZ%yst(3),decomp_XYZ%yen(3))
-        call hdf_read_2Dfield(file_path, q3_wall20(:,:), "Wall20/q3", decomp_XYZ%xen(1), decomp_XYZ%zen(3), decomp_XYZ%yst(1),decomp_XYZ%yen(1), decomp_XYZ%yst(3),decomp_XYZ%yen(3))
+        ! call hdf_read_2Dfield(file_path, q1_wall20(:,:), "Wall20/q1", decomp_XYZ%xen(1), decomp_XYZ%zen(3), decomp_XYZ%yst(1),decomp_XYZ%yen(1), decomp_XYZ%yst(3),decomp_XYZ%yen(3))
+        ! call hdf_read_2Dfield(file_path, q2_wall20(:,:), "Wall20/q2", decomp_XYZ%xen(1), decomp_XYZ%zen(3), decomp_XYZ%yst(1),decomp_XYZ%yen(1), decomp_XYZ%yst(3),decomp_XYZ%yen(3))
+        ! call hdf_read_2Dfield(file_path, q3_wall20(:,:), "Wall20/q3", decomp_XYZ%xen(1), decomp_XYZ%zen(3), decomp_XYZ%yst(1),decomp_XYZ%yen(1), decomp_XYZ%yst(3),decomp_XYZ%yen(3))
 
-        call hdf_read_2Dfield(file_path, q1_wall21(:,:), "Wall21/q1", decomp_XYZ%xen(1), decomp_XYZ%zen(3), decomp_XYZ%yst(1),decomp_XYZ%yen(1), decomp_XYZ%yst(3),decomp_XYZ%yen(3))
-        call hdf_read_2Dfield(file_path, q2_wall21(:,:), "Wall21/q2", decomp_XYZ%xen(1), decomp_XYZ%zen(3), decomp_XYZ%yst(1),decomp_XYZ%yen(1), decomp_XYZ%yst(3),decomp_XYZ%yen(3))
-        call hdf_read_2Dfield(file_path, q3_wall21(:,:), "Wall21/q3", decomp_XYZ%xen(1), decomp_XYZ%zen(3), decomp_XYZ%yst(1),decomp_XYZ%yen(1), decomp_XYZ%yst(3),decomp_XYZ%yen(3))
+        ! call hdf_read_2Dfield(file_path, q1_wall21(:,:), "Wall21/q1", decomp_XYZ%xen(1), decomp_XYZ%zen(3), decomp_XYZ%yst(1),decomp_XYZ%yen(1), decomp_XYZ%yst(3),decomp_XYZ%yen(3))
+        ! call hdf_read_2Dfield(file_path, q2_wall21(:,:), "Wall21/q2", decomp_XYZ%xen(1), decomp_XYZ%zen(3), decomp_XYZ%yst(1),decomp_XYZ%yen(1), decomp_XYZ%yst(3),decomp_XYZ%yen(3))
+        ! call hdf_read_2Dfield(file_path, q3_wall21(:,:), "Wall21/q3", decomp_XYZ%xen(1), decomp_XYZ%zen(3), decomp_XYZ%yst(1),decomp_XYZ%yen(1), decomp_XYZ%yst(3),decomp_XYZ%yen(3))
 
-        call hdf_read_2Dfield(file_path, q1_wall30(:,:), "Wall30/q1", decomp_XYZ%xen(1), decomp_XYZ%yen(2), decomp_XYZ%zst(1),decomp_XYZ%zen(1), decomp_XYZ%zst(2),decomp_XYZ%zen(2))
-        call hdf_read_2Dfield(file_path, q2_wall30(:,:), "Wall30/q2", decomp_XYZ%xen(1), decomp_XYZ%yen(2), decomp_XYZ%zst(1),decomp_XYZ%zen(1), decomp_XYZ%zst(2),decomp_XYZ%zen(2))
-        call hdf_read_2Dfield(file_path, q3_wall30(:,:), "Wall30/q3", decomp_XYZ%xen(1), decomp_XYZ%yen(2), decomp_XYZ%zst(1),decomp_XYZ%zen(1), decomp_XYZ%zst(2),decomp_XYZ%zen(2))
+        ! call hdf_read_2Dfield(file_path, q1_wall30(:,:), "Wall30/q1", decomp_XYZ%xen(1), decomp_XYZ%yen(2), decomp_XYZ%zst(1),decomp_XYZ%zen(1), decomp_XYZ%zst(2),decomp_XYZ%zen(2))
+        ! call hdf_read_2Dfield(file_path, q2_wall30(:,:), "Wall30/q2", decomp_XYZ%xen(1), decomp_XYZ%yen(2), decomp_XYZ%zst(1),decomp_XYZ%zen(1), decomp_XYZ%zst(2),decomp_XYZ%zen(2))
+        ! call hdf_read_2Dfield(file_path, q3_wall30(:,:), "Wall30/q3", decomp_XYZ%xen(1), decomp_XYZ%yen(2), decomp_XYZ%zst(1),decomp_XYZ%zen(1), decomp_XYZ%zst(2),decomp_XYZ%zen(2))
 
-        call hdf_read_2Dfield(file_path, q1_wall31(:,:), "Wall31/q1", decomp_XYZ%xen(1), decomp_XYZ%yen(2), decomp_XYZ%zst(1),decomp_XYZ%zen(1), decomp_XYZ%zst(2),decomp_XYZ%zen(2))
-        call hdf_read_2Dfield(file_path, q2_wall31(:,:), "Wall31/q2", decomp_XYZ%xen(1), decomp_XYZ%yen(2), decomp_XYZ%zst(1),decomp_XYZ%zen(1), decomp_XYZ%zst(2),decomp_XYZ%zen(2))
-        call hdf_read_2Dfield(file_path, q3_wall31(:,:), "Wall31/q3", decomp_XYZ%xen(1), decomp_XYZ%yen(2), decomp_XYZ%zst(1),decomp_XYZ%zen(1), decomp_XYZ%zst(2),decomp_XYZ%zen(2))
+        ! call hdf_read_2Dfield(file_path, q1_wall31(:,:), "Wall31/q1", decomp_XYZ%xen(1), decomp_XYZ%yen(2), decomp_XYZ%zst(1),decomp_XYZ%zen(1), decomp_XYZ%zst(2),decomp_XYZ%zen(2))
+        ! call hdf_read_2Dfield(file_path, q2_wall31(:,:), "Wall31/q2", decomp_XYZ%xen(1), decomp_XYZ%yen(2), decomp_XYZ%zst(1),decomp_XYZ%zen(1), decomp_XYZ%zst(2),decomp_XYZ%zen(2))
+        ! call hdf_read_2Dfield(file_path, q3_wall31(:,:), "Wall31/q3", decomp_XYZ%xen(1), decomp_XYZ%yen(2), decomp_XYZ%zst(1),decomp_XYZ%zen(1), decomp_XYZ%zst(2),decomp_XYZ%zen(2))
 
     end subroutine read_fields
 
@@ -745,65 +751,65 @@ contains
 
     end subroutine export_kinetic
 
-    subroutine export_kinetic_IBM(kinetic_dir, flow_rate, k1,k2,k3, n, ntime)
-        implicit none
-        integer                 :: n, ntime
-        real*8, dimension(n)    :: flow_rate, k1,k2,k3
-        character(*)            :: kinetic_dir
+    ! subroutine export_kinetic_IBM(kinetic_dir, flow_rate, k1,k2,k3, n, ntime)
+    !     implicit none
+    !     integer                 :: n, ntime
+    !     real*8, dimension(n)    :: flow_rate, k1,k2,k3
+    !     character(*)            :: kinetic_dir
 
-        integer                 :: i, kinetic_file_id
-        character(20)           :: tmp_str
-        character(200)          :: kinetic_file
+    !     integer                 :: i, kinetic_file_id
+    !     character(20)           :: tmp_str
+    !     character(200)          :: kinetic_file
 
-        kinetic_file_id=1201
+    !     kinetic_file_id=1201
 
-        write(tmp_str, "(i10)")ntime
-        kinetic_file=trim(kinetic_dir)//'flow_rate'//trim(adjustl(tmp_str))//".csv"
+    !     write(tmp_str, "(i10)")ntime
+    !     kinetic_file=trim(kinetic_dir)//'flow_rate'//trim(adjustl(tmp_str))//".csv"
 
-        open(kinetic_file_id, file=kinetic_file)
+    !     open(kinetic_file_id, file=kinetic_file)
 
-        do i = 1, n
-            write(kinetic_file_id,*)i, flow_rate(i), k1(i), k2(i), k3(i)
-        end do
+    !     do i = 1, n
+    !         write(kinetic_file_id,*)i, flow_rate(i), k1(i), k2(i), k3(i)
+    !     end do
 
-        close(kinetic_file_id)
+    !     close(kinetic_file_id)
 
-    end subroutine export_kinetic_IBM
+    ! end subroutine export_kinetic_IBM
 
-    subroutine export_velmax_IBM(velmax_dir, q1_max, q2_max, q3_max, pr_max, q1_min, q2_min, q3_min, pr_min, n, ntime)
-        use IBM_data
-        implicit none
-        integer                 :: n, ntime
-        real*8, dimension(n)    :: q1_max, q2_max, q3_max, pr_max, mask1_max, mask2_max, mask3_max
-        real*8, dimension(n)    :: q1_min, q2_min, q3_min, pr_min
-        character(*)            :: velmax_dir
+!     subroutine export_velmax_IBM(velmax_dir, q1_max, q2_max, q3_max, pr_max, q1_min, q2_min, q3_min, pr_min, n, ntime)
+!         use IBM_data
+!         implicit none
+!         integer                 :: n, ntime
+!         real*8, dimension(n)    :: q1_max, q2_max, q3_max, pr_max, mask1_max, mask2_max, mask3_max
+!         real*8, dimension(n)    :: q1_min, q2_min, q3_min, pr_min
+!         character(*)            :: velmax_dir
 
-        integer                 :: i, velmax_file_id
-        character(20)           :: tmp_str
-        character(200)          :: velmax_file
+!         integer                 :: i, velmax_file_id
+!         character(20)           :: tmp_str
+!         character(200)          :: velmax_file
 
-        velmax_file_id=1201
-7700    format(i7,',',x,11e17.8)
+!         velmax_file_id=1201
+! 7700    format(i7,',',x,11e17.8)
 
-        write(tmp_str, "(i10)")ntime
-        velmax_file=trim(velmax_dir)//'velmax'//trim(adjustl(tmp_str))//".csv"
+!         write(tmp_str, "(i10)")ntime
+!         velmax_file=trim(velmax_dir)//'velmax'//trim(adjustl(tmp_str))//".csv"
 
-        open(velmax_file_id, file=velmax_file)
+!         open(velmax_file_id, file=velmax_file)
 
-        do i = 1, n
-            mask1_max(i)=maxval(IBM_mask1_x(i,:,:))
-            mask2_max(i)=maxval(IBM_mask2_x(i,:,:))
-            mask3_max(i)=maxval(IBM_mask3_x(i,:,:))
-        end do
+!         do i = 1, n
+!             mask1_max(i)=maxval(IBM_mask1_x(i,:,:))
+!             mask2_max(i)=maxval(IBM_mask2_x(i,:,:))
+!             mask3_max(i)=maxval(IBM_mask3_x(i,:,:))
+!         end do
 
-        do i = 1, n
-            write(velmax_file_id,7700)i, q1_max(i), q2_max(i), q3_max(i), pr_max(i), q1_min(i), q2_min(i), q3_min(i), pr_min(i), &
-            mask1_max(i), mask2_max(i), mask3_max(i)
-        end do
+!         do i = 1, n
+!             write(velmax_file_id,7700)i, q1_max(i), q2_max(i), q3_max(i), pr_max(i), q1_min(i), q2_min(i), q3_min(i), pr_min(i), &
+!             mask1_max(i), mask2_max(i), mask3_max(i)
+!         end do
 
-        close(velmax_file_id)
+!         close(velmax_file_id)
 
-    end subroutine export_velmax_IBM
+!     end subroutine export_velmax_IBM
 
 
     subroutine export_properties()
@@ -831,19 +837,19 @@ contains
         call perform_kinetic(q3_z, q2_y, q1_x, flow_rate,spanwise_flow_rate, kinetic_energy, enstrophy, streamwise)
         if(nrank==0) call export_kinetic(kinetic_history_file, flow_rate,spanwise_flow_rate, kinetic_energy, enstrophy, ntime)
 
-        if (IBM_activated) then
-            if(mod(ntime, nb_flow_rate).eq.0) then
+        ! if (IBM_activated) then
+        !     if(mod(ntime, nb_flow_rate).eq.0) then
 
-                call perform_velocity_at_center(q3_z, q2_y, q1_x, q3c_z, q2c_y, q1c_x)
-                call perform_kinetic_IBM(q3c_z, q2c_y, q1c_x, flow_rate_IBM, kin1_IBM, kin2_IBM, kin3_IBM)
-                call perform_maxvel_IBM(q3_x, q2_x, q1_x, dp_x, q1max_IBM, q2max_IBM, q3max_IBM, prmax_IBM, q1min_IBM, q2min_IBM, q3min_IBM, prmin_IBM)
+        !         call perform_velocity_at_center(q3_z, q2_y, q1_x, q3c_z, q2c_y, q1c_x)
+        !         call perform_kinetic_IBM(q3c_z, q2c_y, q1c_x, flow_rate_IBM, kin1_IBM, kin2_IBM, kin3_IBM)
+        !         call perform_maxvel_IBM(q3_x, q2_x, q1_x, dp_x, q1max_IBM, q2max_IBM, q3max_IBM, prmax_IBM, q1min_IBM, q2min_IBM, q3min_IBM, prmin_IBM)
 
 
-                if(nrank==0) call export_kinetic_IBM(trim(COMMON_log_path)//'/IBM/Flow_rate/', flow_rate_IBM, kin1_IBM, kin2_IBM, kin3_IBM, n1-1, ntime)
-                if(nrank==0) call export_velmax_IBM(trim(COMMON_log_path)//'/IBM/Vel_max/', q1max_IBM, q2max_IBM, q3max_IBM, prmax_IBM, q1min_IBM, q2min_IBM, q3min_IBM, prmin_IBM, n1-1, ntime)
+        !         if(nrank==0) call export_kinetic_IBM(trim(COMMON_log_path)//'/IBM/Flow_rate/', flow_rate_IBM, kin1_IBM, kin2_IBM, kin3_IBM, n1-1, ntime)
+        !         if(nrank==0) call export_velmax_IBM(trim(COMMON_log_path)//'/IBM/Vel_max/', q1max_IBM, q2max_IBM, q3max_IBM, prmax_IBM, q1min_IBM, q2min_IBM, q3min_IBM, prmin_IBM, n1-1, ntime)
 
-            endif
-        endif
+        !     endif
+        ! endif
 
     end subroutine export_properties
 
@@ -851,10 +857,11 @@ contains
 
         use run_ctxt_data
         use physical_fields, only: dP_streamwise, dP_spanwise
-        use VELOCITY_solver, only: Fext1, Fext3
+        use VELOCITY_solver, only: Fext1, Fext3, mean_grad_P1, mean_grad_P3, mean_grad_P1_viscous
         use DNS_settings, only:streamwise
         use mesh
         use mpi
+        use MHD_data, only:MHD_state
 
         implicit none
 
@@ -894,12 +901,83 @@ contains
         call MPI_ALLREDUCE (Fspan, stot, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpierr)
         Fspan=stot/(L1*L2*L3)
 
-        if(nrank==0) then
-            open(3698, file="gradP.dat", position="append")
-            write(3698,*) ntime, t, -dP_streamwise +Fstream, -dP_streamwise, -dP_spanwise+ Fspan, -dP_spanwise
-            close(3698)
+        if (MHD_state.eq.0) then
+
+            if(nrank==0) then
+                open(3698, file="gradP.dat", position="append")
+                write(3698,*) ntime, t, mean_grad_P3, mean_grad_P1, mean_grad_P1_viscous
+                close(3698)
+            endif
+
+        else
+
+            if(nrank==0) then
+                open(3698, file="gradP.dat", position="append")
+                write(3698,*) ntime, t, -dP_streamwise +Fstream, -dP_streamwise, -dP_spanwise+ Fspan, -dP_spanwise
+                close(3698)
+            endif
+
         endif
 
     end subroutine export_gradP
+
+    subroutine export_flowrate
+
+        use run_ctxt_data
+        use physical_fields, only: q1_x
+        use mesh
+        use mpi
+        use FRINGE_data, only: use_fringe, n_fringe_start, n_fringe_region
+
+        implicit none
+
+        integer :: j, k, mpierr
+        real*8  :: flowrate_in, flowrate_in_glob, flowrate_fringe_in, flowrate_fringe_in_glob, flowrate_out, flowrate_out_glob
+
+        flowrate_in=0.d0
+        flowrate_out=0.d0
+        flowrate_fringe_in_glob = 0.d0
+
+        do k=xstart(3),min(xend(3),n3-1)
+            do j=xstart(2),min(xend(2),n2-1)
+
+                flowrate_in = flowrate_in + q1_x(1,j,k)*(Y(j+1)-Y(j))*dx3
+
+                flowrate_out = flowrate_out + q1_x(n1m,j,k)*(Y(j+1)-Y(j))*dx3
+
+            enddo
+        enddo
+
+        call MPI_ALLREDUCE(flowrate_in, flowrate_in_glob, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpierr)
+        flowrate_in_glob=flowrate_in_glob/(L3*L2)
+
+        call MPI_ALLREDUCE(flowrate_out, flowrate_out_glob, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpierr)
+        flowrate_out_glob=flowrate_out_glob/(L3*L2)
+
+        if (use_fringe) then
+
+            flowrate_fringe_in=0.d0
+
+            do k=xstart(3),min(xend(3),n3-1)
+                do j=xstart(2),min(xend(2),n2-1)
+
+                    ! flowrate_fringe_in = flowrate_fringe_in + q1_x(n_fringe_start,j,k)*(Y(j+1)-Y(j))*dx3
+                    flowrate_fringe_in = flowrate_fringe_in + q1_x(n_fringe_region,j,k)*(Y(j+1)-Y(j))*dx3
+
+                enddo
+            enddo
+
+            call MPI_ALLREDUCE(flowrate_fringe_in, flowrate_fringe_in_glob, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpierr)
+            flowrate_fringe_in_glob=flowrate_fringe_in_glob/(L3*L2)
+
+        endif
+
+        if(nrank==0) then
+            open(3698, file="flowrate.dat", position="append")
+            write(3698,*) ntime, t, flowrate_in_glob, flowrate_fringe_in_glob, flowrate_out_glob
+            close(3698)
+        endif
+
+    end subroutine export_flowrate
 
 end module VELOCITY_log_writer

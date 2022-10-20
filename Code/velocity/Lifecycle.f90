@@ -138,6 +138,8 @@ contains
         divu_z=0.d0
         allocate(dp_z(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
         dp_z=0.d0
+        allocate(source_term(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3)))
+        source_term=0.d0
 
         allocate(dphidx1_x(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
         dphidx1_x=0.d0

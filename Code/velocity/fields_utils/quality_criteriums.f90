@@ -55,8 +55,9 @@ contains
 
     subroutine perform_stability(q3_z, q2_y, q1_x, cflmax, div_max, div_diff, div_mean)
 
-        use physical_fields, only:q3_y
+        use physical_fields, only:q3_y, source_term
         use VELOCITY_operations
+        use IBM_settings, only: IBM_activated
 
         implicit none
 
@@ -102,8 +103,6 @@ contains
 
         cflmax=cflmax_glob*dt
 
-
-
         div_max=-100000.d0
         div_min=100000.d0
         div_sum=0.d0
@@ -111,6 +110,11 @@ contains
         div_x=0.d0
 
         call perform_divergence(div_z, q3_z, q2_y, q1_x)
+
+        ! If the IBM is used, then the source term is not equal to 0
+        ! See Kim and Moin 2001 (doi: 10.1006/jcph.2001.6778)
+        ! If the IBM is not used, the source term is 0 and we use the correct divergence
+        div_z = div_z - source_term
 
         do k=1, n3m
             do j=zstart(2), min(n2m, zend(2))
@@ -121,9 +125,6 @@ contains
                 end do
             end do
         end do
-
-!        write(*,*)'div_min', div_min
- !       write(*,*)'div_max', div_max
 
         call MPI_ALLREDUCE (div_max, div_max_glob, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
         call MPI_ALLREDUCE (div_min, div_min_glob, 1, MPI_DOUBLE_PRECISION , MPI_MIN , MPI_COMM_WORLD , mpi_err)

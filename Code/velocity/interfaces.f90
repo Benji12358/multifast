@@ -46,10 +46,11 @@ module IVELOCITY_IO_log_writer
     use VELOCITY_log_writer, only:  &
     VELOCITY_IO_write_divergence   => export_divergence_file,      &
     VELOCITY_IO_write_kinetic      => export_kinetic,              &
-    VELOCITY_IO_write_kinetic_IBM  =>export_kinetic_IBM,           &
-    VELOCITY_IO_write_velmax_IBM   =>export_velmax_IBM,           &
+    ! VELOCITY_IO_write_kinetic_IBM  =>export_kinetic_IBM,           &
+    ! VELOCITY_IO_write_velmax_IBM   =>export_velmax_IBM,           &
     VELOCITY_IO_write_properties   =>export_properties,         &
-    VELOCITY_IO_write_gradP   =>export_gradP
+    VELOCITY_IO_write_gradP   =>export_gradP,                   &
+    VELOCITY_IO_write_flowrate => export_flowrate
 
 
 end module IVELOCITY_IO_log_writer

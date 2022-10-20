@@ -9,7 +9,7 @@ module mesh
     real*8  :: L1, L2, L3
     real*8  :: stretch_Y
 
-    integer, parameter  :: ORLANDI_MESH=1, LAMBALLAIS_MESH=2
+    integer, parameter  :: ORLANDI_MESH=1, LAMBALLAIS_MESH=2, NO_TRANSFO_MESH=3
     integer :: mesh_type
 
     real*8  :: dx1, dx2, dx3

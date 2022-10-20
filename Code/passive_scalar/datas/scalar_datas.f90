@@ -2,7 +2,7 @@ module scalar_datas
     implicit none
 
     real*8,dimension (:,:,:), allocatable       :: sca_x, sca_y, sca_z
-    real*8  :: renprandtl, delta_T, heat_flux
+    real*8  :: prandtl, delta_T, heat_flux
     integer :: sca_activated
 
     real*8,dimension (:,:), allocatable         :: sca_wall10, sca_wall20, sca_wall30

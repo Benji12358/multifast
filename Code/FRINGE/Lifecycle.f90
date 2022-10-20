@@ -22,6 +22,7 @@ contains
             allocate(q1_inflow(xstart(2):xend(2), xstart(3):xend(3)))
             allocate(q2_inflow(xstart(2):xend(2), xstart(3):xend(3)))
             allocate(q3_inflow(xstart(2):xend(2), xstart(3):xend(3)))
+            allocate(sca_inflow(xstart(2):xend(2), xstart(3):xend(3)))
         endif
 
         if (streamwise==3) then
@@ -45,6 +46,7 @@ contains
         q1_inflow = 0.d0
         q2_inflow = 0.d0
         q3_inflow = 0.d0
+        sca_inflow = 0.d0
 
         lambda_x = 0.d0
         lambda_z = 0.d0

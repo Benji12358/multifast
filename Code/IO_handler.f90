@@ -74,6 +74,7 @@ contains
             use mesh
 
             implicit none
+            integer     :: pi_scale_flag
 
             ! Computational domain *******************************************************************
             open(15,file=trim(COMMON_settings_path)//'computational_domain.d')
@@ -81,6 +82,7 @@ contains
             read(15,*) n1,n2,n3
             read(15,*) L3, L2, L1
             read(15,*) stretch_Y, mesh_type
+            read(15,*) pi_scale_flag
 
             close(15)
     
@@ -88,8 +90,13 @@ contains
             n2m=n2-1                !number of normal cells
             n3m=n3-1                !number of streamwise cells
 
-            L1=L1*pi       !spanwise size of the whole calcul box
-            L3=L3*pi       !streamwise size of the whole calcul box
+            if (pi_scale_flag.eq.1) then
+                L1=L1*pi        !spanwise size of the whole calcul box
+                L3=L3*pi        !streamwise size of the whole calcul box
+            else
+                L1=L1           !spanwise size of the whole calcul box
+                L3=L3           !streamwise size of the whole calcul box
+            endif
 
         end subroutine read_domain_settings
 
@@ -193,22 +200,43 @@ contains
             use mesh
 
             implicit none
-            integer :: IBM_activated_int
+            integer :: IBM_activated_int, full_span_int, i
 
             ! IBM **********************************************************************************
             open(15,file=trim(COMMON_settings_path)//'IBM.d')
 
             read(15,*) IBM_activated_int
+            read(15,*) ren_tau_ibm
+            read(15,*) number_of_objects
+            read(15,*) full_span_int
             read(15,*) interpol_type
             read(15,'(a)') obj_file_path  ! path of the read field  file (cha.rea)
-            read(15,*) body_x1, body_x2, body_x3
-            read(15,*) body_scale_x1, body_scale_x2, body_scale_x3
+            read(15,*)
+
+            allocate(body_x1(number_of_objects))
+            body_x1 = 0.d0
+            allocate(body_x2(number_of_objects))
+            body_x2 = 0.d0
+            allocate(body_x3(number_of_objects))
+            body_x3 = 0.d0
+
+            allocate(body_scale_x1(number_of_objects))
+            body_scale_x1 = 0.d0
+            allocate(body_scale_x2(number_of_objects))
+            body_scale_x2 = 0.d0
+            allocate(body_scale_x3(number_of_objects))
+            body_scale_x3 = 0.d0
+
+            do i=1,number_of_objects
+                read(15,*) body_x1(i), body_x2(i), body_x3(i)
+                read(15,*) body_scale_x1(i), body_scale_x2(i), body_scale_x3(i)
+                read(15,*)
+            enddo
+
             close(15)
 
-            ! body_scale_x3 = L3/2.d0
-            ! body_x3 = L3/2.d0
-
             IBM_activated=(IBM_activated_int==1)
+            IBM_full_span=(full_span_int==1)
 
         end subroutine read_IBM_settings
 
@@ -400,6 +428,7 @@ contains
 
             implicit none
             integer :: s
+            integer :: i
 
             if (nrank==0) then
 
@@ -515,8 +544,11 @@ contains
                 if (IBM_activated) then
                     write(*,*) 'IBM activated ? -YES'
                     write(*,*) '...... OBJECT file   :', trim(obj_file_path)
-                    write(*,*) '...... Body position :', 'X1=', body_x1, "X2=",body_x2, "X3=", body_x3
-                    write(*,*) '...... Scale         :', 'X1=', body_scale_x1, "X2=",body_scale_x2, "X3=", body_scale_x3
+                    do i=1,number_of_objects
+                        write(*,*) '.......Body n° ', i
+                        write(*,*) '...... Body position :', 'X1=', body_x1(i), "X2=",body_x2(i), "X3=", body_x3(i)
+                        write(*,*) '...... Scale         :', 'X1=', body_scale_x1(i), "X2=",body_scale_x2(i), "X3=", body_scale_x3(i)
+                    enddo
                 else
                     write(*,*) 'IBM activated ? -NO'
                 end if
@@ -1138,33 +1170,33 @@ contains
             endif
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-            if (IBM_activated) then
+            ! if (IBM_activated) then
 
-                if(nrank==0)  call hdf_addgroup(file_path, "MASKS")
+            !     if(nrank==0)  call hdf_addgroup(file_path, "MASKS")
 
-                do s = 1, param_anim2D_1%nb_slices
+            !     do s = 1, param_anim2D_1%nb_slices
 
-                    i=param_anim2D_1%slices(s)
-                    write(tmp_str, "(i10)")i
-                    slice_name='MASKS/'//'slice_'//trim(adjustl(tmp_str))
-                    if (nrank==0) write(*,*)'ADD GROUPE 1', slice_name
-                    if(nrank==0)  call hdf_addgroup(file_path, slice_name)
+            !         i=param_anim2D_1%slices(s)
+            !         write(tmp_str, "(i10)")i
+            !         slice_name='MASKS/'//'slice_'//trim(adjustl(tmp_str))
+            !         if (nrank==0) write(*,*)'ADD GROUPE 1', slice_name
+            !         if(nrank==0)  call hdf_addgroup(file_path, slice_name)
 
-                    if (param_anim2D_1%export_q1) then
-                        call hdf_add_2Dfield(trim(file_path), IBM_mask1_x(i, :,:), trim(slice_name)//"/q1", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
-                    end if
+            !         if (param_anim2D_1%export_q1) then
+            !             call hdf_add_2Dfield(trim(file_path), IBM_mask1_x(i, :,:), trim(slice_name)//"/q1", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+            !         end if
 
-                    if (param_anim2D_1%export_q2) then
-                        call hdf_add_2Dfield(trim(file_path), IBM_mask2_x(i, :,:), trim(slice_name)//"/q2", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
-                    end if
+            !         if (param_anim2D_1%export_q2) then
+            !             call hdf_add_2Dfield(trim(file_path), IBM_mask2_x(i, :,:), trim(slice_name)//"/q2", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+            !         end if
 
-                    if (param_anim2D_1%export_q3) then
-                        call hdf_add_2Dfield(trim(file_path), IBM_mask2_x(i, :,:), trim(slice_name)//"/q3", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
-                    end if
+            !         if (param_anim2D_1%export_q3) then
+            !             call hdf_add_2Dfield(trim(file_path), IBM_mask2_x(i, :,:), trim(slice_name)//"/q3", n2, n3, xstart(2),xend(2), xstart(3),xend(3))
+            !         end if
 
-                end do
+            !     end do
 
-            endif
+            ! endif
 
         end if
 
@@ -1767,8 +1799,8 @@ contains
         character(10)           :: tmp_str
         integer                 :: i,j
 
-        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))  :: IBM_mask1_y, IBM_mask2_y, IBM_mask3_y
-        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))  :: IBM_mask1_z, IBM_mask2_z, IBM_mask3_z
+        real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3))  :: IBM_mask1_y!, IBM_mask2_y, IBM_mask3_y
+        real*8, dimension(zstart(1):zend(1), zstart(2):zend(2), zstart(3):zend(3))  :: IBM_mask1_z, IBM_mask2_z!, IBM_mask3_z
 
         integer         :: k,s, xdmf_id, ierr, anim_id
 
@@ -1832,40 +1864,40 @@ contains
 
             if(nrank==0)  call hdf_addgroup(file_path, "MASKS")
 
-            if (IBM_activated) then
+            ! if (IBM_activated) then
 
-                call transpose_x_to_y(IBM_mask1_x, IBM_mask1_y)
-                call transpose_y_to_z(IBM_mask1_y, IBM_mask1_z)
+            !     call transpose_x_to_y(IBM_mask1_x, IBM_mask1_y)
+            !     call transpose_y_to_z(IBM_mask1_y, IBM_mask1_z)
 
-                call transpose_x_to_y(IBM_mask2_x, IBM_mask2_y)
-                call transpose_y_to_z(IBM_mask2_y, IBM_mask2_z)
+            !     call transpose_x_to_y(IBM_mask2_x, IBM_mask2_y)
+            !     call transpose_y_to_z(IBM_mask2_y, IBM_mask2_z)
 
-                call transpose_x_to_y(IBM_mask3_x, IBM_mask3_y)
-                call transpose_y_to_z(IBM_mask3_y, IBM_mask3_z)
+            !     call transpose_x_to_y(IBM_mask3_x, IBM_mask3_y)
+            !     call transpose_y_to_z(IBM_mask3_y, IBM_mask3_z)
 
-                do s = 1, param_anim2D_3%nb_slices
+            !     do s = 1, param_anim2D_3%nb_slices
 
-                    k=param_anim2D_3%slices(s)
-                    write(tmp_str, "(i10)")k
-                    slice_name='MASKS/'//'slice_'//trim(adjustl(tmp_str))
-                    if (nrank==0) write(*,*)'ADD GROUPE 1', slice_name
-                    if(nrank==0)  call hdf_addgroup(file_path, slice_name)
+            !         k=param_anim2D_3%slices(s)
+            !         write(tmp_str, "(i10)")k
+            !         slice_name='MASKS/'//'slice_'//trim(adjustl(tmp_str))
+            !         if (nrank==0) write(*,*)'ADD GROUPE 1', slice_name
+            !         if(nrank==0)  call hdf_addgroup(file_path, slice_name)
 
-                    if (param_anim2D_3%export_q1) then
-                        call hdf_add_2Dfield(trim(file_path), IBM_mask1_z(:, :,k), trim(slice_name)//"/q1", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
-                    end if
+            !         if (param_anim2D_3%export_q1) then
+            !             call hdf_add_2Dfield(trim(file_path), IBM_mask1_z(:, :,k), trim(slice_name)//"/q1", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+            !         end if
 
-                    if (param_anim2D_3%export_q2) then
-                        call hdf_add_2Dfield(trim(file_path), IBM_mask2_z(:, :,k), trim(slice_name)//"/q2", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
-                    end if
+            !         if (param_anim2D_3%export_q2) then
+            !             call hdf_add_2Dfield(trim(file_path), IBM_mask2_z(:, :,k), trim(slice_name)//"/q2", n1, n2, zstart(1),zend(1), zstart(2),zend(2))
+            !         end if
 
-                    if (param_anim2D_3%export_q3) then
-                        call hdf_add_2Dfield(trim(file_path), IBM_mask3_z(:, :,k), trim(slice_name)//"/q3", 1, n2, 1,1, zstart(2),zend(2))
-                    end if
+            !         if (param_anim2D_3%export_q3) then
+            !             call hdf_add_2Dfield(trim(file_path), IBM_mask3_z(:, :,k), trim(slice_name)//"/q3", 1, n2, 1,1, zstart(2),zend(2))
+            !         end if
 
-                end do
+            !     end do
 
-            endif
+            ! endif
 
         end if
 

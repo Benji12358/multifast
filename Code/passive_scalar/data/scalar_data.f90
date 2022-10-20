@@ -1,10 +1,10 @@
 module SCALAR_data
     implicit none
 
-    integer, parameter  :: CLASSIC_INIT=0, INIT_FROM_FILE=1
+    integer, parameter  :: CLASSIC_INIT=0, INIT_FROM_FILE=1, KAWAMURA_INIT=2, CONSTANT_HEAT_FLUX=3
 
     real*8,dimension (:,:,:), allocatable       :: sca_x, sca_y, sca_z
-    real*8  :: renprandtl, delta_T, heat_flux
+    real*8  :: prandtl, delta_T, heat_flux
     integer :: SCA_state
     integer :: init_type
     logical :: reset_scalar_field

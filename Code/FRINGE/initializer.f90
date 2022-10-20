@@ -8,6 +8,8 @@ module FRINGE_initializer
     use boundaries
     use physical_fields
 
+    use SCALAR_data, only: SCA_state, delta_T, sca_x
+
 !
     implicit none
 !
@@ -17,12 +19,28 @@ contains
     subroutine get_inflow()
 
         implicit none
+        integer :: j, k
 
         if (inflow_type==2) then
             call inflow_from_file
+        else if (inflow_type==3) then
+            call inflow_from_prev_run
         else
             call default_inflow
         endif
+
+        ! Assume streamwise direction is 1
+        ! so streamwise velocity is q1
+
+        initial_flowrate=0.d0
+
+        ! do k=xstart(3),min(xend(3),n3-1)
+        !     do j=xstart(2),min(xend(2),n2-1)
+
+        !         initial_flowrate = initial_flowrate + q1_inflow(j,k)*(Y(j+1)-Y(j))*dx3
+
+        !     enddo
+        ! enddo
 
         return
 
@@ -39,10 +57,10 @@ contains
                       q1_inflow = 0.d0
                       q2_inflow = 0.d0
                       q3_inflow = 0.d0
-                      !if (streamwise==1) call perform_stream1(q1_inflow, BC2, BC3)
+                      if (streamwise==1) call perform_stream1(q1_inflow, BC2, BC3)
                       !if (streamwise==3) call perform_stream3(q3_inflow, BC1, BC2)
 
-                      q1_inflow = q1_x(1,:,:)
+                      ! q1_inflow = q1_x(1,:,:)
 
                     case (SQUARE_INFLOW)
 
@@ -51,8 +69,20 @@ contains
                       q1_inflow = 0.d0
                       q2_inflow = 0.d0
                       q3_inflow = 0.d0
-                      if (streamwise==1) q1_inflow(:,:)=1.d0
-                      if (streamwise==3) q3_inflow(:,:)=1.d0
+                      ! if (streamwise==1) q1_inflow(:,:)=1.d0
+                      ! if (streamwise==3) q3_inflow(:,:)=1.d0
+                      if (streamwise==1) call perform_boundary_layer_1(q1_inflow, Yc(4)) ! BLASIUS BOUNDARY LAYER ON 4 NODES 
+                      if (streamwise==3) call perform_boundary_layer_3(q3_inflow, Yc(4)) ! BLASIUS BOUNDARY LAYER ON 4 NODES 
+
+                      if (SCA_state==1) then
+
+                        do k = xstart(3), min(n3-1, xend(3))
+                            do j = xstart(2), min(n2-1, xend(2))
+                                sca_inflow(j,k)=(-delta_T)+(Yc(j)/L2)*2.d0*delta_T
+                            end do
+                        end do
+
+                      endif
 
                     case (BOUNDARY_LAYER_INFLOW)
 
@@ -103,6 +133,85 @@ contains
                 q1_inflow(:,:)=ts11_global(nx_start,:,:)
 
             end subroutine inflow_from_file
+
+            ! TO CHECK
+            subroutine inflow_from_prev_run()
+                use HDF5_IO
+                use start_settings, only:start_it
+                use COMMON_workspace_view, only: COMMON_inflow_path
+                use mesh
+
+                implicit none
+            
+                real*8 :: u_bulk, u_bulk_glob
+                integer :: j,k,mpi_err
+
+                real*8 :: delta, uc_inflow, coef
+                logical :: pair_n2
+                real*8, dimension(n2) :: inflow_profile
+
+                real*8 :: ut1, u_bulk_theo
+
+                u_bulk=0.d0
+
+                do j=xstart(2),min(n2m,xend(2))
+                    do k=xstart(3),min(n3m,xend(3))
+
+                        u_bulk = u_bulk + q1_x(n1m,j,k)*(Y(j+1)-Y(j))*dx3
+
+                    enddo
+                enddo
+
+                call MPI_ALLREDUCE(u_bulk, u_bulk_glob, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
+                u_bulk_glob = u_bulk_glob/(L3*L2)
+
+                q1_inflow = u_bulk_glob
+                q2_inflow = 0.d0
+                q3_inflow = 0.d0
+
+                !if (SCA_state==1) then
+                !    sca_inflow = sca_x(1,:,:)
+                !endif
+
+                ! USING BLASIUS BOUNDARY LAYER
+                delta = Y(5) ! profile on 4 nodes
+
+                pair_n2 = (mod(n2, 2)==0)
+
+                do j=ystart(2),n2/2
+                    if (Yc(j)<delta) then
+                        inflow_profile(j) = 2.d0 * (Yc(j)/delta) - 2.d0 * (Yc(j)/delta)**3 + 1.d0 * (Yc(j)/delta)**4
+                        inflow_profile(n2-j) = 2.d0 * (Yc(j)/delta) - 2.d0 * (Yc(j)/delta)**3 + 1.d0 * (Yc(j)/delta)**4
+                    else
+                        inflow_profile(j) = 1.d0
+                        inflow_profile(n2-j) = 1.d0
+                    endif
+                enddo
+
+                if (pair_n2) then
+                    inflow_profile(n2/2+1) = 1.d0
+                endif
+
+                ! Perform the flowrate at the inlet...
+                ut1=0.d0
+                do k=xstart(3),min(xend(3),n3-1)
+                    do j=xstart(2),min(xend(2),n2-1)
+                        ut1=ut1+inflow_profile(j)*(Y(j+1)-Y(j))*dx3
+                    enddo
+                enddo
+
+                call MPI_ALLREDUCE(ut1, u_bulk_theo, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
+                u_bulk_theo=u_bulk_theo/(L3*L2)
+
+                coef = u_bulk/u_bulk_theo
+
+                inflow_profile(:) = inflow_profile(:) * coef
+
+                do j=xstart(2),min(xend(2),n2m)
+                    q1_inflow(j,:) = inflow_profile(j)
+                enddo
+
+            end subroutine inflow_from_prev_run
 
             subroutine perform_stream1(stream1, BC2, BC3)
               implicit none
@@ -238,7 +347,7 @@ contains
             endif
 
             do j = xstart(2),xend(2)
-                stream1(j,xstart(3):min(xend(3),n3-1))=f1(j)
+                stream1(j,:)=f1(j)
             end do
 
         end subroutine perform_boundary_layer_1
