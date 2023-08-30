@@ -1085,24 +1085,70 @@ contains
             tmp2=0.d0
             tmp3=0.d0
 
-            do k=xstart(3), min(n3m, xend(3))   !do k=1,n3m
-                do j=xstart(2), min(n2m, xend(2))   !do j=1,n2m
+            ! Z ------------------------------------------------------------------------
 
-                    do i=n_fringe_start,n_fringe_end
-                        s1tot=s1tot + (RHS1_x(i,j,k)+Fext1(i,j,k))*dx1*dx3*cell_size_Y(j)
-                    enddo
+            n1e=(min(n1m, zend(1))-zstart(1))+1
+            n2e=(min(n2m, zend(2))-zstart(2))+1
+
+            call D2c_3Dz(q1_z, tmp3, zsize(1),n1e,zsize(2),n2e,n3, dx3, .true., NS_Q1_BC3)
+
+            ! Y ------------------------------------------------------------------------
+
+            n1e=(min(n1m, yend(1))-ystart(1))+1
+            n3e=(min(n3m, yend(3))-ystart(3))+1
+
+            call D1c_MULT_3Dy(q1_y, tmp2, ysize(1),n1e,n2,ysize(3),n3e, dx2, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,1))
+            call D2c_MULTACC_3Dy(q1_y, tmp2, ysize(1),n1e,n2,ysize(3),n3e, dx2, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,2))
+
+            do k=ystart(3), min(n3m, yend(3))   !do k=1,n3m
+                do i=ystart(1), min(n1m, yend(1))   !do i=1,n1m
+
+                    tmp2(i,1,k)= ( q1_y(i,2,k)*a3_d + q1_y(i,1,k)*a2_d + q1_wall20(i,k)*a1_d )/dx2**2
+                    tmp2(i,n2m,k)= ( q1_y(i,n2m-1,k)*a1_u + q1_y(i,n2m,k) *a2_u + q1_wall21(i,k)*a3_u)/dx2**2
 
                 enddo
             enddo
+
+            ! X ------------------------------------------------------------------------
+
+            n2e=(min(n2m, xend(2))-xstart(2))+1
+            n3e=(min(n3m, xend(3))-xstart(3))+1
+
+            call D2c_3Dx(q1_x, tmp1, n1,xsize(2),n2e,xsize(3),n3e, dx1, .false., NS_Q1_BC1)
+
+            call transpose_y_to_x(tmp2, tmp2_x)
+
+            call transpose_z_to_y(tmp3, tmp3_y)
+            call transpose_y_to_x(tmp3_y, tmp3_x)
+
+            do k=xstart(3), min(n3m, xend(3))   !do k=1,n3m
+                do j=xstart(2), min(n2m, xend(2))   !do j=1,n2m
+
+                    ! only in the fringe region
+                    do i=n_fringe_start,n_fringe_end
+                        s1tot=s1tot+(tmp1(i,j,k)+tmp2_x(i,j,k)+tmp3_x(i,j,k))*dx1*dx3*cell_size_Y(j)
+                    enddo
+                enddo
+            enddo
+
+            if(isnan(s1tot)) then
+                write(*,*)'proc C', nrank
+                write(*,*)'channel D: s1tot', s1tot
+                write(*,*)'channel D: Q1', sum(q1_x), dx1, NS_Q1_BC1
+                write(*,*)'channel D: x3', xstart(3), xend(3)
+                write(*,*)'channel D: x2', xstart(2), xend(2)
+
+                call exit
+
+            endif
 
             call MPI_ALLREDUCE (s1tot, s1tot_glob, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
 
             total_volume = 2.d0*L1*L3
 
-            mean_grad_P1=s1tot_glob/(total_volume-ibm_volume)
+            mean_grad_P1=s1tot_glob/((total_volume-ibm_volume)*ren)
 
             return
-
         end subroutine
 
         subroutine perform_NSterms()
@@ -1634,75 +1680,76 @@ contains
 
         endif
 
-        if (use_fringe) then
+        !!!! For debug purpose
+        ! if (use_fringe) then
 
-            ! FOR DEBUG
-            flowrate_in = 0.d0
-            flowrate_out = 0.d0
-            flowrate_fringe_out = 0.d0
+        !     ! FOR DEBUG
+        !     flowrate_in = 0.d0
+        !     flowrate_out = 0.d0
+        !     flowrate_fringe_out = 0.d0
 
-            flowrate_in_glob = 0.d0
-            flowrate_out_glob = 0.d0
-            flowrate_fringe_out_glob = 0.d0
+        !     flowrate_in_glob = 0.d0
+        !     flowrate_out_glob = 0.d0
+        !     flowrate_fringe_out_glob = 0.d0
 
-            do k=xstart(3),min(xend(3),n3-1)
-                do j=xstart(2),min(xend(2),n2-1)
+        !     do k=xstart(3),min(xend(3),n3-1)
+        !         do j=xstart(2),min(xend(2),n2-1)
 
-                    flowrate_in = flowrate_in + q1_x(1,j,k)*(Y(j+1)-Y(j))*dx3
+        !             flowrate_in = flowrate_in + q1_x(1,j,k)*(Y(j+1)-Y(j))*dx3
 
-                    flowrate_out = flowrate_out + q1_x(n1m,j,k)*(Y(j+1)-Y(j))*dx3
+        !             flowrate_out = flowrate_out + q1_x(n1m,j,k)*(Y(j+1)-Y(j))*dx3
 
-                    flowrate_fringe_out = flowrate_fringe_out + q1_x(n_fringe_region,j,k)*(Y(j+1)-Y(j))*dx3
+        !             flowrate_fringe_out = flowrate_fringe_out + q1_x(n_fringe_region,j,k)*(Y(j+1)-Y(j))*dx3
 
-                enddo
-            enddo
+        !         enddo
+        !     enddo
 
-            call MPI_ALLREDUCE(flowrate_in, flowrate_in_glob, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
-            flowrate_in_glob=flowrate_in_glob/(L3*L2)
+        !     call MPI_ALLREDUCE(flowrate_in, flowrate_in_glob, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
+        !     flowrate_in_glob=flowrate_in_glob/(L3*L2)
 
-            call MPI_ALLREDUCE(flowrate_out, flowrate_out_glob, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
-            flowrate_out_glob=flowrate_out_glob/(L3*L2)
+        !     call MPI_ALLREDUCE(flowrate_out, flowrate_out_glob, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
+        !     flowrate_out_glob=flowrate_out_glob/(L3*L2)
 
-            call MPI_ALLREDUCE(flowrate_fringe_out, flowrate_fringe_out_glob, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
-            flowrate_fringe_out_glob=flowrate_fringe_out_glob/(L3*L2)
+        !     call MPI_ALLREDUCE(flowrate_fringe_out, flowrate_fringe_out_glob, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
+        !     flowrate_fringe_out_glob=flowrate_fringe_out_glob/(L3*L2)
 
-            if (nrank==0) then
-                write(*,*) 'Reb inflow', ren*flowrate_in_glob
-                write(*,*) 'Reb out fringe', ren*flowrate_fringe_out_glob
-                write(*,*) 'Reb outflow', ren*flowrate_out_glob
-            endif
+        !     if (nrank==0) then
+        !         write(*,*) 'Reb inflow', ren*flowrate_in_glob
+        !         write(*,*) 'Reb out fringe', ren*flowrate_fringe_out_glob
+        !         write(*,*) 'Reb outflow', ren*flowrate_out_glob
+        !     endif
 
-        else
+        ! else
 
-            ! FOR DEBUG
-            flowrate_in = 0.d0
-            flowrate_out = 0.d0
+        !     ! FOR DEBUG
+        !     flowrate_in = 0.d0
+        !     flowrate_out = 0.d0
 
-            flowrate_in_glob = 0.d0
-            flowrate_out_glob = 0.d0
+        !     flowrate_in_glob = 0.d0
+        !     flowrate_out_glob = 0.d0
 
-            do k=xstart(3),min(xend(3),n3-1)
-                do j=xstart(2),min(xend(2),n2-1)
+        !     do k=xstart(3),min(xend(3),n3-1)
+        !         do j=xstart(2),min(xend(2),n2-1)
 
-                    flowrate_in = flowrate_in + q1_x(1,j,k)*(Y(j+1)-Y(j))*dx3
+        !             flowrate_in = flowrate_in + q1_x(1,j,k)*(Y(j+1)-Y(j))*dx3
 
-                    flowrate_out = flowrate_out + q1_x(n1m,j,k)*(Y(j+1)-Y(j))*dx3
+        !             flowrate_out = flowrate_out + q1_x(n1m,j,k)*(Y(j+1)-Y(j))*dx3
 
-                enddo
-            enddo
+        !         enddo
+        !     enddo
 
-            call MPI_ALLREDUCE(flowrate_in, flowrate_in_glob, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
-            flowrate_in_glob=flowrate_in_glob/(L3*L2)
+        !     call MPI_ALLREDUCE(flowrate_in, flowrate_in_glob, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
+        !     flowrate_in_glob=flowrate_in_glob/(L3*L2)
 
-            call MPI_ALLREDUCE(flowrate_out, flowrate_out_glob, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
-            flowrate_out_glob=flowrate_out_glob/(L3*L2)
+        !     call MPI_ALLREDUCE(flowrate_out, flowrate_out_glob, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
+        !     flowrate_out_glob=flowrate_out_glob/(L3*L2)
 
-            if (nrank==0) then
-                write(*,*) 'Reb inflow', ren*flowrate_in_glob
-                write(*,*) 'Reb outflow', ren*flowrate_out_glob
-            endif
+        !     if (nrank==0) then
+        !         write(*,*) 'Reb inflow', ren*flowrate_in_glob
+        !         write(*,*) 'Reb outflow', ren*flowrate_out_glob
+        !     endif
 
-        endif
+        ! endif
 
         contains
 

@@ -19,7 +19,7 @@
 
 module IEMBEDDED_LIFE
     use embedded_initializer, only:    &
-    embedded_initialize              => initialize
+    EMBEDDED_INITIALIZE              => initialize
 
 end module IEMBEDDED_LIFE
 

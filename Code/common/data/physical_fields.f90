@@ -7,6 +7,9 @@ module physical_fields
     real*8,dimension (:,:,:), allocatable       :: dp_x, dp_y, dp_z
     !real*8,dimension (:,:,:), allocatable       :: pr_x, pr_y, pr_z
 
+    ! For triple decomposition
+    ! real*8,dimension (:,:,:), allocatable       :: U_mean_3D, V_mean_3D, W_mean_3D, UfVf_mean_3D
+
     real*8      :: dP_streamwise, dP_spanwise
 
     real*8,dimension (:,:), allocatable         :: q3_wall10, q2_wall10, q1_wall10

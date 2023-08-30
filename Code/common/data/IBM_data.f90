@@ -11,6 +11,8 @@ module IBM_data
     real*8, dimension(:,:,:), allocatable   :: mask_fadlun_q1_x, mask_fadlun_q2_x, mask_fadlun_q3_x, mask_fadlun_sca_x
 
     real*8, dimension(:,:,:), allocatable   :: mask_kim_q2_y, mask_kim_q3_y, mask_kim_q3_z
+    ! For triple decomposition
+    real*8, dimension(:,:,:), allocatable   :: mask_objects_q1_y, mask_objects_q2_y, mask_objects_q3_y
 
     real*8, dimension(:,:,:), allocatable   :: mask_objects_sca_y
     real*8, dimension(:,:,:), allocatable   :: mask_kim_sca_y

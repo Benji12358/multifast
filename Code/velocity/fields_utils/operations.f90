@@ -104,7 +104,7 @@ contains
         use numerical_methods_settings
         use snapshot_writer
         use mpi
-        use schemes_interface
+        ! use schemes_interface
         use IBM
         use numerical_methods_settings, only: schemes_configuration
         use schemes_loader
@@ -232,8 +232,8 @@ contains
                             div1_x(i1,j,k) = -q1_x(i1,j,k)/dx1
                             div1_x(i1-1,j,k) = q1_x(i1,j,k)/dx1
 
-                            div1_x(i0-1,j,k) = -q1_x(i0,j,k)/dx1
-                            div1_x(i0,j,k) = q1_x(i0,j,k)/dx1
+                            div1_x(i0-1,j,k) = q1_x(i0,j,k)/dx1
+                            div1_x(i0,j,k) = -q1_x(i0,j,k)/dx1
 
                         endif
 
@@ -276,8 +276,8 @@ contains
 
                             if ((i.ge.i0).and.(i.le.i1).and.(k.ge.k0).and.(k.le.k1)) then
 
-                                div2_y(i,j0-1,k) = (-q2_y(i,j0,k)/dx2) * Yc_to_YcTr_for_D1(j0-1)
-                                div2_y(i,j0,k) = (+q2_y(i,j0,k)/dx2) * Yc_to_YcTr_for_D1(j0)
+                                div2_y(i,j0-1,k) = (q2_y(i,j0,k)/dx2) * Yc_to_YcTr_for_D1(j0-1)
+                                div2_y(i,j0,k) = (-q2_y(i,j0,k)/dx2) * Yc_to_YcTr_for_D1(j0)
 
                             endif
 
@@ -288,37 +288,60 @@ contains
 
             endif
 
-            ! Z - direction
-            if (object_in_current_proc_z_q3(n)) then
+            !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            ! For object not spanning full width
+            !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            if (.not.IBM_full_span) then
 
-                i0 = i_start_obj_q3(n)
-                i1 = i_end_obj_q3(n)
-                j0 = j_start_obj_q3(n)
-                j1 = j_end_obj_q3(n)
-                k0 = k_start_obj_q3(n)
-                k1 = k_end_obj_q3(n)
+                ! Z - direction
+                if (object_in_current_proc_z_q3(n)) then
 
-                ! then, with edge at k1
-                k_bef=k0-1
-                if (k0.eq.1) k_bef=n3-1
+                    i0 = i_start_obj_q3(n)
+                    i1 = i_end_obj_q3(n)
+                    j0 = j_start_obj_q3(n)
+                    j1 = j_end_obj_q3(n)
+                    k0 = k_start_obj_q3(n)
+                    k1 = k_end_obj_q3(n)
 
-                do i=zstart_ibm_q3(n,1), zend_ibm_q3(n,1)
-                    do j=zstart_ibm_q3(n,2), zend_ibm_q3(n,2)
+                    ! then, with edge at k1
+                    k_bef=k0-1
+                    if (k0.eq.1) k_bef=n3-1
 
-                        if ((j.ge.j0).and.(j.le.j1).and.(i.ge.i0).and.(i.le.i1)) then
+                    if (k0.le.1) then
 
-                            div3_z(i,j,k1) = -q3_z(i,j,k1)/dx3
-                            div3_z(i,j,k1-1) = q3_z(i,j,k1)/dx3
+                        do i=zstart_ibm_q3(n,1), zend_ibm_q3(n,1)
+                                do j=zstart_ibm_q3(n,2), zend_ibm_q3(n,2)
 
-                            div3_z(i,j,k_bef) = -q3_z(i,j,k0)/dx3
-                            div3_z(i,j,k0) = +q3_z(i,j,k0)/dx3
+                                        if ((j.ge.j0).and.(j.le.j1).and.(i.ge.i0).and.(i.le.i1)) then
 
-                        endif
+                                                div3_z(i,j,k1) = -q3_z(i,j,k1)/dx3
+                                                div3_z(i,j,k1-1) = q3_z(i,j,k1)/dx3
 
-                    enddo
-                enddo
+                                        endif
 
-            endif            
+                                enddo
+                        enddo
+
+                    else
+
+                        do i=zstart_ibm_q3(n,1), zend_ibm_q3(n,1)
+                                do j=zstart_ibm_q3(n,2), zstart_ibm_q3(n,2)
+
+                                        if ((j.ge.j0).and.(j.le.j1).and.(i.ge.i0).and.(i.le.i1)) then
+
+                                                div3_z(i,j,k0-1) = q3_z(i,j,k0)/dx3
+                                                div3_z(i,j,k0) = -q3_z(i,j,k0)/dx3
+
+                                        endif
+
+                                enddo
+                        enddo
+
+                   endif
+
+                endif  
+
+            endif          
 
         enddo
 

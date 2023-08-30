@@ -11,7 +11,9 @@ module fringe_data
 
     integer                                   :: n_interest_region_start
 
-    real*8                                    :: initial_flowrate, current_flowrate
+    real*8                                    :: initial_flowrate, current_flowrate, u_bulk_theo
+
+    real*8, dimension(:), allocatable         :: square_q1_inflow
 
     real*8, dimension(:,:,:), allocatable     :: f1_fringe_x, f2_fringe_x, f3_fringe_x
     real*8, dimension(:,:,:), allocatable     :: f1_fringe_z, f2_fringe_z, f3_fringe_z

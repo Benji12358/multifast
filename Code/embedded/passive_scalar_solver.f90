@@ -60,39 +60,35 @@ contains
         real*8, dimension(ystart_e(1):yend_e(1), ystart_e(2):yend_e(2), ystart_e(3):yend_e(3)) :: RHS2, RHS2_1
         real*8, dimension(ystart_e(1):yend_e(1), ystart_e(2):yend_e(2), ystart_e(3):yend_e(3)) :: source_term
 
+        real*8, dimension(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)) :: u_x
+        real*8, dimension(ystart_e(1):yend_e(1), ystart_e(2):yend_e(2), ystart_e(3):yend_e(3)) :: u_y
+
         call set_time_coeffs
         call perform_velocityscalar_products(q1_x, q2_y, q3_z, q1S, q2S, q3S)
         call perform_RHS1(q1S, q2S, q3S, RHS1)
         call perform_RHS2(RHS2)
 
-        ! if (init_type==KAWAMURA_INIT) then
+        if (init_type==KAWAMURA_INIT) then
+            ! If Kawamura equations are used, we need to compute a source term for the transport of the passive scalar
+            ! Check Kawamura 1998 (doi: 10.1016/S0142-727X(98)10026-7) and Kasagi 1992 (doi: 10.1115/1.2911323)
 
-        !     if (streamwise==1) then
+            ! Caution ! 
+            ! Works only for streamwise = 1
+            call D0s_3Dx(q1_x, u_x, n1,xsize_e(2),xsize_e(2),xsize_e(3),xsize_e(3), NS_DEF_BC1)
+            call transpose_x_to_y(u_x,u_y, decomp_embedded)
+            call perform_source_term(u_x, u_y, source_term, dx3)
 
-        !         call transpose_x_to_y(q1_x, q_y)
+        else
 
-        !     elseif (streamwise==3) then
+            ! for now, the set of equations solved are the ones of LYONS (1991)
+            source_term = 0.d0
 
-        !         call transpose_x_to_y(q3_x, q_y)
-
-        !     endif
-
-        !     call perform_source_term(q_y, source_term)
-
-        ! else
-
-        !     source_term = 0.d0
-
-        ! endif
+        endif
 
         ! for now, the set of equations solved are the ones of LYONS (1991)
         source_term = 0.d0
 
-        ! RHS=RHS1+RHS2
-
         call next_scalar
-
-        ! if (init_type==CONSTANT_HEAT_FLUX) call next_wall_scalar
 
         previousRHS1=RHS1
         previousRHS2=RHS2
@@ -322,71 +318,70 @@ contains
 
     end subroutine perform_RHS2
 
-    ! subroutine perform_source_term(q_y, source_term)
+    subroutine perform_source_term(q_x, q_y, source_term, dx_spanwise)
 
-    !     use mpi
-    !     use COMMON_workspace_view, only: COMMON_log_path
-    !     use run_ctxt_data, only: ntime
+        use mpi
+        use COMMON_workspace_view, only: COMMON_log_path
+        use run_ctxt_data, only: ntime
 
-    !     implicit none
+        implicit none
 
-    !     real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent (in) :: q_y
-    !     real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: q_x
-    !     real*8, dimension(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)), intent (out) :: source_term
-    !     real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: source_term_x
-    !     ! real*8 :: ut1, ut1_global
-    !     real*8, dimension(n1) :: ut1, ut1_global
-    !     real*8 :: umean1, umean_glob1, ren_tau
-    !     integer:: i,j,k
-    !     integer     :: mpi_err
-    !     character*200       :: temperature_history_file
+        real*8, intent (in) :: dx_spanwise
+        real*8, dimension(ystart_e(1):yend_e(1), ystart_e(2):yend_e(2), ystart_e(3):yend_e(3)), intent (in) :: q_y
+        real*8, dimension(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)), intent (in) :: q_x
+        real*8, dimension(ystart_e(1):yend_e(1), ystart_e(2):yend_e(2), ystart_e(3):yend_e(3)), intent (out) :: source_term
+        real*8, dimension(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)) :: source_term_x
+        real*8, dimension(n1) :: ut1, ut1_global, IBM_presence
+        real*8 :: umean1, umean_glob1, ren_tau
+        integer:: i,j,k,n
+        integer     :: mpi_err
+        character*200       :: temperature_history_file
 
-    !     call transpose_y_to_x(q_y,q_x)
+        ! We compute as usual, bulk velocity at different x-positions and u_tau from viscous drag
 
-    !     ! Perform the integral over y-direction
-    !     ut1=0.d0
-    !     do i = xstart(1),min(xend(1),n1-1)
-    !         do j=xstart(2),min(xend(2),n2-1)
-    !             do k=xstart(3),min(xend(3),n3-1)
-    !                 ut1(i)=ut1(i)+q_x(i,j,k)*(Y(j+1)-Y(j))
-    !             enddo
-    !         enddo
-    !     enddo
+        ! Perform the integral over y-direction
+        ut1=0.d0
+        do i = xstart_e(1),min(xend_e(1),n1-1)
+            do j=xstart_e(2),min(xend_e(2),n2-1)
+                do k=xstart_e(3),min(xend_e(3),n3-1)
+                    ut1(i)=ut1(i)+q_x(i,j,k)*cell_size_Y(j)*dx_spanwise
+                enddo
+            enddo
+        enddo
 
-    !     call MPI_ALLREDUCE(ut1, ut1_global, n1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
-    !     ut1_global=ut1_global/n3m
-    !     ut1_global=ut1_global/L2
+        call MPI_ALLREDUCE(ut1, ut1_global, n1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
+        ut1_global=ut1_global/(L3*L2)
 
-    !     do i = xstart(1),min(xend(1),n1-1)
-    !         do j=xstart(2),min(xend(2),n2-1)
-    !             do k=xstart(3),min(xend(3),n3-1)
+        do i = xstart_e(1),min(xend_e(1),n1-1)
+            do j=xstart_e(2),min(xend_e(2),n2-1)
+                do k=xstart_e(3),min(xend_e(3),n3-1)
 
-    !                 source_term_x(i,j,k) = q_x(i,j,k) / ut1_global(i)
+                    source_term_x(i,j,k) = q_x(i,j,k) / ut1_global(i)
 
-    !             enddo
-    !         enddo
-    !     enddo
+                enddo
+            enddo
+        enddo
 
-    !     call transpose_x_to_y(source_term_x,source_term)
+        call transpose_x_to_y(source_term_x,source_term)
 
-    !     ! compute u_tau
-    !     umean1 = 0.d0
+        ! compute u_tau
+        umean1 = 0.d0
 
-    !     do k=ystart(3), min(n3m, yend(3))
-    !         do i=ystart(1), min(n1m, yend(1))
-    !             umean1=umean1+q_y(i,1,k)
-    !             umean1=umean1+q_y(i,n2-1,k)
-    !         enddo
-    !     enddo
+        do k=ystart_e(3), min(n3m, yend_e(3))
+            do i=ystart_e(1), min(n1m, yend_e(1))
+                umean1=umean1+q_y(i,1,k)
+                umean1=umean1+q_y(i,n2-1,k)
+            enddo
+        enddo
 
-    !     call MPI_ALLREDUCE (umean1, umean_glob1, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (umean1, umean_glob1, 1, MPI_DOUBLE_PRECISION , MPI_SUM , MPI_COMM_WORLD , mpi_err)
 
-    !     umean_glob1=umean_glob1/dfloat(2*n1m*n3m)
-    !     ren_tau=dsqrt(ren*(umean_glob1/Yc(1)))
+        umean_glob1=umean_glob1/dfloat(2*n1m*n3m)
+        ren_tau=dsqrt(ren*(umean_glob1/Yc(1)))
 
-    !     source_term = source_term * ren_tau/ren
+        source_term = source_term * ren_tau/ren
 
-    ! end subroutine perform_source_term
+    end subroutine perform_source_term
 
     subroutine perform_velocityscalar_products(q1_x, q2_y, q3_z, q1S, q2S, q3S)
 

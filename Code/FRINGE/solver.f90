@@ -95,7 +95,7 @@ contains
           do j=xstart(2),min(xend(2),n2-1)
             do k=xstart(3),min(xend(3),n3-1)
 
-                sca_fringe_x(i,j,k) = lambda_x(i) * ( sca_inflow(j,k) - sca_x(i,j,k) )
+              sca_fringe_x(i,j,k) = lambda_x(i) * ( sca_inflow(j,k) - sca_x(i,j,k) )
 
             enddo
           enddo

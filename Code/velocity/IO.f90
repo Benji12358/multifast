@@ -228,6 +228,19 @@ contains
         file_path=trim(fields_dir)//"/P"
         call hdf_write_3Dfield(file_path, dp_x(:,:,:), "P", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
 
+        ! ! For triple decomposition
+        ! file_path=trim(fields_dir)//"/U"
+        ! call hdf_write_3Dfield(file_path, q3_z(:,:,:), "U", nx_global, ny_global, nz_global, zstart(1),zend(1),zstart(2),zend(2),zstart(3),zend(3))
+
+        ! file_path=trim(fields_dir)//"/V"
+        ! call hdf_write_3Dfield(file_path, q2_y(:,:,:), "V", nx_global, ny_global, nz_global, ystart(1),yend(1),ystart(2),yend(2),ystart(3),yend(3))
+
+        ! file_path=trim(fields_dir)//"/W"
+        ! call hdf_write_3Dfield(file_path, q1_x(:,:,:), "W", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+
+        ! file_path=trim(fields_dir)//"/P"
+        ! call hdf_write_3Dfield(file_path, dp_x(:,:,:), "P", nx_global, ny_global, nz_global, xstart(1),xend(1),xstart(2),xend(2),xstart(3),xend(3))
+
         ! file_path=trim(fields_dir)//"/source_term"
         ! call hdf_write_3Dfield(file_path, source_term(:,:,:), "source_term", nx_global, ny_global, nz_global, zstart(1),zend(1),zstart(2),zend(2),zstart(3),zend(3))
 
@@ -268,6 +281,40 @@ contains
         ! call hdf_add_2Dfield(file_path, q3_wall31(:,:), "Wall31/q3", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
 
     end subroutine write_fields
+
+    ! Export velocity 2D fields at the outlet in HDF5 format in individual files
+    ! More generic, better than 2decomp format (not generic)
+    subroutine write_2D_fields(fields_dir, file_name)
+
+        use physical_fields
+        use mesh
+        use DNS_settings
+        use HDF5_IO
+
+        implicit none
+        character(*)    :: fields_dir, file_name
+
+        character(200)    :: file_path, file_dir
+
+        ! First begin with streamwise velocity
+        file_dir  = trim(fields_dir)//"/U/"
+        file_path = trim(file_dir)//trim(file_name)
+        if(nrank==0)  call hdf_create_emptyfile(file_path)
+        call hdf_add_2Dfield(file_path, q1_x(n1m,:,:), "U", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
+
+        ! First begin with vertical velocity
+        file_dir  = trim(fields_dir)//"/V/"
+        file_path = trim(file_dir)//trim(file_name)
+        if(nrank==0)  call hdf_create_emptyfile(file_path)
+        call hdf_add_2Dfield(file_path, q2_x(n1m,:,:), "V", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
+
+        ! First begin with spanwise velocity
+        file_dir  = trim(fields_dir)//"/W/"
+        file_path = trim(file_dir)//trim(file_name)
+        if(nrank==0)  call hdf_create_emptyfile(file_path)
+        call hdf_add_2Dfield(file_path, q3_x(n1m,:,:), "W", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
+
+    end subroutine write_2D_fields
 
 
     ! Read all velocity fields in HDF5 format in individual files
@@ -325,6 +372,41 @@ contains
         ! call hdf_read_2Dfield(file_path, q3_wall31(:,:), "Wall31/q3", decomp_XYZ%xen(1), decomp_XYZ%yen(2), decomp_XYZ%zst(1),decomp_XYZ%zen(1), decomp_XYZ%zst(2),decomp_XYZ%zen(2))
 
     end subroutine read_fields
+
+    ! Import velocity 2D fields at the inlet from HDF5 format in individual files
+    ! More generic, better than 2decomp format (not generic)
+    subroutine read_2D_fields(fields_dir, q1_inflow, q2_inflow, q3_inflow, file_name)
+
+        use physical_fields
+        use mesh
+        use DNS_settings
+        use HDF5_IO
+
+        implicit none
+        character(*)    :: fields_dir, file_name
+
+        character(200)    :: file_path, file_dir
+
+        real*8, dimension(xstart(2):xend(2),xstart(3):xend(3))   :: q1_inflow, q2_inflow, q3_inflow
+
+        ! First begin with streamwise velocity
+        file_dir  = trim(fields_dir)//"/U/"
+        file_path = trim(file_dir)//trim(file_name)
+        call hdf_read_2Dfield(file_path, q1_inflow(:,:), "U", yend(2), zend(3), xstart(2), xend(2), xstart(3), xend(3))
+
+        ! First begin with vertical velocity
+        file_dir  = trim(fields_dir)//"/V/"
+        file_path = trim(file_dir)//trim(file_name)
+        if(nrank==0)  call hdf_create_emptyfile(file_path)
+        call hdf_read_2Dfield(file_path, q2_inflow(:,:), "V", yend(2), zend(3), xstart(2), xend(2), xstart(3), xend(3))
+
+        ! First begin with spanwise velocity
+        file_dir  = trim(fields_dir)//"/W/"
+        file_path = trim(file_dir)//trim(file_name)
+        if(nrank==0)  call hdf_create_emptyfile(file_path)
+        call hdf_read_2Dfield(file_path, q3_inflow(:,:), "W", yend(2), zend(3), xstart(2), xend(2), xstart(3), xend(3))
+
+    end subroutine read_2D_fields
 
 end module VELOCITY_dao
 
@@ -668,6 +750,37 @@ contains
 
     end subroutine load_fields
 
+
+    ! Import all velocity 2D fields from HDF5 format in individual files
+    ! More generic, better than 2decomp format (not generic)    
+    subroutine load_2D_fields(it, subit, q1_inflow, q2_inflow, q3_inflow)
+
+        use mesh
+        use start_settings, only : external_fields_path
+        use VELOCITY_dao, only: DAO_read_2D_fields => read_2D_fields
+
+        implicit none
+
+        integer, intent(in)         :: it, subit
+
+        character*10 tmp_str, tmp_str2
+        character*80 result_dir_path, file_suffix
+        character*200   :: inflow_path
+        real*8, dimension(xstart(2):xend(2),xstart(3):xend(3)), intent(in) :: q1_inflow, q2_inflow, q3_inflow
+
+
+        write(tmp_str, "(i10)")it
+        write(tmp_str2, "(i10)")subit
+
+        inflow_path = trim(external_fields_path)//"Outflow/"
+
+        result_dir_path=trim(inflow_path)
+        file_suffix = "it_"//trim(adjustl(tmp_str))//"sub_"//trim(adjustl(tmp_str2))
+
+        call DAO_read_2D_fields(result_dir_path, q1_inflow, q2_inflow, q3_inflow, file_suffix)
+
+    end subroutine load_2D_fields
+
 end module VELOCITY_loader
 
 
@@ -707,6 +820,29 @@ contains
         call DAO_write_fields(result_dir_path)
 
     end subroutine write_fields
+
+    ! Export all velocity 2D fields in HDF5 format in individual files
+    ! More generic, better than 2decomp format (not generic)
+    subroutine write_2D_fields(it, subit)
+        use COMMON_workspace_view
+        use VELOCITY_dao, only: DAO_write_2D_fields=> write_2D_fields
+
+        implicit none
+
+        integer, intent(in)         :: it, subit
+
+        character*10 tmp_str, tmp_str2
+        character*80 result_dir_path, file_suffix
+
+        write(tmp_str, "(i10)")it
+        write(tmp_str2, "(i10)")subit
+
+        result_dir_path=trim(COMMON_outflow_path)
+        file_suffix = "it_"//trim(adjustl(tmp_str))//"sub_"//trim(adjustl(tmp_str2))
+
+        call DAO_write_2D_fields(result_dir_path, file_suffix)
+
+    end subroutine write_2D_fields
 
 end module VELOCITY_results_writer
 

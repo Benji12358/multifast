@@ -1,4 +1,4 @@
-module embedded_settings
+module following_settings
     use COMMON_workspace_view, only: COMMON_settings_path 
     implicit none
 
@@ -6,20 +6,20 @@ contains
 
     subroutine read_start_settings()
 
-        use embedded_start_settings
-        use embedded_data
+        use following_start_settings
+        use following_data
 
         implicit none
 
         integer             :: reading_format
-        integer             :: use_embedded_int 
+        integer             :: use_following_int 
 
         ! Start **********************************************************************************
-        open(15,file=trim(COMMON_settings_path)//'embedded/start.d')
+        open(15,file=trim(COMMON_settings_path)//'following/start.d')
 
-        read(15,*) use_embedded_int
+        read(15,*) use_following_int
         read(15,*) start_source_type
-        read(15,*) wanted_delta
+        read(15,*) index_for_output
         read(15,*)
         read(15,'(a)') external_fields_path  ! path of the read field  file (cha.rea)
         read(15,*) start_it
@@ -27,22 +27,22 @@ contains
         read(15,*) reading_format
         close(15)
 
-        use_embedded = (use_embedded_int==1)
+        use_following = (use_following_int==1)
 
 
     end subroutine read_start_settings
 
-    subroutine read_embedded_domain_settings()
+    subroutine read_following_domain_settings()
 
         use mathematical_constants
 
-        use embedded_mesh
+        use following_mesh
 
         implicit none
         integer     :: pi_scale_flag
 
         ! Computational domain *******************************************************************
-        open(15,file=trim(COMMON_settings_path)//'embedded/computational_domain.d')
+        open(15,file=trim(COMMON_settings_path)//'following/computational_domain.d')
 
         read(15,*) n1,n2,n3
         read(15,*) L3, L2, L1
@@ -63,19 +63,19 @@ contains
             L3=L3           !streamwise size of the whole calcul box
         endif
 
-    end subroutine read_embedded_domain_settings
+    end subroutine read_following_domain_settings
 
     subroutine read_fringe_settings()
 
         use COMMON_workspace_view
-        use embedded_fringe_data
-        use embedded_mesh
-        use embedded_data, only: u_bulk
+        use following_fringe_data
+        use following_mesh
+        use following_data, only: u_bulk
 
         implicit none
         integer             :: fringe_state
 
-        open(15,file=trim(COMMON_settings_path)//'embedded/fringe.d')
+        open(15,file=trim(COMMON_settings_path)//'following/fringe.d')
 
         read(15,*) fringe_state  ! 0: no fringe ; 1: fringe activated
         read(15,*) fringe_length
@@ -120,11 +120,11 @@ contains
 
     subroutine read_sca_settings()
 
-        use embedded_common_workspace_view
+        use following_common_workspace_view
         use DNS_settings
         use boundaries
 
-        use embedded_scalar_data
+        use following_scalar_data
 
         implicit none
         integer :: reset_int
@@ -149,13 +149,13 @@ contains
 
     end subroutine read_sca_settings
 
-end module embedded_settings
+end module following_settings
 
-module embedded_snapshot_writer
+module following_snapshot_writer
 
     use mpi
     use decomp_2d
-    use embedded_data
+    use following_data
 
     implicit none
 
@@ -163,7 +163,7 @@ contains
 
     subroutine create_snapshot(snaps_dir, snap_dir, field, field_name, pencil)
 
-        use embedded_mesh
+        use following_mesh
         use HDF5_IO
 
         implicit none
@@ -184,17 +184,17 @@ contains
 
         if(nrank==0)  call hdf_create_emptyfile(file_path)
         !if (pencil==1) call hdf_add_3Dfield(file_path, field(:,:,:), trim(field_name), n1, n2, n3, 1,xsize(1),1,xsize(2),1,xsize(3))
-        if (pencil==1) call hdf_add_3Dfield(file_path, field(:,:,:), trim(field_name), n1, n2, n3, xstart_e(1),xend_e(1),xstart_e(2),xend_e(2),xstart_e(3),xend_e(3))
+        if (pencil==1) call hdf_add_3Dfield(file_path, field(:,:,:), trim(field_name), n1, n2, n3, xstart_f(1),xend_f(1),xstart_f(2),xend_f(2),xstart_f(3),xend_f(3))
         !if (pencil==2) call hdf_add_3Dfield(file_path, field(:,:,:), trim(field_name), n1, n2, n3, 1,ysize(1),1,ysize(2),1,ysize(3))
-        if (pencil==2) call hdf_add_3Dfield(file_path, field(:,:,:), trim(field_name), n1, n2, n3, ystart_e(1),yend_e(1),ystart_e(2),yend_e(2),ystart_e(3),yend_e(3))
+        if (pencil==2) call hdf_add_3Dfield(file_path, field(:,:,:), trim(field_name), n1, n2, n3, ystart_f(1),yend_f(1),ystart_f(2),yend_f(2),ystart_f(3),yend_f(3))
         !if (pencil==3) call hdf_add_3Dfield(file_path, field(:,:,:), trim(field_name), n1, n2, n3, 1,zsize(1),1,zsize(2),1,zsize(3))
-        if (pencil==3) call hdf_add_3Dfield(file_path, field(:,:,:), trim(field_name), n1, n2, n3, zstart_e(1),zend_e(1),zstart_e(2),zend_e(2),zstart_e(3),zend_e(3))
+        if (pencil==3) call hdf_add_3Dfield(file_path, field(:,:,:), trim(field_name), n1, n2, n3, zstart_f(1),zend_f(1),zstart_f(2),zend_f(2),zstart_f(3),zend_f(3))
 
         call MPI_BARRIER(MPI_COMM_WORLD, mpi_err)
 
     end subroutine create_snapshot
 
-end module embedded_snapshot_writer
+end module following_snapshot_writer
 
 
 ! module FRINGE_results_writer
@@ -232,12 +232,12 @@ end module embedded_snapshot_writer
 
 ! end module FRINGE_results_writer
 
-module embedded_velocity_dao
+module following_velocity_dao
 
     use mpi
     use decomp_2d
     use decomp_2d_io
-    use embedded_data
+    use following_data
 
     implicit none
 
@@ -247,11 +247,11 @@ contains
     ! More generic, better than 2decomp format (not generic)
     subroutine write_fields(fields_dir)
 
-        use embedded_physical_fields
-        use embedded_mesh
+        use following_physical_fields
+        use following_mesh
         use DNS_settings
         use HDF5_IO
-        use embedded_data
+        use following_data
 
         implicit none
         character(*)    :: fields_dir
@@ -260,16 +260,16 @@ contains
         character(200)    :: file_path
 
         file_path=trim(fields_dir)//"/U"
-        call hdf_write_3Dfield(file_path, q3_z(:,:,:), "U", n1, n2, n3, zstart_e(1),zend_e(1),zstart_e(2),zend_e(2),zstart_e(3),zend_e(3))
+        call hdf_write_3Dfield(file_path, q3_z(:,:,:), "U", n1, n2, n3, zstart_f(1),zend_f(1),zstart_f(2),zend_f(2),zstart_f(3),zend_f(3))
 
         file_path=trim(fields_dir)//"/V"
-        call hdf_write_3Dfield(file_path, q2_y(:,:,:), "V", n1, n2, n3, ystart_e(1),yend_e(1),ystart_e(2),yend_e(2),ystart_e(3),yend_e(3))
+        call hdf_write_3Dfield(file_path, q2_y(:,:,:), "V", n1, n2, n3, ystart_f(1),yend_f(1),ystart_f(2),yend_f(2),ystart_f(3),yend_f(3))
 
         file_path=trim(fields_dir)//"/W"
-        call hdf_write_3Dfield(file_path, q1_x(:,:,:), "W", n1, n2, n3, xstart_e(1),xend_e(1),xstart_e(2),xend_e(2),xstart_e(3),xend_e(3))
+        call hdf_write_3Dfield(file_path, q1_x(:,:,:), "W", n1, n2, n3, xstart_f(1),xend_f(1),xstart_f(2),xend_f(2),xstart_f(3),xend_f(3))
 
         file_path=trim(fields_dir)//"/P"
-        call hdf_write_3Dfield(file_path, dp_x(:,:,:), "P", n1, n2, n3, xstart_e(1),xend_e(1),xstart_e(2),xend_e(2),xstart_e(3),xend_e(3))
+        call hdf_write_3Dfield(file_path, dp_x(:,:,:), "P", n1, n2, n3, xstart_f(1),xend_f(1),xstart_f(2),xend_f(2),xstart_f(3),xend_f(3))
 
     end subroutine write_fields
 
@@ -278,7 +278,7 @@ contains
     subroutine read_fields(fields_dir, u_x_XYZ, v_x_XYZ, w_x_XYZ, dp_x_XYZ, decomp_XYZ, files_exist)
 
         use HDF5_IO
-        use embedded_physical_fields
+        use following_physical_fields
         implicit none
         character(*)   :: fields_dir
         character(200)    :: file_path
@@ -304,15 +304,15 @@ contains
 
     end subroutine read_fields
 
-end module embedded_velocity_dao
+end module following_velocity_dao
 
 
-module embedded_velocity_results_writer
+module following_velocity_results_writer
 
     use mpi
     use decomp_2d
     use decomp_2d_io
-    use embedded_data
+    use following_data
 
     implicit none
     integer, parameter  :: SEQUENTIAL_FILE=0, DECOMP2D_FILE=1
@@ -327,8 +327,8 @@ contains
     ! More generic, better than 2decomp format (not generic)
     subroutine write_fields(it)
         use time_writer
-        use embedded_common_workspace_view
-        use embedded_velocity_dao, only: DAO_write_fields=> write_fields
+        use following_common_workspace_view
+        use following_velocity_dao, only: DAO_write_fields=> write_fields
 
         implicit none
 
@@ -338,20 +338,20 @@ contains
         character*80 result_dir_path
 
         write(tmp_str, "(i10)")it
-        result_dir_path=trim(embedded_common_results3D_path)//'field'//trim(adjustl(tmp_str))
+        result_dir_path=trim(following_common_results3D_path)//'field'//trim(adjustl(tmp_str))
 
         call write_timefile(trim(result_dir_path)//"/advancement.d")
         call DAO_write_fields(result_dir_path)
 
     end subroutine write_fields
 
-end module embedded_velocity_results_writer
+end module following_velocity_results_writer
 
-module embedded_velocity_loader
+module following_velocity_loader
     use mpi
     use decomp_2d
     use decomp_2d_io
-    use embedded_data
+    use following_data
 
     implicit none
 
@@ -360,12 +360,12 @@ contains
 
     subroutine load_fields(file, fill_from_coarse, fexist)
 
-        use embedded_physical_fields
-        use embedded_mesh
+        use following_physical_fields
+        use following_mesh
         use DNS_settings
-        use embedded_start_settings
+        use following_start_settings
 
-        use embedded_velocity_dao, only: DAO_read_fields => read_fields
+        use following_velocity_dao, only: DAO_read_fields => read_fields
 
         implicit none
 
@@ -382,29 +382,29 @@ contains
         call DAO_read_fields(file, q3_x, q2_x, q1_x, dp_x, decomp_XYZ, fexist)
 
         ! Spread to all transpositions
-        call transpose_x_to_y(q3_x, q3_y, decomp_embedded)
-        call transpose_y_to_z(q3_y, q3_z, decomp_embedded)
+        call transpose_x_to_y(q3_x, q3_y, decomp_following)
+        call transpose_y_to_z(q3_y, q3_z, decomp_following)
 
-        call transpose_x_to_y(q2_x, q2_y, decomp_embedded)
-        call transpose_y_to_z(q2_y, q2_z, decomp_embedded)
+        call transpose_x_to_y(q2_x, q2_y, decomp_following)
+        call transpose_y_to_z(q2_y, q2_z, decomp_following)
 
-        call transpose_x_to_y(q1_x, q1_y, decomp_embedded)
-        call transpose_y_to_z(q1_y, q1_z, decomp_embedded)
+        call transpose_x_to_y(q1_x, q1_y, decomp_following)
+        call transpose_y_to_z(q1_y, q1_z, decomp_following)
 
-        call transpose_x_to_y(dp_x, dp_y, decomp_embedded)
-        call transpose_y_to_z(dp_y, dp_z, decomp_embedded)
+        call transpose_x_to_y(dp_x, dp_y, decomp_following)
+        call transpose_y_to_z(dp_y, dp_z, decomp_following)
 
     end subroutine load_fields
 
-end module embedded_velocity_loader
+end module following_velocity_loader
 
 
-module embedded_scalar_dao
+module following_scalar_dao
 
     use mpi
     use decomp_2d
     use decomp_2d_io
-    use embedded_scalar_data
+    use following_scalar_data
 
     implicit none
 
@@ -431,11 +431,11 @@ contains
 
     subroutine write_fields(fields_dir)
 
-        use embedded_physical_fields
-        use embedded_mesh
+        use following_physical_fields
+        use following_mesh
         use DNS_settings
         use HDF5_IO
-        use embedded_data
+        use following_data
 
         implicit none
         character(*)    :: fields_dir
@@ -443,18 +443,18 @@ contains
         character(200)    :: file_path
 
         file_path=trim(fields_dir)//"/sca1"
-        call hdf_write_3Dfield(file_path, sca_x(:,:,:), "sca1", n1, n2, n3, xstart_e(1),xend_e(1),xstart_e(2),xend_e(2),xstart_e(3),xend_e(3))
+        call hdf_write_3Dfield(file_path, sca_x(:,:,:), "sca1", n1, n2, n3, xstart_f(1),xend_f(1),xstart_f(2),xend_f(2),xstart_f(3),xend_f(3))
 
     end subroutine write_fields
 
-end module embedded_scalar_dao
+end module following_scalar_dao
 
-module embedded_scalar_loader
+module following_scalar_loader
 
     use mpi
     use decomp_2d
     use decomp_2d_io
-    use embedded_scalar_data
+    use following_scalar_data
 
     implicit none
 
@@ -463,9 +463,9 @@ contains
 
     subroutine load_fields(file, fill_from_coarse, fexist)
 
-        use embedded_scalar_data
-        use embedded_mesh
-        use embedded_scalar_dao, only: DAO_read_fields=>read_fields
+        use following_scalar_data
+        use following_mesh
+        use following_scalar_dao, only: DAO_read_fields=>read_fields
 
         implicit none
 
@@ -490,11 +490,11 @@ contains
     end subroutine load_fields
 
     subroutine init_wall_sca()
-        use embedded_scalar_data
+        use following_scalar_data
 
         implicit none
 
-        if(nrank==0) write(*,*)'### Embedded channel SCALAR_generate_fields at wall'
+        if(nrank==0) write(*,*)'### Following channel SCALAR_generate_fields at wall'
 
         sca_wall10=0.d0
         sca_wall11=0.d0
@@ -507,14 +507,14 @@ contains
 
     end subroutine init_wall_sca
 
-end module embedded_scalar_loader
+end module following_scalar_loader
 
-module embedded_scalar_results_writer
+module following_scalar_results_writer
 
     use mpi
     use decomp_2d
     use decomp_2d_io
-    use embedded_scalar_data
+    use following_scalar_data
 
     implicit none
 
@@ -525,8 +525,8 @@ contains
     subroutine write_fields(it)
 
         use run_ctxt_data
-        use embedded_common_workspace_view
-        use embedded_scalar_dao, only: DAO_write_fields=>write_fields
+        use following_common_workspace_view
+        use following_scalar_dao, only: DAO_write_fields=>write_fields
 
         implicit none
 
@@ -536,10 +536,10 @@ contains
         character*80 result_dir_path
 
         write(tmp_str, "(i10)")it
-        result_dir_path=trim(embedded_common_results3D_path)//'field'//trim(adjustl(tmp_str))
+        result_dir_path=trim(following_common_results3D_path)//'field'//trim(adjustl(tmp_str))
 
         call DAO_write_fields(result_dir_path)
 
     end subroutine write_fields
 
-end module embedded_scalar_results_writer
+end module following_scalar_results_writer

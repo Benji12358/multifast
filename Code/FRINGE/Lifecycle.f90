@@ -33,6 +33,8 @@ contains
 
         allocate(lambda_x(xstart(1):xend(1)))
         allocate(lambda_z(zstart(3):zend(3)))
+
+        allocate(square_q1_inflow(xstart(2):xend(2)))
         
 
         f1_fringe_x = 0.d0
@@ -50,6 +52,8 @@ contains
 
         lambda_x = 0.d0
         lambda_z = 0.d0
+
+        square_q1_inflow = 0.d0
 
     end subroutine allocate_data
 

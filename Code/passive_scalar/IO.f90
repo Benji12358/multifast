@@ -91,6 +91,29 @@ contains
 
     end subroutine read_fields
 
+    ! Import velocity 2D fields at the inlet from HDF5 format in individual files
+    ! More generic, better than 2decomp format (not generic)
+    subroutine read_2D_fields(fields_dir, sca_inflow, file_name)
+
+        use physical_fields
+        use mesh
+        use DNS_settings
+        use HDF5_IO
+
+        implicit none
+        character(*)    :: fields_dir, file_name
+
+        character(200)    :: file_path, file_dir
+
+        real(mytype), dimension(xstart(2):xend(2),xstart(3):xend(3))   :: sca_inflow
+
+        ! First begin with streamwise velocity
+        file_dir  = trim(fields_dir)//"/sca1/"
+        file_path = trim(file_dir)//trim(file_name)
+        call hdf_read_2Dfield(file_path, sca_inflow(:,:), "sca1", yend(2), zend(3), xstart(2), xend(2), xstart(3), xend(3))
+
+    end subroutine read_2D_fields
+
     subroutine write_fields(fields_dir)
 
         use physical_fields
@@ -127,6 +150,26 @@ contains
         ! call hdf_add_2Dfield(file_path, sca_wall31(:,:), "Wall31/sca", nx_global, ny_global, zstart(1),zend(1), zstart(2),zend(2))
 
     end subroutine write_fields
+
+    subroutine write_2D_fields(fields_dir, file_name)
+
+        use physical_fields
+        use mesh
+        use DNS_settings
+        use HDF5_IO
+
+        implicit none
+        character(*)    :: fields_dir, file_name
+
+        character(200)    :: file_path, file_dir
+
+        ! First begin with streamwise velocity
+        file_dir  = trim(fields_dir)//"/sca1/"
+        file_path = trim(file_dir)//trim(file_name)
+        if(nrank==0)  call hdf_create_emptyfile(file_path)
+        call hdf_add_2Dfield(file_path, sca_x(n1m,:,:), "sca1", ny_global, nz_global, xstart(2),xend(2), xstart(3),xend(3))
+
+    end subroutine write_2D_fields
 
 end module SCALAR_dao
 
@@ -202,6 +245,37 @@ contains
 
     end subroutine load_fields
 
+
+    ! Import all velocity 2D fields from HDF5 format in individual files
+    ! More generic, better than 2decomp format (not generic)    
+    subroutine load_2D_fields(it, subit, sca_inflow)
+
+        use mesh
+        use start_settings, only : external_fields_path
+        use SCALAR_dao, only: DAO_read_2D_fields => read_2D_fields
+
+        implicit none
+
+        integer, intent(in)         :: it, subit
+        real*8, dimension(xstart(2):xend(2),xstart(3):xend(3)), intent(in) :: sca_inflow
+
+        character*10 tmp_str, tmp_str2
+        character*80 result_dir_path, file_suffix
+        character*200   :: inflow_path
+
+
+        write(tmp_str, "(i10)")it
+        write(tmp_str2, "(i10)")subit
+
+        inflow_path = trim(external_fields_path)//"Outflow/"
+
+        result_dir_path=trim(inflow_path)
+        file_suffix = "it_"//trim(adjustl(tmp_str))//"sub_"//trim(adjustl(tmp_str2))
+
+        call DAO_read_2D_fields(result_dir_path, sca_inflow, file_suffix)
+
+    end subroutine load_2D_fields
+
     subroutine init_wall_sca()
         use SCALAR_data
 
@@ -261,5 +335,28 @@ contains
         call DAO_write_fields(result_dir_path)
 
     end subroutine write_fields
+
+    ! Export all velocity 2D fields in HDF5 format in individual files
+    ! More generic, better than 2decomp format (not generic)
+    subroutine write_2D_fields(it, subit)
+        use COMMON_workspace_view
+        use SCALAR_dao, only: DAO_write_2D_fields=> write_2D_fields
+
+        implicit none
+
+        integer, intent(in)         :: it, subit
+
+        character*10 tmp_str, tmp_str2
+        character*80 result_dir_path, file_suffix
+
+        write(tmp_str, "(i10)")it
+        write(tmp_str2, "(i10)")subit
+
+        result_dir_path=trim(COMMON_outflow_path)
+        file_suffix = "it_"//trim(adjustl(tmp_str))//"sub_"//trim(adjustl(tmp_str2))
+
+        call DAO_write_2D_fields(result_dir_path, file_suffix)
+
+    end subroutine write_2D_fields
 
 end module SCALAR_results_writer

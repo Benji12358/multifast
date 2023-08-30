@@ -28,12 +28,18 @@ module ISCALAR_IO_results_writer
     use SCALAR_results_writer, only:       &
     SCALAR_IO_write_fields => write_fields
 
+    use SCALAR_results_writer, only:       &
+    SCALAR_IO_2D_write_fields    => write_2D_fields
+
 end module ISCALAR_IO_results_writer
 
 module ISCALAR_IO_loader
 
     use SCALAR_loader, only:   &
     SCALAR_IO_load_fields => load_fields
+
+    use SCALAR_loader, only:   &
+    SCALAR_IO_load_2D_fields => load_2D_fields
 
 end module ISCALAR_IO_loader
 

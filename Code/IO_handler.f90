@@ -14,12 +14,13 @@ contains
             implicit none
 
             integer             :: reading_format
-            integer start_from_coarse_file_int, IBM_activated_int, generic_poisson_flag
+            integer start_from_coarse_file_int, IBM_activated_int, generic_poisson_flag, export_outflow_int
 
             ! Start **********************************************************************************
             open(15,file=trim(COMMON_settings_path)//'start.d')
 
             read(15,*) start_source_type
+            !read(15,*) export_outflow_int
             read(15,*) half_length
             read(15,*) half_length_inflow
             read(15,*) previous_fringe_start
@@ -43,6 +44,9 @@ contains
             else
                 start_from_coarse_file=.false.
             end if
+
+            !import_inflow=(export_outflow_int==1)
+            export_outflow=.false.
 
         end subroutine read_start_settings
 

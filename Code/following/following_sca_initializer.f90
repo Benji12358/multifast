@@ -1,9 +1,9 @@
-module embedded_scalar_field_generator
+module following_scalar_field_generator
     use decomp_2d
-    use embedded_mesh
+    use following_mesh
 
-    use embedded_scalar_data
-    use embedded_data
+    use following_scalar_data
+    use following_data
 
     implicit none
 
@@ -13,11 +13,11 @@ contains
         use mpi
         use DNS_settings, only: ren, streamwise
         use COMMON_workspace_view, only: COMMON_snapshot_path
-        use embedded_snapshot_writer, only: create_snapshot
+        use following_snapshot_writer, only: create_snapshot
         implicit none
-        real*8, dimension(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3))  :: sca_x
-        real*8, dimension(ystart_e(1):yend_e(1), ystart_e(2):yend_e(2), ystart_e(3):yend_e(3))  :: sca_y
-        real*8, dimension(zstart_e(1):zend_e(1), zstart_e(2):zend_e(2), zstart_e(3):zend_e(3))  :: sca_z
+        real*8, dimension(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3))  :: sca_x
+        real*8, dimension(ystart_f(1):yend_f(1), ystart_f(2):yend_f(2), ystart_f(3):yend_f(3))  :: sca_y
+        real*8, dimension(zstart_f(1):zend_f(1), zstart_f(2):zend_f(2), zstart_f(3):zend_f(3))  :: sca_z
         real*8                                                                      :: sca_down, sca_up
         real*8                                                                      :: rentau_loc, rentau
         logical                                                 :: pair_n2
@@ -37,7 +37,7 @@ contains
             ! The Kawamura problem is solved (1998)
             pair_n2 = (mod(n2, 2)==0)
 
-            do j=ystart_e(2),n2/2
+            do j=ystart_f(2),n2/2
                 sca_y(:,j,:) = prandtl*dsqrt(2*ren) * (1/8.d0 * Yc(j) **4 - 1/2.d0 * Yc(j) **3 + Yc(j))
                 sca_y(:,n2-j,:) = prandtl*dsqrt(2*ren) * (1/8.d0 * Yc(j) **4 - 1/2.d0 * Yc(j) **3 + Yc(j))
             enddo
@@ -50,8 +50,8 @@ contains
         else
 
             ! The LYONS problem is solved (1991)
-            do k = ystart_e(3), min(n3-1, yend_e(3))
-                do i = ystart_e(1), min(n1-1, yend_e(1))
+            do k = ystart_f(3), min(n3-1, yend_f(3))
+                do i = ystart_f(1), min(n1-1, yend_f(1))
                     do j = 1, n2-1
                         sca_y(i,j,k)=sca_down+(Yc(j)/L2)*delta
                         !sca_y(i,j,k)=0.d0
@@ -77,12 +77,12 @@ contains
         sca_wall30=0.d0
         sca_wall31=0.d0
 
-        call transpose_y_to_x(sca_y, sca_x, decomp_embedded)
-        call transpose_y_to_z(sca_y, sca_z, decomp_embedded)
+        call transpose_y_to_x(sca_y, sca_x, decomp_following)
+        call transpose_y_to_z(sca_y, sca_z, decomp_following)
 
         ! The final 3D field are exported for checking purposes
-        call create_snapshot(COMMON_snapshot_path, "EMBEDDED_INIT", sca_y, "sca", 2)
+        call create_snapshot(COMMON_snapshot_path, "FOLLOWING_INIT", sca_y, "sca", 2)
 
     end subroutine generate_fields
 
-end module embedded_scalar_field_generator
+end module following_scalar_field_generator

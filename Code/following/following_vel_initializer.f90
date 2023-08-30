@@ -1,9 +1,9 @@
-module embedded_turbulence_generator
+module following_turbulence_generator
 
-    use embedded_physical_fields
-    use embedded_snapshot_writer
+    use following_physical_fields
+    use following_snapshot_writer
     use DNS_settings
-    use embedded_mesh
+    use following_mesh
 
     implicit none
 
@@ -28,7 +28,7 @@ contains
 
     subroutine generate_meanprofile(disturbance_intensity) !! y dummy argument
 
-        use embedded_irregular_derivative_coefficients
+        use following_irregular_derivative_coefficients
         use mathematical_constants
         use DNS_settings
         use boundaries
@@ -45,8 +45,8 @@ contains
         integer j,k,i,l, mpi_err
         integer :: n1s, n1e, n2s, n2e, n3s, n3e
 
-        real*8, dimension(ystart_e(2):yend_e(2), ystart_e(3):yend_e(3)) :: ts1
-        real*8, dimension(ystart_e(1):yend_e(1), ystart_e(2):yend_e(2)) :: ts3
+        real*8, dimension(ystart_f(2):yend_f(2), ystart_f(3):yend_f(3)) :: ts1
+        real*8, dimension(ystart_f(1):yend_f(1), ystart_f(2):yend_f(2)) :: ts3
         real*8  :: glob_value
 
         real*8  :: yr, ycenter
@@ -87,8 +87,8 @@ contains
         ! At this point, the 2D array ts1 and ts3 contain the correct q1 and q3 profiles
         ! and can be used to define the inner velocity field.
         do j=1,n2
-            do k=ystart_e(3), yend_e(3)
-                do i=ystart_e(1), yend_e(1)
+            do k=ystart_f(3), yend_f(3)
+                do i=ystart_f(1), yend_f(1)
 
                     q3_y(i,j,k)= ts3(i,j)
                     q2_y(i,j,k)= 0.d0
@@ -98,9 +98,9 @@ contains
             enddo
         enddo
 
-        if (yend_e(3)==n3) then
+        if (yend_f(3)==n3) then
             do j = 1, n2
-                do i = ystart_e(1), yend_e(1)
+                do i = ystart_f(1), yend_f(1)
                     q1_y(i,j,n3)=0.d0
                     q2_y(i,j,n3)=0.d0
                     q3_y(i,j,n3)=0.d0
@@ -108,8 +108,8 @@ contains
             end do
         end if
 
-        do k = ystart_e(3), yend_e(3)
-            do i = ystart_e(1), yend_e(1)
+        do k = ystart_f(3), yend_f(3)
+            do i = ystart_f(1), yend_f(1)
                 q1_y(i,n2,k)=0.d0
                 q2_y(i,n2,k)=0.d0
                 q3_y(i,n2,k)=0.d0
@@ -123,30 +123,30 @@ contains
         ! X1 direction
         if ((BC1==FREESLIP).or.(BC1==NOSLIP)) then
 
-            q3_wall10(xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)) =0.d0
-            q2_wall10(xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)) =0.d0
-            q1_wall10(xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)) =0.d0
-            q1_x(1, xstart_e(2):xend_e(2), xstart_e(3):xend_e(3))   =0.d0
+            q3_wall10(xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)) =0.d0
+            q2_wall10(xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)) =0.d0
+            q1_wall10(xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)) =0.d0
+            q1_x(1, xstart_f(2):xend_f(2), xstart_f(3):xend_f(3))   =0.d0
 
-            q3_wall11(xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)) =0.d0
-            q2_wall11(xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)) =0.d0
-            q1_wall11(xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)) =0.d0
-            q1_x(n1, xstart_e(2):xend_e(2), xstart_e(3):xend_e(3))  =0.d0
+            q3_wall11(xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)) =0.d0
+            q2_wall11(xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)) =0.d0
+            q1_wall11(xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)) =0.d0
+            q1_x(n1, xstart_f(2):xend_f(2), xstart_f(3):xend_f(3))  =0.d0
 
         end if
 
         ! X2 direction
         if ((BC2==FREESLIP).or.(BC2==NOSLIP)) then
 
-            q3_wall20(ystart_e(1):yend_e(1), ystart_e(3):yend_e(3)) =0.d0
-            q2_wall20(ystart_e(1):yend_e(1), ystart_e(3):yend_e(3)) =0.d0
-            q1_wall20(ystart_e(1):yend_e(1), ystart_e(3):yend_e(3)) =0.d0
-            q2_y(ystart_e(1):yend_e(1), 1, ystart_e(3):yend_e(3))   =0.d0
+            q3_wall20(ystart_f(1):yend_f(1), ystart_f(3):yend_f(3)) =0.d0
+            q2_wall20(ystart_f(1):yend_f(1), ystart_f(3):yend_f(3)) =0.d0
+            q1_wall20(ystart_f(1):yend_f(1), ystart_f(3):yend_f(3)) =0.d0
+            q2_y(ystart_f(1):yend_f(1), 1, ystart_f(3):yend_f(3))   =0.d0
 
-            q3_wall21(ystart_e(1):yend_e(1), ystart_e(3):yend_e(3)) =0.d0
-            q2_wall21(ystart_e(1):yend_e(1), ystart_e(3):yend_e(3)) =0.d0
-            q1_wall21(ystart_e(1):yend_e(1), ystart_e(3):yend_e(3)) =0.d0
-            q2_y(ystart_e(1):yend_e(1), n2, ystart_e(3):yend_e(3))  =0.d0
+            q3_wall21(ystart_f(1):yend_f(1), ystart_f(3):yend_f(3)) =0.d0
+            q2_wall21(ystart_f(1):yend_f(1), ystart_f(3):yend_f(3)) =0.d0
+            q1_wall21(ystart_f(1):yend_f(1), ystart_f(3):yend_f(3)) =0.d0
+            q2_y(ystart_f(1):yend_f(1), n2, ystart_f(3):yend_f(3))  =0.d0
 
         end if
 
@@ -154,15 +154,15 @@ contains
         ! X3 direction
         if ((BC3==FREESLIP).or.(BC3==NOSLIP)) then
 
-            q3_wall30(zstart_e(1):zend_e(1), zstart_e(2):zend_e(2))=0.d0
-            q2_wall30(zstart_e(1):zend_e(1), zstart_e(2):zend_e(2))=0.d0
-            q1_wall30(zstart_e(1):zend_e(1), zstart_e(2):zend_e(2))=0.d0
-            q3_z(zstart_e(1):zend_e(1), zstart_e(2):zend_e(2), 1) =0.d0
+            q3_wall30(zstart_f(1):zend_f(1), zstart_f(2):zend_f(2))=0.d0
+            q2_wall30(zstart_f(1):zend_f(1), zstart_f(2):zend_f(2))=0.d0
+            q1_wall30(zstart_f(1):zend_f(1), zstart_f(2):zend_f(2))=0.d0
+            q3_z(zstart_f(1):zend_f(1), zstart_f(2):zend_f(2), 1) =0.d0
 
-            q3_wall31(zstart_e(1):zend_e(1), zstart_e(2):zend_e(2))=0.d0
-            q2_wall31(zstart_e(1):zend_e(1), zstart_e(2):zend_e(2))=0.d0
-            q1_wall31(zstart_e(1):zend_e(1), zstart_e(2):zend_e(2))=0.d0
-            q3_z(zstart_e(1):zend_e(1), zstart_e(2):zend_e(2), n3) =0.d0
+            q3_wall31(zstart_f(1):zend_f(1), zstart_f(2):zend_f(2))=0.d0
+            q2_wall31(zstart_f(1):zend_f(1), zstart_f(2):zend_f(2))=0.d0
+            q1_wall31(zstart_f(1):zend_f(1), zstart_f(2):zend_f(2))=0.d0
+            q3_z(zstart_f(1):zend_f(1), zstart_f(2):zend_f(2), n3) =0.d0
 
         end if
 
@@ -173,7 +173,7 @@ contains
         subroutine perform_stream1(stream1, BC2, BC3)
             implicit none
 
-            real*8, dimension(ystart_e(2):yend_e(2), ystart_e(3):yend_e(3)) :: stream1
+            real*8, dimension(ystart_f(2):yend_f(2), ystart_f(3):yend_f(3)) :: stream1
             integer                                                 :: BC2, BC3
 
             real*8                                                  :: f2(n2), f3(n3), c2, c3
@@ -195,8 +195,8 @@ contains
                 enddo
                 f2(n2)=f2(n2-1)
 
-                do k = ystart_e(3),yend_e(3)
-                    do j= ystart_e(2),yend_e(2)
+                do k = ystart_f(3),yend_f(3)
+                    do j= ystart_f(2),yend_f(2)
                         stream1(j,k)=f2(j)*f3(k)
                     end do
                 end do
@@ -211,7 +211,7 @@ contains
         subroutine perform_boundary_layer_1(stream1, delta_BL)
             implicit none
 
-            real*8, dimension(ystart_e(2):yend_e(2), ystart_e(3):yend_e(3)) :: stream1
+            real*8, dimension(ystart_f(2):yend_f(2), ystart_f(3):yend_f(3)) :: stream1
 
             real*8                                                  :: delta_BL
             integer                                                 :: j
@@ -219,7 +219,7 @@ contains
 
             pair_n2 = (mod(n2, 2)==0)
 
-            do j=ystart_e(2),n2/2
+            do j=ystart_f(2),n2/2
                 if (Yc(j)<delta_BL) then
                     !stream1(j,:) = 1.5d0 * (Yc(j)/delta_BL) - 0.5d0 * (Yc(j)/delta_BL)**2
                     !stream1(n2-j,:) = 1.5d0 * (Yc(j)/delta_BL) - 0.5d0 * (Yc(j)/delta_BL)**2
@@ -240,12 +240,12 @@ contains
     end subroutine
 
     subroutine add_noise_rand_sin_new(disturbance_intensity)
-        use embedded_mesh
-        use embedded_irregular_derivative_coefficients
+        use following_mesh
+        use following_irregular_derivative_coefficients
         use mathematical_constants
         use DNS_settings
         use boundaries
-        use embedded_fringe_data
+        use following_fringe_data
 
 
         use mpi
@@ -266,7 +266,7 @@ contains
         integer, parameter  :: ndv=3
         real*8 vmax(ndv)
 
-        real*8, dimension(ystart_e(1):yend_e(1), ystart_e(2):yend_e(2), ystart_e(3):yend_e(3)) :: rand_u, rand_v, rand_w
+        real*8, dimension(ystart_f(1):yend_f(1), ystart_f(2):yend_f(2), ystart_f(3):yend_f(3)) :: rand_u, rand_v, rand_w
         real*8  :: glob_value, ph1, ph2, ph3
 
         integer :: writer_proc=0
@@ -309,16 +309,16 @@ contains
 
         !        TO NOTE : The random number generator depends on the computer
 
-        n1s = max(1, ystart_e(1))
-        n3s = max(1, ystart_e(3))
+        n1s = max(1, ystart_f(1))
+        n3s = max(1, ystart_f(3))
 
-        if (streamwise==3) n3s=max(2, ystart_e(3))
-        if (streamwise==1) n1s=max(1, ystart_e(1))
+        if (streamwise==3) n3s=max(2, ystart_f(3))
+        if (streamwise==1) n1s=max(1, ystart_f(1))
         n2s = 1
 
-        n1e = min(n1m, yend_e(1))
+        n1e = min(n1m, yend_f(1))
         n2e = n2m
-        n3e = min(n3m, yend_e(3))
+        n3e = min(n3m, yend_f(3))
 
         do j=n2s,n2e
             v1m(j)=0.d0
@@ -416,8 +416,8 @@ contains
 
 
         !Impermeability conditions
-        do k=ystart_e(3), min(n3m, yend_e(3))
-            do i=ystart_e(1), min(n1m, yend_e(1))
+        do k=ystart_f(3), min(n3m, yend_f(3))
+            do i=ystart_f(1), min(n1m, yend_f(1))
                 q2_y(i,1,k)=0.d0
                 q2_y(i,n2,k)=0.d0
             enddo
@@ -439,8 +439,8 @@ contains
         call MPI_ALLREDUCE (vmax(3), glob_value, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
         vmax(3)=glob_value
 
-        call transpose_y_to_z(q3_y, q3_z, decomp_embedded)
-        call transpose_y_to_x(q1_y, q1_x, decomp_embedded)
+        call transpose_y_to_z(q3_y, q3_z, decomp_following)
+        call transpose_y_to_x(q1_y, q1_x, decomp_following)
 
 
 !         ! **************************************************************************************
@@ -492,19 +492,19 @@ contains
 
         ! Transpose data in 2D-decomposition stencil
 
-        call transpose_y_to_x(q3_y, q3_x, decomp_embedded)
-        call transpose_y_to_z(q3_y, q3_z, decomp_embedded)
+        call transpose_y_to_x(q3_y, q3_x, decomp_following)
+        call transpose_y_to_z(q3_y, q3_z, decomp_following)
 
-        call transpose_y_to_x(q1_y, q1_x, decomp_embedded)
-        call transpose_y_to_z(q1_y, q1_z, decomp_embedded)
+        call transpose_y_to_x(q1_y, q1_x, decomp_following)
+        call transpose_y_to_z(q1_y, q1_z, decomp_following)
 
-        call transpose_y_to_x(q2_y, q2_x, decomp_embedded)
-        call transpose_y_to_z(q2_y, q2_z, decomp_embedded)
+        call transpose_y_to_x(q2_y, q2_x, decomp_following)
+        call transpose_y_to_z(q2_y, q2_z, decomp_following)
 
         ! The final 3D field are exported for checking purposes
-        call create_snapshot(COMMON_snapshot_path, "EMBEDDED_INIT", q1_y, "W", 2)
-        call create_snapshot(COMMON_snapshot_path, "EMBEDDED_INIT", q2_y, "V", 2)
-        call create_snapshot(COMMON_snapshot_path, "EMBEDDED_INIT", q3_y, "U", 2)
+        call create_snapshot(COMMON_snapshot_path, "FOLLOWING_INIT", q1_y, "W", 2)
+        call create_snapshot(COMMON_snapshot_path, "FOLLOWING_INIT", q2_y, "V", 2)
+        call create_snapshot(COMMON_snapshot_path, "FOLLOWING_INIT", q3_y, "U", 2)
 
         !write(*,*) 'q3_x', q3_x(32,:,n3m)
 
@@ -512,4 +512,4 @@ contains
     end subroutine init_turbulent_field
 
 
-end module embedded_turbulence_generator
+end module following_turbulence_generator

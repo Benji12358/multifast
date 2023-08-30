@@ -12,7 +12,7 @@ end module embedded_workspace_view
 
 module embedded_common_workspace_view
 
-    use workspace_view, only:                           &
+    use embedded_workspace_view, only:                           &
     embedded_common_results3D_path      =>results3D_path,   &
     embedded_common_lapY_file           =>lapY_file,        &
     embedded_common_recovery_path       =>recovery_path,    &

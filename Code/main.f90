@@ -3,7 +3,7 @@ module CORE_data
     integer     :: prow, pcol
     integer     ::nb_iteration, save_3D_frequency, save_recovery_frequency
     integer     :: nb_iteration_remaining
-    real*8      :: t0, t1, t2
+    real*8      :: t0, t1, t2, t_write, t_save_state
     real*8      :: max_runtime
 end module CORE_data
 
@@ -190,13 +190,20 @@ contains
             allocate(mask_fadlun_sca_x(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)))
             mask_fadlun_sca_x=0.d0
 
-
             allocate(mask_objects_sca_y(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3)))
             mask_objects_sca_y=0.d0
             allocate(mask_kim_sca_y(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3)))
             mask_kim_sca_y=0.d0
             allocate(mask_fadlun_sca_y(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3)))
             mask_fadlun_sca_y=0.d0
+
+            ! For triple decomposition
+            allocate(mask_objects_q1_y(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3)))
+            mask_objects_q1_y=0.d0
+            allocate(mask_objects_q2_y(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3)))
+            mask_objects_q2_y=0.d0
+            allocate(mask_objects_q3_y(ystart(1):yend(1),ystart(2):yend(2),ystart(3):yend(3)))
+            mask_objects_q3_y=0.d0
 
         end if
 
@@ -496,24 +503,32 @@ contains
         implicit none
 
         integer :: mpi_err
-        real*8  :: time_per_it
+        real*8  :: time_per_it, time_per_it_tot
         real*8  :: t12, t02
-        real*8  :: t02_glob, t12_glob
+        real*8  :: t02_glob, t12_glob, t_write_glob, t_save_state_glob
 
         t2 = MPI_WTIME()
 
         t02=t2-t0
         t12=t2-t1
+        
         call MPI_ALLREDUCE (t02, t02_glob, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
         call MPI_ALLREDUCE (t12, t12_glob, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
 
-        time_per_it=t12_glob/((last_it-first_it+1)-nb_iteration_remaining)
+        call MPI_ALLREDUCE (t_write, t_write_glob, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
+        call MPI_ALLREDUCE (t_save_state, t_save_state_glob, 1, MPI_DOUBLE_PRECISION , MPI_MAX , MPI_COMM_WORLD , mpi_err)
+
+        time_per_it=(t12_glob-t_write_glob-t_save_state_glob)/((last_it-first_it+1)-nb_iteration_remaining)
+        time_per_it_tot=(t12_glob)/((last_it-first_it+1)-nb_iteration_remaining)
 
         if(nrank==0) write(*,*)
         if(nrank==0) write(*,*)'Nb de procs:', nproc
         if(nrank==0) write(*,*)'Temps execution:', t02_glob
         if(nrank==0) write(*,*)'Temps boucle:', t12_glob
-        if(nrank==0) write(*,*)'Temps par it:', time_per_it
+        if(nrank==0) write(*,*)'Temps ecriture:', t_write_glob
+        if(nrank==0) write(*,*)'Temps save_state:', t_save_state_glob
+        if(nrank==0) write(*,*)'Temps total par it:', time_per_it_tot
+        if(nrank==0) write(*,*)'Temps calcul par it:', time_per_it
 
         ! Close all modules
         call VELOCITY_finalize
@@ -556,6 +571,9 @@ program main
     use IEMBEDDED_IO
     use IEMBEDDED_LIFE
 
+    use IFOLLOWING_IO
+    use IFOLLOWING_LIFE
+
     use IBM
     use CORE_IO_settings
     use CORE_data
@@ -577,6 +595,7 @@ program main
     use FRINGE_data, only: use_fringe
 
     use embedded_data, only: use_embedded
+    use following_data, only: use_following
 
     use flow_buffer_handler_test
 
@@ -612,7 +631,8 @@ program main
     if (MHD_state/=0) call MHD_initialize
     if (use_fringe) call FRINGE_initialize
 
-    if (use_embedded) call EMBEDDED_initialize
+    call EMBEDDED_initialize
+    call FOLLOWING_initialize
 
     first_it=first_it+1
     last_it=first_it+nb_iteration-1
@@ -631,15 +651,13 @@ program main
 
     endif
 
-
-
-
-
 ! ***********************************************************************************
 ! ***************************   CORE OF THE DNS *************************************
 ! ***********************************************************************************
 
     t1 = MPI_WTIME()
+    t_write = 0.d0
+    t_save_state = 0.d0
 
 !    call recovery_test
 !    call inflow_outflow_communication_test
@@ -668,6 +686,8 @@ program main
         if (mod(ntime, save_gradP_frequency).eq.0) call VELOCITY_IO_write_gradP
         if (mod(ntime, save_gradP_frequency).eq.0) call VELOCITY_IO_write_flowrate
 
+        t2 = MPI_WTIME()
+
         ! Save velocity in Results directory------------------------------------------------------
         if(mod(ntime, save_3D_frequency).eq.0) then
 
@@ -687,7 +707,14 @@ program main
                 call EMBEDDED_VELOCITY_IO_write_fields(ntime)
                 if (SCA_state==1) call EMBEDDED_SCALAR_IO_write_fields(ntime)
             endif
+            
+            if (use_following) then
+                call FOLLOWING_VELOCITY_IO_write_fields(ntime)
+                if (SCA_state==1) call FOLLOWING_SCALAR_IO_write_fields(ntime)
+            endif
         endif
+
+        t_write = t_write + (MPI_WTIME()-t2)
 
         ! Animation2D -----------------------------------------------------------------------------
         if (anim2D_1/=0) then
@@ -699,10 +726,14 @@ program main
 
 !        call anim2D_bubble(ntime)
 
+        t2 = MPI_WTIME()
+
         ! Save simulation state for recovery support ----------------------------------------------
         if(mod(ntime, save_recovery_frequency).eq.0) then
             call save_state
         endif
+
+        t_save_state = t_save_state + (MPI_WTIME()-t2)
 
         if (test_mode) then
             open(15, file="current_it")
@@ -728,12 +759,15 @@ program main
     !   ***************************** End of simulation *******************************
     !   *******************************************************************************
 
-
     ntime=last_it
     run_status=FINISHED
 
+    t2 = MPI_WTIME()
 
     call save_state
+
+    t_save_state = t_save_state + (MPI_WTIME()-t2)
+
     call finalize
 
     call MPI_FINALIZE(mpi_err)

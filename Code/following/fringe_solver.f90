@@ -1,15 +1,15 @@
-module embedded_fringe_solver
+module following_fringe_solver
 
     use decomp_2d
 
-    use embedded_fringe_data
-    use embedded_physical_fields
+    use following_fringe_data
+    use following_physical_fields
     use mpi
-    use embedded_mesh
-    use embedded_data
+    use following_mesh
+    use following_data
 
-    use embedded_scalar_data, only: SCA_state, sca_x, sca_y
-    use embedded_scalar_solver, only: Fextsca
+    use following_scalar_data, only: SCA_state, sca_x, sca_y
+    use following_scalar_solver, only: Fextsca
 
     implicit none
 
@@ -32,15 +32,15 @@ contains
 
         if (SCA_state.eq.1) then
 
-          do j=xstart_e(2),min(xend_e(2),n2-1)
-            do k=xstart_e(3),min(xend_e(3),n3-1)
+          do j=xstart_f(2),min(xend_f(2),n2-1)
+            do k=xstart_f(3),min(xend_f(3),n3-1)
 
               sca_x(1,j,k) = sca_inflow(j,k)
 
             enddo
           enddo
 
-          call transpose_x_to_y(sca_x, sca_y, decomp_embedded)
+          call transpose_x_to_y(sca_x, sca_y, decomp_following)
 
         endif
 
@@ -55,10 +55,10 @@ contains
       integer :: i,j,k,i0
       integer :: shift_i
       real*8  :: u,v,w,sca
-      real*8, dimension(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)), intent(in) :: q1_x, q2_x, q3_x
-      real*8, dimension(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)), intent(inout) :: f1_fringe_x, f2_fringe_x, f3_fringe_x
+      real*8, dimension(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)), intent(in) :: q1_x, q2_x, q3_x
+      real*8, dimension(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)), intent(inout) :: f1_fringe_x, f2_fringe_x, f3_fringe_x
 
-      real*8, dimension(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3))              :: sca_fringe_x
+      real*8, dimension(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3))              :: sca_fringe_x
 
       lambda_x = 0.d0
       f1_fringe_x = 0.d0
@@ -66,21 +66,17 @@ contains
       f3_fringe_x = 0.d0
       sca_fringe_x = 0.d0
 
-      do i=xstart_e(1),min(xend_e(1),n1-1)
+      do i=xstart_f(1),min(xend_f(1),n1-1)
         lambda_x(i) = (max_strength_damping/dt) * ( fringe_smooth_step_function( real(i-n_fringe_start,8)/real(n_delta_rise, 8) ) - fringe_smooth_step_function( real(i-n_fringe_end,8)/real(n_delta_fall,8) + 1) )
       enddo
 
       do i=n_fringe_start,n_fringe_end
-        do j=xstart_e(2),min(xend_e(2),n2-1)
-          do k=xstart_e(3),min(xend_e(3),n3-1)
+        do j=xstart_f(2),min(xend_f(2),n2-1)
+          do k=xstart_f(3),min(xend_f(3),n3-1)
 
-              ! assume inflow is square, so:
-              ! u_inflow = u_bulk
-              ! v_inflow = 0
-              ! w_inflow = 0
-              f1_fringe_x(i,j,k) = lambda_x(i) * ( inflow_profile(j) * (u_bulk/u_bulk_theo) - q1_x(i,j,k) )
-              f2_fringe_x(i,j,k) = lambda_x(i) * ( 0.d0 - q2_x(i,j,k) )
-              f3_fringe_x(i,j,k) = lambda_x(i) * ( 0.d0 - q3_x(i,j,k) )
+              f1_fringe_x(i,j,k) = lambda_x(i) * ( q1_inflow(j,k) - q1_x(i,j,k) )
+              f2_fringe_x(i,j,k) = lambda_x(i) * ( q2_inflow(j,k) - q2_x(i,j,k) )
+              f3_fringe_x(i,j,k) = lambda_x(i) * ( q3_inflow(j,k) - q3_x(i,j,k) )
 
           enddo
         enddo
@@ -88,17 +84,17 @@ contains
 
       if (SCA_state==1) then
 
-        do i=n_fringe_start,n_fringe_end
-          do j=xstart_e(2),min(xend_e(2),n2-1)
-            do k=xstart_e(3),min(xend_e(3),n3-1)
+      do i=n_fringe_start,n_fringe_end
+        do j=xstart_f(2),min(xend_f(2),n2-1)
+          do k=xstart_f(3),min(xend_f(3),n3-1)
 
-              sca_fringe_x(i,j,k) = lambda_x(i) * ( sca_inflow(j,k) - sca_x(i,j,k) )
+                sca_fringe_x(i,j,k) = lambda_x(i) * ( sca_inflow(j,k) - sca_x(i,j,k) )
 
             enddo
           enddo
         enddo
 
-        call transpose_x_to_y(sca_fringe_x,Fextsca, decomp_embedded)
+        call transpose_x_to_y(sca_fringe_x,Fextsca, decomp_following)
 
       endif
 
@@ -129,4 +125,4 @@ contains
 
   end subroutine compute_fringe_force_x
 
-end module embedded_fringe_solver
+end module following_fringe_solver

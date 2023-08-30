@@ -66,7 +66,7 @@ module embedded_initializer
 
         use embedded_scalar_data, only: SCA_state
 
-        use embedded_start_settings, only: index_for_output
+        use embedded_start_settings, only: wanted_delta
 
         use embedded_velocity_init, only:    &
         embedded_velocity_initialize              => initialize
@@ -86,21 +86,25 @@ module embedded_initializer
 
         call read_settings
 
-        if (nrank.eq.0) write(*,*) n1, n2, n3 
-        call decomp_info_init(n1,n2,n3,decomp_embedded)
+        if (use_embedded) then
 
-        call generate_mesh(n1, n2, n3, L1, L2, L3, stretch_Y)
+            if (nrank.eq.0) write(*,*) n1, n2, n3 
+            call decomp_info_init(n1,n2,n3,decomp_embedded)
 
-        call update_allocation
+            call generate_mesh(n1, n2, n3, L1, L2, L3, stretch_Y)
 
-        call embedded_velocity_initialize
-        if (SCA_state/=0) call embedded_scalar_initialize
-        if (use_fringe) call embedded_fringe_initialize
+            call update_allocation
 
-        if (nrank.eq.0) then
+            call embedded_velocity_initialize
+            if (SCA_state/=0) call embedded_scalar_initialize
+            if (use_fringe) call embedded_fringe_initialize
 
-            write(*,*) 'The outflow will be taken at i =', index_for_output
-            write(*,*) 'that corresponds to x =', Zc(index_for_output)
+            if (nrank.eq.0) then
+
+                write(*,*) 'The wanted BL thickness is', wanted_delta
+                ! write(*,*) 'that corresponds to x =', Zc(index_for_output)
+
+            endif
 
         endif
 

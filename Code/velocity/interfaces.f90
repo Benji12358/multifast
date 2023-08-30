@@ -29,6 +29,9 @@ module IVELOCITY_IO_results_writer
     use VELOCITY_results_writer, only:       &
     VELOCITY_IO_write_fields    => write_fields
 
+    use VELOCITY_results_writer, only:       &
+    VELOCITY_IO_2D_write_fields    => write_2D_fields
+
     use VELOCITY_dao, only:       &
     CELL_CENTERED_IO_WRITE_FIELDS    => hdf5output
 
@@ -38,6 +41,9 @@ module IVELOCITY_IO_loader
 
     use VELOCITY_loader, only:   &
     VELOCITY_IO_load_fields => load_fields
+
+    use VELOCITY_loader, only:       &
+    VELOCITY_IO_load_2D_fields    => load_2D_fields
 
 end module IVELOCITY_IO_loader
 

@@ -1,19 +1,19 @@
-module embedded_velocity_solver
+module following_velocity_solver
 
     use schemes3D_interface
     use time_schemes
-    use embedded_physical_fields
+    use following_physical_fields
     use boundaries
-    use embedded_mesh
+    use following_mesh
 
-    use embedded_irregular_derivative_coefficients
+    use following_irregular_derivative_coefficients
     use DNS_settings
-    use embedded_poisson_020_solver, poisson_020_init=>init, solve_Poisson=>solve_Poisson
+    use following_poisson_020_solver, poisson_020_init=>init, solve_Poisson=>solve_Poisson
 
     use decomp_2d
     use mpi
 
-    use embedded_data
+    use following_data
 
     implicit none
 
@@ -69,7 +69,7 @@ contains
 
         use run_ctxt_data
         use numerical_methods_settings
-        use embedded_fringe_data
+        use following_fringe_data
         ! use FRINGE_dao, only:fringe_infos
 
         implicit none
@@ -88,94 +88,94 @@ contains
             implicit none
 
             ! RHS arrays allocations
-            allocate(RHS1_x(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(RHS1_x(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             RHS1_x=0.d0
-            allocate(RHS2_x(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(RHS2_x(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             RHS2_x=0.d0
-            allocate(RHS3_x(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(RHS3_x(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             RHS3_x=0.d0
-            allocate(gradP1_x(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(gradP1_x(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             gradP1_x=0.d0
-            allocate(gradP2_x(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(gradP2_x(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             gradP2_x=0.d0
-            allocate(gradP3_x(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(gradP3_x(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             gradP3_x=0.d0
 
-            allocate(NSTERMS1(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(NSTERMS1(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             NSTERMS1=0.d0
-            allocate(NSTERMS2(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(NSTERMS2(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             NSTERMS2=0.d0
-            allocate(NSTERMS3(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(NSTERMS3(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             NSTERMS3=0.d0
-            allocate(Fext1(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(Fext1(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             Fext1=0.d0
-            allocate(Fext2(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(Fext2(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             Fext2=0.d0
-            allocate(Fext3(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(Fext3(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             Fext3=0.d0
 
-            allocate(RHS1_y(ystart_e(1):yend_e(1), ystart_e(2):yend_e(2), ystart_e(3):yend_e(3)))
+            allocate(RHS1_y(ystart_f(1):yend_f(1), ystart_f(2):yend_f(2), ystart_f(3):yend_f(3)))
             RHS1_y=0.d0
-            allocate(RHS2_y(ystart_e(1):yend_e(1), ystart_e(2):yend_e(2), ystart_e(3):yend_e(3)))
+            allocate(RHS2_y(ystart_f(1):yend_f(1), ystart_f(2):yend_f(2), ystart_f(3):yend_f(3)))
             RHS2_y=0.d0
-            allocate(RHS3_y(ystart_e(1):yend_e(1), ystart_e(2):yend_e(2), ystart_e(3):yend_e(3)))
+            allocate(RHS3_y(ystart_f(1):yend_f(1), ystart_f(2):yend_f(2), ystart_f(3):yend_f(3)))
             RHS3_y=0.d0
-            allocate(gradP2_y(ystart_e(1):yend_e(1), ystart_e(2):yend_e(2), ystart_e(3):yend_e(3)))
+            allocate(gradP2_y(ystart_f(1):yend_f(1), ystart_f(2):yend_f(2), ystart_f(3):yend_f(3)))
             gradP2_y=0.d0
-            allocate(gradP3_y(ystart_e(1):yend_e(1), ystart_e(2):yend_e(2), ystart_e(3):yend_e(3)))
+            allocate(gradP3_y(ystart_f(1):yend_f(1), ystart_f(2):yend_f(2), ystart_f(3):yend_f(3)))
             gradP3_y=0.d0
 
-            allocate(RHS1_z(zstart_e(1):zend_e(1), zstart_e(2):zend_e(2), zstart_e(3):zend_e(3)))
+            allocate(RHS1_z(zstart_f(1):zend_f(1), zstart_f(2):zend_f(2), zstart_f(3):zend_f(3)))
             RHS1_z=0.d0
-            allocate(RHS2_z(zstart_e(1):zend_e(1), zstart_e(2):zend_e(2), zstart_e(3):zend_e(3)))
+            allocate(RHS2_z(zstart_f(1):zend_f(1), zstart_f(2):zend_f(2), zstart_f(3):zend_f(3)))
             RHS2_z=0.d0
-            allocate(RHS3_z(zstart_e(1):zend_e(1), zstart_e(2):zend_e(2), zstart_e(3):zend_e(3)))
+            allocate(RHS3_z(zstart_f(1):zend_f(1), zstart_f(2):zend_f(2), zstart_f(3):zend_f(3)))
             RHS3_z=0.d0
-            allocate(gradP3_z(zstart_e(1):zend_e(1), zstart_e(2):zend_e(2), zstart_e(3):zend_e(3)))
+            allocate(gradP3_z(zstart_f(1):zend_f(1), zstart_f(2):zend_f(2), zstart_f(3):zend_f(3)))
             gradP3_z=0.d0
 
 
-            allocate(previousRHS1_x(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(previousRHS1_x(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             previousRHS1_x=0.d0
-            allocate(previousRHS2_x(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(previousRHS2_x(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             previousRHS2_x=0.d0
-            allocate(previousRHS3_x(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(previousRHS3_x(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             previousRHS3_x=0.d0
 
-            allocate(q1_save_x(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(q1_save_x(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             q1_save_x=0.d0
-            allocate(q2_save_x(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(q2_save_x(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             q2_save_x=0.d0
-            allocate(q3_save_x(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(q3_save_x(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             q3_save_x=0.d0
 
-            allocate(q1_save(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(q1_save(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             q1_save=0.d0
-            allocate(q2_save(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(q2_save(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             q2_save=0.d0
-            allocate(q3_save(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(q3_save(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             q3_save=0.d0
 
             ! Cross quantities array allocation
-            allocate(p13_z(zstart_e(1):zend_e(1), zstart_e(2):zend_e(2), zstart_e(3):zend_e(3)))
+            allocate(p13_z(zstart_f(1):zend_f(1), zstart_f(2):zend_f(2), zstart_f(3):zend_f(3)))
             p13_z=0.d0
-            allocate(p23_z(zstart_e(1):zend_e(1), zstart_e(2):zend_e(2), zstart_e(3):zend_e(3)))
+            allocate(p23_z(zstart_f(1):zend_f(1), zstart_f(2):zend_f(2), zstart_f(3):zend_f(3)))
             p23_z=0.d0
-            allocate(p12_z(zstart_e(1):zend_e(1), zstart_e(2):zend_e(2), zstart_e(3):zend_e(3)))
+            allocate(p12_z(zstart_f(1):zend_f(1), zstart_f(2):zend_f(2), zstart_f(3):zend_f(3)))
             p12_z=0.d0
 
-            allocate(p23_y(ystart_e(1):yend_e(1), ystart_e(2):yend_e(2), ystart_e(3):yend_e(3)))
+            allocate(p23_y(ystart_f(1):yend_f(1), ystart_f(2):yend_f(2), ystart_f(3):yend_f(3)))
             p23_y=0.d0
-            allocate(p13_y(ystart_e(1):yend_e(1), ystart_e(2):yend_e(2), ystart_e(3):yend_e(3)))
+            allocate(p13_y(ystart_f(1):yend_f(1), ystart_f(2):yend_f(2), ystart_f(3):yend_f(3)))
             p13_y=0.d0
-            allocate(p12_y(ystart_e(1):yend_e(1), ystart_e(2):yend_e(2), ystart_e(3):yend_e(3)))
+            allocate(p12_y(ystart_f(1):yend_f(1), ystart_f(2):yend_f(2), ystart_f(3):yend_f(3)))
             p12_y=0.d0
 
-            allocate(p13_x(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(p13_x(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             p13_x=0.d0
-            allocate(p12_x(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(p12_x(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             p12_x=0.d0
-            allocate(p23_x(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)))
+            allocate(p23_x(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)))
             p23_x=0.d0
 
 
@@ -195,11 +195,11 @@ contains
     subroutine update_velocity(ntime, ns)
 
         use numerical_methods_settings
-        use embedded_velocity_bc_controller
-        use embedded_velocity_operations
+        use following_velocity_bc_controller
+        use following_velocity_operations
 
-        use embedded_fringe_data
-        use embedded_fringe_solver, only:    &
+        use following_fringe_data
+        use following_fringe_solver, only:    &
         FRINGE_set_inflow=>set_inflow
 
         use mpi
@@ -243,7 +243,7 @@ contains
         call perform_mean_gradP1(mean_grad_P1)
         mean_grad_P3=0.d0
 
-        if (nrank==0) write(*,*) '### Embedded channel mean_grad_P1', mean_grad_P1
+        if (nrank==0) write(*,*) '### Following channel mean_grad_P1', mean_grad_P1
 
         RHS1_x =  RHS1_x - mean_grad_P1
         RHS3_x =  RHS3_x - mean_grad_P3
@@ -333,15 +333,15 @@ contains
         subroutine perform_mean_gradP1(mean_grad_P1)
 
             use boundary_scheme
-            use embedded_fringe_data, only: use_fringe
-            use embedded_mesh
+            use following_fringe_data, only: use_fringe
+            use following_mesh
 
             implicit none
 
             real*8, intent(out) :: mean_grad_P1
-            real*8,dimension (xstart_e(1):xend_e(1),xstart_e(2):xend_e(2),xstart_e(3):xend_e(3))           :: tmp1, tmp2_x, tmp3_x
-            real*8,dimension (ystart_e(1):yend_e(1),ystart_e(2):yend_e(2),ystart_e(3):yend_e(3))           :: tmp2, tmp3_y
-            real*8,dimension (zstart_e(1):zend_e(1),zstart_e(2):zend_e(2),zstart_e(3):zend_e(3))           :: tmp3
+            real*8,dimension (xstart_f(1):xend_f(1),xstart_f(2):xend_f(2),xstart_f(3):xend_f(3))           :: tmp1, tmp2_x, tmp3_x
+            real*8,dimension (ystart_f(1):yend_f(1),ystart_f(2):yend_f(2),ystart_f(3):yend_f(3))           :: tmp2, tmp3_y
+            real*8,dimension (zstart_f(1):zend_f(1),zstart_f(2):zend_f(2),zstart_f(3):zend_f(3))           :: tmp3
 
             real*8 s1tot, s1tot_glob, total_volume
             integer k,i,j, mpi_err, n1e, n2e, n3e, n1s, n2s, n3s
@@ -354,21 +354,21 @@ contains
 
             ! Z ------------------------------------------------------------------------
 
-            n1e=(min(n1m, zend_e(1))-zstart_e(1))+1
-            n2e=(min(n2m, zend_e(2))-zstart_e(2))+1
+            n1e=(min(n1m, zend_f(1))-zstart_f(1))+1
+            n2e=(min(n2m, zend_f(2))-zstart_f(2))+1
 
-            call D2c_3Dz(q1_z, tmp3, zsize_e(1),n1e,zsize_e(2),n2e,n3, dx3, .true., NS_Q1_BC3)
+            call D2c_3Dz(q1_z, tmp3, zsize_f(1),n1e,zsize_f(2),n2e,n3, dx3, .true., NS_Q1_BC3)
 
             ! Y ------------------------------------------------------------------------
 
-            n1e=(min(n1m, yend_e(1))-ystart_e(1))+1
-            n3e=(min(n3m, yend_e(3))-ystart_e(3))+1
+            n1e=(min(n1m, yend_f(1))-ystart_f(1))+1
+            n3e=(min(n3m, yend_f(3))-ystart_f(3))+1
 
-            call D1c_MULT_3Dy(q1_y, tmp2, ysize_e(1),n1e,n2,ysize_e(3),n3e, dx2, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,1))
-            call D2c_MULTACC_3Dy(q1_y, tmp2, ysize_e(1),n1e,n2,ysize_e(3),n3e, dx2, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,2))
+            call D1c_MULT_3Dy(q1_y, tmp2, ysize_f(1),n1e,n2,ysize_f(3),n3e, dx2, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,1))
+            call D2c_MULTACC_3Dy(q1_y, tmp2, ysize_f(1),n1e,n2,ysize_f(3),n3e, dx2, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,2))
 
-            do k=ystart_e(3), min(n3m, yend_e(3))   !do k=1,n3m
-                do i=ystart_e(1), min(n1m, yend_e(1))   !do i=1,n1m
+            do k=ystart_f(3), min(n3m, yend_f(3))   !do k=1,n3m
+                do i=ystart_f(1), min(n1m, yend_f(1))   !do i=1,n1m
 
                     tmp2(i,1,k)= ( q1_y(i,2,k)*a3_d + q1_y(i,1,k)*a2_d + q1_wall20(i,k)*a1_d )/dx2**2
                     tmp2(i,n2m,k)= ( q1_y(i,n2m-1,k)*a1_u + q1_y(i,n2m,k) *a2_u + q1_wall21(i,k)*a3_u)/dx2**2
@@ -378,18 +378,18 @@ contains
 
             ! X ------------------------------------------------------------------------
 
-            n2e=(min(n2m, xend_e(2))-xstart_e(2))+1
-            n3e=(min(n3m, xend_e(3))-xstart_e(3))+1
+            n2e=(min(n2m, xend_f(2))-xstart_f(2))+1
+            n3e=(min(n3m, xend_f(3))-xstart_f(3))+1
 
-            call D2c_3Dx(q1_x, tmp1, n1,xsize_e(2),n2e,xsize_e(3),n3e, dx1, .false., NS_Q1_BC1)
+            call D2c_3Dx(q1_x, tmp1, n1,xsize_f(2),n2e,xsize_f(3),n3e, dx1, .false., NS_Q1_BC1)
 
-            call transpose_y_to_x(tmp2, tmp2_x, decomp_embedded)
+            call transpose_y_to_x(tmp2, tmp2_x, decomp_following)
 
-            call transpose_z_to_y(tmp3, tmp3_y, decomp_embedded)
-            call transpose_y_to_x(tmp3_y, tmp3_x, decomp_embedded)
+            call transpose_z_to_y(tmp3, tmp3_y, decomp_following)
+            call transpose_y_to_x(tmp3_y, tmp3_x, decomp_following)
 
-            do k=xstart_e(3), min(n3m, xend_e(3))   !do k=1,n3m
-                do j=xstart_e(2), min(n2m, xend_e(2))   !do j=1,n2m
+            do k=xstart_f(3), min(n3m, xend_f(3))   !do k=1,n3m
+                do j=xstart_f(2), min(n2m, xend_f(2))   !do j=1,n2m
 
                     ! only in the fringe region
                     do i=1,n1m
@@ -424,7 +424,7 @@ contains
 
             use boundary_scheme
             use IBM_settings, only: ren_tau_ibm 
-            use embedded_fringe_data, only: use_fringe
+            use following_fringe_data, only: use_fringe
             use DNS_settings, only:dt
 
             implicit none
@@ -439,8 +439,8 @@ contains
 
             ut1=0.d0
             ut1_glob=0.d0
-            do k=xstart_e(3),min(xend_e(3),n3-1)
-                do j=xstart_e(2),min(xend_e(2),n2-1)
+            do k=xstart_f(3),min(xend_f(3),n3-1)
+                do j=xstart_f(2),min(xend_f(2),n2-1)
                     ut1=ut1+q1_x(1,j,k)*(Y(j+1)-Y(j))*dx3
                 enddo
             enddo
@@ -467,18 +467,18 @@ contains
 
 
             ! Transpositions of grad(P) in X configuration for the time advancement
-            call transpose_z_to_y(gradP3_z, gradP3_y, decomp_embedded)
-            call transpose_y_to_x(gradP3_y, gradP3_x, decomp_embedded)
-            call transpose_y_to_x(gradP2_y, gradP2_x, decomp_embedded)
+            call transpose_z_to_y(gradP3_z, gradP3_y, decomp_following)
+            call transpose_y_to_x(gradP3_y, gradP3_x, decomp_following)
+            call transpose_y_to_x(gradP2_y, gradP2_x, decomp_following)
 
-            n1e=min(n1-1, xend_e(1))
-            n2e=min(n2-1, xend_e(2))
-            n3e=min(n3-1, xend_e(3))
+            n1e=min(n1-1, xend_f(1))
+            n2e=min(n2-1, xend_f(2))
+            n3e=min(n3-1, xend_f(3))
 
-            if ((BC1==UNBOUNDED).or.(BC1==FRINGE)) n1s=xstart_e(1)
-            if ((BC1/=UNBOUNDED).and.(BC1/=FRINGE)) n1s=max(2,xstart_e(1))
-            n2s=xstart_e(2)
-            n3s=xstart_e(3)
+            if ((BC1==UNBOUNDED).or.(BC1==FRINGE)) n1s=xstart_f(1)
+            if ((BC1/=UNBOUNDED).and.(BC1/=FRINGE)) n1s=max(2,xstart_f(1))
+            n2s=xstart_f(2)
+            n3s=xstart_f(3)
             do k = n3s, n3e
                 do j = n2s, n2e
                     do i = n1s, n1e
@@ -489,15 +489,15 @@ contains
             end do
 
 
-            if (BC2==UNBOUNDED) n2s=xstart_e(2)
-            if (BC2/=UNBOUNDED) n2s=max(2,xstart_e(2))
+            if (BC2==UNBOUNDED) n2s=xstart_f(2)
+            if (BC2/=UNBOUNDED) n2s=max(2,xstart_f(2))
             ! On ne touche que q2[2..n1-2]
             if (BC1==OPEN) then
                 n1s=2
                 n1e=n1-2
             endif
 
-            n3s=xstart_e(3)
+            n3s=xstart_f(3)
 
             do k = n3s, n3e
                 do j = n2s, n2e
@@ -509,8 +509,8 @@ contains
                 end do
             end do
 
-            if (BC3==UNBOUNDED) n3s=xstart_e(3)
-            if (BC3/=UNBOUNDED) n3s=max(2,xstart_e(3))
+            if (BC3==UNBOUNDED) n3s=xstart_f(3)
+            if (BC3/=UNBOUNDED) n3s=max(2,xstart_f(3))
 
             ! On ne touche que q3[2..n1-2]
             if (BC1==OPEN) then
@@ -518,7 +518,7 @@ contains
                 n1e=n1-2
             endif
 
-            n2s=xstart_e(2)
+            n2s=xstart_f(2)
 
             do k = n3s, n3e
                 do j = n2s, n2e
@@ -536,13 +536,13 @@ contains
 
     subroutine final_velocity(ntime, ns)
 
-        use embedded_physical_fields
+        use following_physical_fields
         use DNS_settings
-        use embedded_velocity_operations
+        use following_velocity_operations
         use numerical_methods_settings
-        use embedded_velocity_bc_controller
+        use following_velocity_bc_controller
 
-        use embedded_fringe_data
+        use following_fringe_data
 
         use mpi
 
@@ -550,9 +550,9 @@ contains
 
         integer, intent(in)                                     :: ns, ntime
 
-        real*8, dimension(xstart_e(2):xend_e(2),xstart_e(3):xend_e(3)) :: dpdy_old1
-        real*8, dimension(xstart_e(1):xend_e(1),xstart_e(2):xend_e(2),xstart_e(3):xend_e(3)) :: dpdx_old, dpdy_old, dpdz_old
-        real*8, dimension(zstart_e(1):zend_e(1),zstart_e(2):zend_e(2)) :: dpdy_old3
+        real*8, dimension(xstart_f(2):xend_f(2),xstart_f(3):xend_f(3)) :: dpdy_old1
+        real*8, dimension(xstart_f(1):xend_f(1),xstart_f(2):xend_f(2),xstart_f(3):xend_f(3)) :: dpdx_old, dpdy_old, dpdz_old
+        real*8, dimension(zstart_f(1):zend_f(1),zstart_f(2):zend_f(2)) :: dpdy_old3
         real*8                                                  :: errorsum, errorsum_glob, divy_mean
         integer                                                 :: mpi_err, s
         integer                                                 :: i,j,k
@@ -586,9 +586,9 @@ contains
 
             ! if (BC1==FRINGE) call apply_gradp_fringe_velocity_1
 
-            call transpose_x_to_y(q2_x, q2_y, decomp_embedded)
-            call transpose_x_to_y(q3_x, q3_y, decomp_embedded)
-            call transpose_y_to_z(q3_y, q3_z, decomp_embedded)
+            call transpose_x_to_y(q2_x, q2_y, decomp_following)
+            call transpose_x_to_y(q3_x, q3_y, decomp_following)
+            call transpose_y_to_z(q3_y, q3_z, decomp_following)
 
             ! Applying the boundary condition
             call apply_BC3
@@ -612,70 +612,20 @@ contains
 
         ! RHS3_z=P*aldt
         call perform_divergence(divu_z, q3_z, q2_y, q1_x, divy_mean)
-        if (nrank==0) write(*,*) '### Embedded channel divy_mean', divy_mean
-        call transpose_z_to_y(divu_z, divu_y, decomp_embedded)
-        call transpose_y_to_x(divu_y, divu_x, decomp_embedded)
-
-        call get_index_for_output()
+        if (nrank==0) write(*,*) '### Following channel divy_mean', divy_mean
+        call transpose_z_to_y(divu_z, divu_y, decomp_following)
+        call transpose_y_to_x(divu_y, divu_x, decomp_following)
 
         contains
 
-            subroutine get_index_for_output
-                use embedded_fringe_data
-                use embedded_start_settings
-
-                implicit none
-                integer     :: i, j, k, mpi_err, i_end
-                real*8, dimension(n1) :: delta_loc, delta
-                real*8 :: alpha
-
-                delta=0.d0
-                delta_loc=0.d0
-                alpha=0.99d0
-
-                ! First, build BL thickness evolution with x
-                do i=ystart_e(1),min(yend_e(1),n1-1)
-                    uc = q1_y(i,(n2-1)/2,ystart_e(3))
-
-                    j=1
-                    do while ((q1_y(i,j,ystart_e(3)).le.alpha*uc).and.(j.le.(n2-1)/2))
-                        j=j+1
-                    enddo
-
-                    delta_loc(i)=Yc(j)
-
-                enddo
-
-                call MPI_ALLREDUCE(delta_loc, delta, n1, MPI_DOUBLE_PRECISION, MPI_MAX, MPI_COMM_WORLD, mpi_err)
-
-                ! Then get the position where delta is the closest to wanted delta
-                i=n_fringe_region
-                i_end=7*(n1-1)/8
-                ! write(*,*) 'i_end', i_end
-                do while ((delta(i).le.wanted_delta).and.(i.lt.i_end))
-                    i=i+1
-                enddo
-
-                if (i.ge.i_end) then
-                    index_for_output = n1/2
-                else
-                    index_for_output = i
-                endif
-
-                if (nrank.eq.0) write(*,*) "exported BL thickness of ", delta(index_for_output)
-                if (nrank.eq.0) write(*,*) "index_for_output ", index_for_output
-                ! if (nrank.eq.0) write(*,*) "BL thickness of ", delta
-
-            end subroutine get_index_for_output
-
             subroutine apply_gradp_fringe_velocity_1
-                use embedded_fringe_data
+                use following_fringe_data
 
                 implicit none
                 integer     :: i, j, k
 
-                do k=xstart_e(3),min(xend_e(3),n3-1)
-                    do j=xstart_e(2),min(xend_e(2),n2-1)
+                do k=xstart_f(3),min(xend_f(3),n3-1)
+                    do j=xstart_f(2),min(xend_f(2),n2-1)
 
                         ! take the velocity after the inflow is set
                         q1_x(1,j,k)=q1_save_x(1,j,k)+dphidx1_x(1,j,k)*al*dt
@@ -704,37 +654,37 @@ contains
 
                 implicit none
 
-                real*8, dimension(zstart_e(1):zend_e(1), zstart_e(2):zend_e(2), zstart_e(3):zend_e(3))      :: dph_z
-                real*8, dimension(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3))      :: dph_x
-                real*8, dimension(ystart_e(1):yend_e(1), ystart_e(2):yend_e(2), ystart_e(3):yend_e(3))      :: dph_y
+                real*8, dimension(zstart_f(1):zend_f(1), zstart_f(2):zend_f(2), zstart_f(3):zend_f(3))      :: dph_z
+                real*8, dimension(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3))      :: dph_x
+                real*8, dimension(ystart_f(1):yend_f(1), ystart_f(2):yend_f(2), ystart_f(3):yend_f(3))      :: dph_y
                 integer ::k,j,i,n, n1e, n2e, n3e
 
                 ! Gradx(P) -----------------------------------------------------------------
-                n1e=zsize_e(1)
-                n2e=zsize_e(2)
+                n1e=zsize_f(1)
+                n2e=zsize_f(2)
 
-                call D1ssh_3Dz(dph_z, dphidx3_z, zsize_e(1),n1e,zsize_e(2),n2e,n3, dx3, .true., POISSON_PR_BC3)
+                call D1ssh_3Dz(dph_z, dphidx3_z, zsize_f(1),n1e,zsize_f(2),n2e,n3, dx3, .true., POISSON_PR_BC3)
 
-                call transpose_z_to_y(dphidx3_z, dph_y, decomp_embedded)
-                call transpose_y_to_x(dph_y, dphidx3_x, decomp_embedded)         ! dph_y is used as temporary array to switch from z to x pencil
+                call transpose_z_to_y(dphidx3_z, dph_y, decomp_following)
+                call transpose_y_to_x(dph_y, dphidx3_x, decomp_following)         ! dph_y is used as temporary array to switch from z to x pencil
 
                 ! Grady(P) -----------------------------------------------------------------
-                call transpose_z_to_y(dph_z, dph_y, decomp_embedded)
+                call transpose_z_to_y(dph_z, dph_y, decomp_following)
 
-                n1e=ysize_e(1)
-                n3e=ysize_e(3)
+                n1e=ysize_f(1)
+                n3e=ysize_f(3)
 
-                call D1ssh_MULT_3Dy(dph_y, dphidx2_y, ysize_e(1),n1e,n2,ysize_e(3),n3e, dx2, .true., POISSON_PR_BC2, Y_to_YTr_for_D1)
+                call D1ssh_MULT_3Dy(dph_y, dphidx2_y, ysize_f(1),n1e,n2,ysize_f(3),n3e, dx2, .true., POISSON_PR_BC2, Y_to_YTr_for_D1)
 
-                call transpose_y_to_x(dphidx2_y, dphidx2_x, decomp_embedded)
+                call transpose_y_to_x(dphidx2_y, dphidx2_x, decomp_following)
 
                 ! Gradz(P) -----------------------------------------------------------------
-                call transpose_y_to_x(dph_y, dph_x, decomp_embedded)
+                call transpose_y_to_x(dph_y, dph_x, decomp_following)
 
-                n2e=xsize_e(2)
-                n3e=xsize_e(3)
+                n2e=xsize_f(2)
+                n3e=xsize_f(3)
 
-                call D1ssh_3Dx(dph_x, dphidx1_x, n1,xsize_e(2),n2e,xsize_e(3),n3e, dx1, .true., POISSON_PR_BC1)
+                call D1ssh_3Dx(dph_x, dphidx1_x, n1,xsize_f(2),n2e,xsize_f(3),n3e, dx1, .true., POISSON_PR_BC1)
 
                 return
 
@@ -765,8 +715,8 @@ contains
 
                 ! U correction
                 !do j = 1, n2m
-                do j = zstart_e(2), min(n2m, zend_e(2))
-                    do i=zstart_e(1), min(n1m, zend_e(1))
+                do j = zstart_f(2), min(n2m, zend_f(2))
+                    do i=zstart_f(1), min(n1m, zend_f(1))
                         q3_z(i,j,:)=q3_z(i,j,:)-dphidx3_z(i,j,:)*al*dt
                     enddo
                 enddo
@@ -775,19 +725,19 @@ contains
                 ! V correction
 
                 !do k=1,n3m
-                do k=ystart_e(3), min(n3m, yend_e(3))
+                do k=ystart_f(3), min(n3m, yend_f(3))
                     !do i=1,n1m
-                    do i=ystart_e(1), min(n1m, yend_e(1))
+                    do i=ystart_f(1), min(n1m, yend_f(1))
                         q2_y(i,:,k)=q2_y(i,:,k)-dphidx2_y(i,:,k)*al*dt
                     enddo
                 enddo
 
                 ! X ------------------------------------------------------------------------
 
-                do k=xstart_e(3), min(n3m, xend_e(3))
+                do k=xstart_f(3), min(n3m, xend_f(3))
 
                     !do j=1,n2m
-                    do j=xstart_e(2), min(n2m, xend_e(2))
+                    do j=xstart_f(2), min(n2m, xend_f(2))
                         q1_x(:,j,k)=q1_x(:,j,k)-dphidx1_x(:,j,k)*al*dt
 
 !                        pr_x(:,j,k)=0.d0!pr_x(:,j,k) + dph_x(:,j,k)/aldt
@@ -804,7 +754,7 @@ contains
     subroutine add_action_x(fx1, fx2, fx3)
         implicit none
 
-        real*8, dimension(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)), intent(in)  :: fx1, fx2, fx3
+        real*8, dimension(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)), intent(in)  :: fx1, fx2, fx3
 
         Fext1 = fx1
         Fext2 = fx2
@@ -815,7 +765,7 @@ contains
     subroutine substract_action(fx1, fx2, fx3)
         implicit none
 
-        real*8, dimension(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3)), intent(in)  :: fx1, fx2, fx3
+        real*8, dimension(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3)), intent(in)  :: fx1, fx2, fx3
 
         Fext1 = Fext1 - fx1
         Fext2 = Fext2 - fx2
@@ -827,14 +777,14 @@ contains
     subroutine perform_RHS()
 
         use boundary_scheme
-        use embedded_mesh
+        use following_mesh
 
         implicit none
 
         !real*8,dimension(n3)           :: uu
-        real*8,dimension(xstart_e(1):xend_e(1), xstart_e(2):xend_e(2), xstart_e(3):xend_e(3))           :: q1q1_x, tmp1_x, tmp2_x, tmp3_x
-        real*8,dimension(ystart_e(1):yend_e(1), ystart_e(2):yend_e(2), ystart_e(3):yend_e(3))           :: q2q2_y, tmp1_y, tmp2_y, tmp3_y
-        real*8,dimension(zstart_e(1):zend_e(1), zstart_e(2):zend_e(2), zstart_e(3):zend_e(3))           :: q3q3_z, tmp1_z, tmp2_z, tmp3_z
+        real*8,dimension(xstart_f(1):xend_f(1), xstart_f(2):xend_f(2), xstart_f(3):xend_f(3))           :: q1q1_x, tmp1_x, tmp2_x, tmp3_x
+        real*8,dimension(ystart_f(1):yend_f(1), ystart_f(2):yend_f(2), ystart_f(3):yend_f(3))           :: q2q2_y, tmp1_y, tmp2_y, tmp3_y
+        real*8,dimension(zstart_f(1):zend_f(1), zstart_f(2):zend_f(2), zstart_f(3):zend_f(3))           :: q3q3_z, tmp1_z, tmp2_z, tmp3_z
 
         integer :: k,i,j,n, mpi_err, n1e, n2e, n3e, n1s, n2s, n3s
 
@@ -848,8 +798,8 @@ contains
         ! ****************************** Derivative along the Z direction *******************************************************
         ! ***********************************************************************************************************************
 
-        n1e= zsize_e(1)!(min(n1m, zend(1))-zstart(1))+1
-        n2e=zsize_e(2)!(min(n2m, zend(2))-zstart(2))+1
+        n1e= zsize_f(1)!(min(n1m, zend(1))-zstart(1))+1
+        n2e=zsize_f(2)!(min(n2m, zend(2))-zstart(2))+1
 
         ! ******** CORR_JO ********* !
         ! REinitialisation des RHS_z !
@@ -864,21 +814,21 @@ contains
         tmp3_z = 0.d0
 
         ! For RHS1
-        call D2c_3Dz(q1_z, tmp1_z, zsize_e(1),n1e,zsize_e(2),n2e,n3, diff3_coef, .true., NS_Q1_BC3)
-        call D1s_ACC_3Dz(p13_z, tmp1_z, zsize_e(1),n1e,zsize_e(2),n2e,n3, conv3_coef, .false., NS_P13_BC3)
+        call D2c_3Dz(q1_z, tmp1_z, zsize_f(1),n1e,zsize_f(2),n2e,n3, diff3_coef, .true., NS_Q1_BC3)
+        call D1s_ACC_3Dz(p13_z, tmp1_z, zsize_f(1),n1e,zsize_f(2),n2e,n3, conv3_coef, .false., NS_P13_BC3)
         ! *********************************** CORR_JO ******************************* !
         ! La D2c_3Dz sur q2 est shifted --> argument .true. (ancienne valeur : false) !
         ! *************************************************************************** !
 
         ! For RHS2
-        call D2c_3Dz(q2_z, tmp2_z, zsize_e(1),n1e,zsize_e(2),n2e,n3, diff3_coef, .true., NS_Q2_BC3)
-        call D1s_ACC_3Dz(p23_z, tmp2_z, zsize_e(1),n1e,zsize_e(2),n2e,n3, conv3_coef, .false., NS_P23_BC3)
+        call D2c_3Dz(q2_z, tmp2_z, zsize_f(1),n1e,zsize_f(2),n2e,n3, diff3_coef, .true., NS_Q2_BC3)
+        call D1s_ACC_3Dz(p23_z, tmp2_z, zsize_f(1),n1e,zsize_f(2),n2e,n3, conv3_coef, .false., NS_P23_BC3)
 
         ! For RHS3
-        call D2c_3Dz(q3_z, tmp3_z, zsize_e(1),n1e,zsize_e(2),n2e,n3, diff3_coef, .false., NS_Q3_BC3)
-        call D0s_3Dz(q3_z, q3q3_z, zsize_e(1),n1e,zsize_e(2),n2e,n3, NS_Q3_BC3)
+        call D2c_3Dz(q3_z, tmp3_z, zsize_f(1),n1e,zsize_f(2),n2e,n3, diff3_coef, .false., NS_Q3_BC3)
+        call D0s_3Dz(q3_z, q3q3_z, zsize_f(1),n1e,zsize_f(2),n2e,n3, NS_Q3_BC3)
         q3q3_z=q3q3_z**2
-        call D1ssh_ACC_3Dz(q3q3_z, tmp3_z, zsize_e(1),n1e,zsize_e(2),n2e,n3, conv3_coef, .true., NS_P33_BC3)
+        call D1ssh_ACC_3Dz(q3q3_z, tmp3_z, zsize_f(1),n1e,zsize_f(2),n2e,n3, conv3_coef, .true., NS_P33_BC3)
 
         ! ******** CORR_JO ********* !
         ! Suppression de cette ligne !
@@ -902,37 +852,37 @@ contains
         ! ****************************** Derivative along the Y direction *******************************************************
         ! ***********************************************************************************************************************
 
-        call transpose_z_to_y(p23_z, p23_y, decomp_embedded)
+        call transpose_z_to_y(p23_z, p23_y, decomp_following)
 
-        call transpose_z_to_y(RHS1_z, RHS1_y, decomp_embedded)
-        call transpose_z_to_y(RHS2_z, RHS2_y, decomp_embedded)
-        call transpose_z_to_y(RHS3_z, RHS3_y, decomp_embedded)
+        call transpose_z_to_y(RHS1_z, RHS1_y, decomp_following)
+        call transpose_z_to_y(RHS2_z, RHS2_y, decomp_following)
+        call transpose_z_to_y(RHS3_z, RHS3_y, decomp_following)
 
         tmp1_y = 0.d0
         tmp2_y = 0.d0
         tmp3_y = 0.d0
 
-        n1e=ysize_e(1)!(min(n1m, yend(1))-ystart(1))+1
-        n3e=ysize_e(3)!(min(n3m, yend(3))-ystart(3))+1
+        n1e=ysize_f(1)!(min(n1m, yend(1))-ystart(1))+1
+        n3e=ysize_f(3)!(min(n3m, yend(3))-ystart(3))+1
 
         ! For RHS1
-        call D1c_MULTACC_3Dy(q1_y, tmp1_y, ysize_e(1),n1e,n2,ysize_e(3),n3e, diff21_coef, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,1))
-        call D2c_MULTACC_3Dy(q1_y, tmp1_y, ysize_e(1),n1e,n2,ysize_e(3),n3e, diff22_coef, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,2))
+        call D1c_MULTACC_3Dy(q1_y, tmp1_y, ysize_f(1),n1e,n2,ysize_f(3),n3e, diff21_coef, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,1))
+        call D2c_MULTACC_3Dy(q1_y, tmp1_y, ysize_f(1),n1e,n2,ysize_f(3),n3e, diff22_coef, .true., NS_Q1_BC2, Yc_to_YcTr_for_D2(:,2))
 
         ! For RHS2
-        call D1c_MULTACC_3Dy(q2_y, tmp2_y, ysize_e(1),n1e,n2,ysize_e(3),n3e, diff21_coef, .false., NS_Q2_BC2, Y_to_YTr_for_D2(:,1))
-        call D2c_MULTACC_3Dy(q2_y, tmp2_y, ysize_e(1),n1e,n2,ysize_e(3),n3e, diff22_coef, .false., NS_Q2_BC2, Y_to_YTr_for_D2(:,2))
+        call D1c_MULTACC_3Dy(q2_y, tmp2_y, ysize_f(1),n1e,n2,ysize_f(3),n3e, diff21_coef, .false., NS_Q2_BC2, Y_to_YTr_for_D2(:,1))
+        call D2c_MULTACC_3Dy(q2_y, tmp2_y, ysize_f(1),n1e,n2,ysize_f(3),n3e, diff22_coef, .false., NS_Q2_BC2, Y_to_YTr_for_D2(:,2))
 
         ! For RHS3
-        call D1c_MULTACC_3Dy(q3_y, tmp3_y, ysize_e(1),n1e,n2,ysize_e(3),n3e, diff21_coef, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,1))
-        call D2c_MULTACC_3Dy(q3_y, tmp3_y, ysize_e(1),n1e,n2,ysize_e(3),n3e, diff22_coef, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,2))
+        call D1c_MULTACC_3Dy(q3_y, tmp3_y, ysize_f(1),n1e,n2,ysize_f(3),n3e, diff21_coef, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,1))
+        call D2c_MULTACC_3Dy(q3_y, tmp3_y, ysize_f(1),n1e,n2,ysize_f(3),n3e, diff22_coef, .true., NS_Q3_BC2, Yc_to_YcTr_for_D2(:,2))
 
-        call D1s_MULTACC_3Dy(p12_y, tmp1_y, ysize_e(1),n1e,n2,ysize_e(3),n3e, conv2_coef, .false., NS_P12_BC2, Yc_to_YcTr_for_D1)
-        call D0s_3Dy(q2_y, q2q2_y, ysize_e(1),n1e,n2,ysize_e(3),n3e, NS_Q2_BC2)
+        call D1s_MULTACC_3Dy(p12_y, tmp1_y, ysize_f(1),n1e,n2,ysize_f(3),n3e, conv2_coef, .false., NS_P12_BC2, Yc_to_YcTr_for_D1)
+        call D0s_3Dy(q2_y, q2q2_y, ysize_f(1),n1e,n2,ysize_f(3),n3e, NS_Q2_BC2)
         q2q2_y=q2q2_y**2
-        call D1ssh_MULTACC_3Dy(q2q2_y, tmp2_y, ysize_e(1),n1e,n2,ysize_e(3),n3e, conv2_coef, .true., NS_P22_BC2, Y_to_YTr_for_D1)
+        call D1ssh_MULTACC_3Dy(q2q2_y, tmp2_y, ysize_f(1),n1e,n2,ysize_f(3),n3e, conv2_coef, .true., NS_P22_BC2, Y_to_YTr_for_D1)
 
-        call D1s_MULTACC_3Dy(p23_y, tmp3_y, ysize_e(1),n1e,n2,ysize_e(3),n3e, conv2_coef, .false., NS_P23_BC2, Yc_to_YcTr_for_D1)
+        call D1s_MULTACC_3Dy(p23_y, tmp3_y, ysize_f(1),n1e,n2,ysize_f(3),n3e, conv2_coef, .false., NS_P23_BC2, Yc_to_YcTr_for_D1)
 
         if(BC2==NOSLIP) call diff_at_wall_2 ! implicit: NS_Q3_BC2=Dirichlet
 
@@ -947,35 +897,35 @@ contains
         ! ****************************** Derivative along the X direction *******************************************************
         ! ***********************************************************************************************************************
 
-        call transpose_z_to_y(p13_z, p13_y, decomp_embedded)
-        call transpose_y_to_x(p13_y, p13_x, decomp_embedded)
+        call transpose_z_to_y(p13_z, p13_y, decomp_following)
+        call transpose_y_to_x(p13_y, p13_x, decomp_following)
 
-        call transpose_y_to_x(p12_y, p12_x, decomp_embedded)
+        call transpose_y_to_x(p12_y, p12_x, decomp_following)
 
-        call transpose_y_to_x(RHS1_y, RHS1_x, decomp_embedded)
-        call transpose_y_to_x(RHS2_y, RHS2_x, decomp_embedded)
-        call transpose_y_to_x(RHS3_y, RHS3_x, decomp_embedded)
+        call transpose_y_to_x(RHS1_y, RHS1_x, decomp_following)
+        call transpose_y_to_x(RHS2_y, RHS2_x, decomp_following)
+        call transpose_y_to_x(RHS3_y, RHS3_x, decomp_following)
 
         tmp1_x = 0.d0
         tmp2_x = 0.d0
         tmp3_x = 0.d0
 
-        n2e=xsize_e(2)!(min(n2m, xend(2))-xstart(2))+1
-        n3e=xsize_e(3)!(min(n3m, xend(3))-xstart(3))+1
+        n2e=xsize_f(2)!(min(n2m, xend(2))-xstart(2))+1
+        n3e=xsize_f(3)!(min(n3m, xend(3))-xstart(3))+1
 
         ! For RHS1
-        call D0s_3Dx(q1_x, q1q1_x, n1,xsize_e(2),n2e,xsize_e(3),n3e, NS_Q1_BC1)
+        call D0s_3Dx(q1_x, q1q1_x, n1,xsize_f(2),n2e,xsize_f(3),n3e, NS_Q1_BC1)
         q1q1_x=q1q1_x**2
-        call D1ssh_ACC_3Dx(q1q1_x, tmp1_x, n1,xsize_e(2),n2e,xsize_e(3),n3e, conv1_coef, .true., NS_P11_BC1)
-        call D2c_ACC_3Dx(q1_x, tmp1_x, n1,xsize_e(2),n2e,xsize_e(3),n3e, diff1_coef, .false., NS_Q1_BC1)
+        call D1ssh_ACC_3Dx(q1q1_x, tmp1_x, n1,xsize_f(2),n2e,xsize_f(3),n3e, conv1_coef, .true., NS_P11_BC1)
+        call D2c_ACC_3Dx(q1_x, tmp1_x, n1,xsize_f(2),n2e,xsize_f(3),n3e, diff1_coef, .false., NS_Q1_BC1)
 
         ! For RHS2
-        call D1s_ACC_3Dx(p12_x, tmp2_x, n1,xsize_e(2),n2e,xsize_e(3),n3e, conv1_coef, .false., NS_P12_BC1)
-        call D2c_ACC_3Dx(q2_x, tmp2_x, n1,xsize_e(2),n2e,xsize_e(3),n3e, diff1_coef, .true., NS_Q2_BC1)
+        call D1s_ACC_3Dx(p12_x, tmp2_x, n1,xsize_f(2),n2e,xsize_f(3),n3e, conv1_coef, .false., NS_P12_BC1)
+        call D2c_ACC_3Dx(q2_x, tmp2_x, n1,xsize_f(2),n2e,xsize_f(3),n3e, diff1_coef, .true., NS_Q2_BC1)
 
         ! For RHS3
-        call D1s_ACC_3Dx(p13_x, tmp3_x, n1,xsize_e(2),n2e,xsize_e(3),n3e, conv1_coef, .false., NS_P13_BC1)
-        call D2c_ACC_3Dx(q3_x, tmp3_x, n1,xsize_e(2),n2e,xsize_e(3),n3e, diff1_coef, .true., NS_Q3_BC1)
+        call D1s_ACC_3Dx(p13_x, tmp3_x, n1,xsize_f(2),n2e,xsize_f(3),n3e, conv1_coef, .false., NS_P13_BC1)
+        call D2c_ACC_3Dx(q3_x, tmp3_x, n1,xsize_f(2),n2e,xsize_f(3),n3e, diff1_coef, .true., NS_Q3_BC1)
 
         if((BC1==NOSLIP).or.(BC1==PSEUDO_PERIODIC).or.(BC1==OPEN)) call diff_at_wall_1   ! ATTENTION
 
@@ -993,8 +943,8 @@ contains
             ! Regular case: down    a1=2/3, a2=-1 a3=1/3
             ! Regular case: up      a1=1/3, a2=-1 a3=2/3
             ! ATTENTION
-            do k=xstart_e(3), min(n3m, xend_e(3))       !do k=1,n3m
-                do j=xstart_e(2), min(n2m, xend_e(2))       !do j=1,n2m
+            do k=xstart_f(3), min(n3m, xend_f(3))       !do k=1,n3m
+                do j=xstart_f(2), min(n2m, xend_f(2))       !do j=1,n2m
                     tmp2_x(1,j,k)   =tmp2_x(1,j,k)  +( q2_x(2,j,k)       /3.d0 - q2_x(1,j,k)      + q2_wall10(j,k)*2.d0/3.d0)  /diff1_coef**2
                     tmp2_x(n1m,j,k) =tmp2_x(n1m,j,k)+( q2_x(n1m-1,j,k)   /3.d0 - q2_x(n1m,j,k)    + q2_wall11(j,k)*2.d0/3.d0 ) /diff1_coef**2
 
@@ -1021,8 +971,8 @@ contains
 
         subroutine diff_at_wall_2()
 
-            do k=ystart_e(3), min(n3m, yend_e(3))       !do k=1,n3m
-                do i=ystart_e(1), min(n1m, yend_e(1))       !do i=1,n1m
+            do k=ystart_f(3), min(n3m, yend_f(3))       !do k=1,n3m
+                do i=ystart_f(1), min(n1m, yend_f(1))       !do i=1,n1m
 
                     tmp1_y(i,1,k)=tmp1_y(i,1,k)+( q1_y(i,2,k)*a3_d + q1_y(i,1,k)*a2_d + q1_wall20(i,k)*a1_d)            /diff2_coef**2
                     tmp1_y(i,n2m,k)=tmp1_y(i,n2m,k)+( q1_y(i,n2m-1,k)*a1_u + q1_y(i,n2m,k)*a2_u + q1_wall21(i,k)*a3_u ) /diff2_coef**2
@@ -1045,8 +995,8 @@ contains
             ! n3m au lieu de n2m dans RHS_z(i,j,n3m) ** !
             ! ***************************************** !
 
-            do j = zstart_e(2), min(n2m, zend_e(2))     !do j=1,n2m
-                do i=zstart_e(1), min(n1m, zend_e(1))       !do i=1,n1m
+            do j = zstart_f(2), min(n2m, zend_f(2))     !do j=1,n2m
+                do i=zstart_f(1), min(n1m, zend_f(1))       !do i=1,n1m
                     tmp1_z(i,j,1)   =tmp1_z(i,j,1)  +( q1_z(i,j,2)       /3.d0 - q1_z(i,j,1)      + q1_wall30(i,j)*2.d0/3.d0 ) /diff3_coef**2
                     tmp1_z(i,j,n3m) =tmp1_z(i,j,n3m)+( q1_z(i,j,n3m-1)   /3.d0 - q1_z(i,j,n3m)    + q1_wall31(i,j)*2.d0/3.d0)  /diff3_coef**2
 
@@ -1068,14 +1018,14 @@ contains
         integer                                                                                 :: i,j,k
         integer                                                                                 :: n1s, n1e, n2s,n2e, n3s,n3e
 
-        n1e=min(n1-1, xend_e(1))
-        n2e=min(n2-1, xend_e(2))
-        n3e=min(n3-1, xend_e(3))
+        n1e=min(n1-1, xend_f(1))
+        n2e=min(n2-1, xend_f(2))
+        n3e=min(n3-1, xend_f(3))
 
-        if ((BC1==UNBOUNDED).or.(BC1==FRINGE)) n1s=xstart_e(1)
-        if ((BC1/=UNBOUNDED).and.(BC1/=FRINGE)) n1s=max(2,xstart_e(1))
-        n2s=xstart_e(2)
-        n3s=xstart_e(3)
+        if ((BC1==UNBOUNDED).or.(BC1==FRINGE)) n1s=xstart_f(1)
+        if ((BC1/=UNBOUNDED).and.(BC1/=FRINGE)) n1s=max(2,xstart_f(1))
+        n2s=xstart_f(2)
+        n3s=xstart_f(3)
         do k = n3s, n3e
             do j = n2s, n2e
                 do i = n1s, n1e
@@ -1085,15 +1035,15 @@ contains
         end do
 
 
-        if (BC2==UNBOUNDED) n2s=xstart_e(2)
-        if (BC2/=UNBOUNDED) n2s=max(2,xstart_e(2))
+        if (BC2==UNBOUNDED) n2s=xstart_f(2)
+        if (BC2/=UNBOUNDED) n2s=max(2,xstart_f(2))
         ! On ne touche que q2[2..n1-2]
         if (BC1==OPEN) then
             n1s=2
             n1e=n1-2
         endif
 
-        n3s=xstart_e(3)
+        n3s=xstart_f(3)
 
         do k = n3s, n3e
             do j = n2s, n2e
@@ -1103,8 +1053,8 @@ contains
             end do
         end do
 
-        if (BC3==UNBOUNDED) n3s=xstart_e(3)
-        if (BC3/=UNBOUNDED) n3s=max(2,xstart_e(3))
+        if (BC3==UNBOUNDED) n3s=xstart_f(3)
+        if (BC3/=UNBOUNDED) n3s=max(2,xstart_f(3))
 
         ! On ne touche que q3[2..n1-2]
         if (BC1==OPEN) then
@@ -1112,7 +1062,7 @@ contains
             n1e=n1-2
         endif
 
-        n2s=xstart_e(2)
+        n2s=xstart_f(2)
 
         do k = n3s, n3e
             do j = n2s, n2e
@@ -1128,25 +1078,25 @@ contains
 
     ! Perform UV, UW, VW at the center of edges
     subroutine perform_velocity_products()
-        use embedded_mesh
+        use following_mesh
 
         implicit none
 
         integer k,j,i
-        real*8, dimension(ystart_e(1):yend_e(1),ystart_e(2):yend_e(2),ystart_e(3):yend_e(3))   :: tmp12_y
-        real*8, dimension(zstart_e(1):zend_e(1),zstart_e(2):zend_e(2),zstart_e(3):zend_e(3))   :: tmp23_z, tmp13_z
+        real*8, dimension(ystart_f(1):yend_f(1),ystart_f(2):yend_f(2),ystart_f(3):yend_f(3))   :: tmp12_y
+        real*8, dimension(zstart_f(1):zend_f(1),zstart_f(2):zend_f(2),zstart_f(3):zend_f(3))   :: tmp23_z, tmp13_z
 
         integer :: n1e, n2e, n3e, n1s, n2s, n3s
 
         ! X ------------------------------------------------------------------------
 
-        call D0ssh_3Dx(q3_x, p13_x, n1,xsize_e(2),xsize_e(2),xsize_e(3),xsize_e(3), NS_Q3_BC1)
-        call D0ssh_3Dx(q2_x, p12_x, n1,xsize_e(2),xsize_e(2),xsize_e(3),xsize_e(3), NS_Q2_BC1)
+        call D0ssh_3Dx(q3_x, p13_x, n1,xsize_f(2),xsize_f(2),xsize_f(3),xsize_f(3), NS_Q3_BC1)
+        call D0ssh_3Dx(q2_x, p12_x, n1,xsize_f(2),xsize_f(2),xsize_f(3),xsize_f(3), NS_Q2_BC1)
 
         if ((BC1==NOSLIP).or.(BC1==FREESLIP).or.(BC1==PSEUDO_PERIODIC).or.(BC1==OPEN)) then
 
-            do k=xstart_e(3), xend_e(3)       !do k=1,n3
-                do j=xstart_e(2), xend_e(2)       !do j=1,n2
+            do k=xstart_f(3), xend_f(3)       !do k=1,n3
+                do j=xstart_f(2), xend_f(2)       !do j=1,n2
                     p13_x(1, j,  k)   =q3_wall10(j, k)
                     p13_x(n1, j, k)   =q3_wall11(j, k)
 
@@ -1158,16 +1108,16 @@ contains
         end if
 
         ! Y ------------------------------------------------------------------------
-        call transpose_x_to_y(p12_x, p12_y, decomp_embedded)
+        call transpose_x_to_y(p12_x, p12_y, decomp_following)
 
-        call D0ssh_3Dy(q3_y, p23_y, ysize_e(1),ysize_e(1),n2,ysize_e(3),ysize_e(3), NS_Q3_BC2)
+        call D0ssh_3Dy(q3_y, p23_y, ysize_f(1),ysize_f(1),n2,ysize_f(3),ysize_f(3), NS_Q3_BC2)
         ! call D0ssh_MULT_3Dy(q1_y, p12_y, ysize(1),ysize(1),n2,ysize(3),ysize(3), NS_Q1_BC2)
-        call D0ssh_3Dy(q1_y, tmp12_y, ysize_e(1),ysize_e(1),n2,ysize_e(3),ysize_e(3), NS_Q1_BC2)
+        call D0ssh_3Dy(q1_y, tmp12_y, ysize_f(1),ysize_f(1),n2,ysize_f(3),ysize_f(3), NS_Q1_BC2)
 
         if ((BC2==NOSLIP).or.(BC2==FREESLIP)) then
 
-            do k=ystart_e(3), yend_e(3)      !do k=1,n3
-                do i=ystart_e(1),yend_e(1)       !do i=1,n1
+            do k=ystart_f(3), yend_f(3)      !do k=1,n3
+                do i=ystart_f(1),yend_f(1)       !do i=1,n1
                     p23_y(i, 1,  k)   =q3_wall20(i, k)
                     p23_y(i, n2, k)   =q3_wall21(i, k)
 
@@ -1184,22 +1134,22 @@ contains
         p12_y = p12_y * tmp12_y
 
         ! Z ------------------------------------------------------------------------
-        call transpose_y_to_z(p23_y, p23_z, decomp_embedded)
+        call transpose_y_to_z(p23_y, p23_z, decomp_following)
 
-        call transpose_x_to_y(p13_x, p13_y, decomp_embedded)
-        call transpose_y_to_z(p13_y, p13_z, decomp_embedded)
+        call transpose_x_to_y(p13_x, p13_y, decomp_following)
+        call transpose_y_to_z(p13_y, p13_z, decomp_following)
 
         ! call D0ssh_MULT_3Dz(q2_z, p23_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, NS_Q2_BC3)
         ! call D0ssh_MULT_3Dz(q1_z, p13_z, zsize(1),zsize(1),zsize(2),zsize(2),n3, NS_Q1_BC3)
 
-        call D0ssh_3Dz(q2_z, tmp23_z, zsize_e(1),zsize_e(1),zsize_e(2),zsize_e(2),n3, NS_Q2_BC3)
-        call D0ssh_3Dz(q1_z, tmp13_z, zsize_e(1),zsize_e(1),zsize_e(2),zsize_e(2),n3, NS_Q1_BC3)
+        call D0ssh_3Dz(q2_z, tmp23_z, zsize_f(1),zsize_f(1),zsize_f(2),zsize_f(2),n3, NS_Q2_BC3)
+        call D0ssh_3Dz(q1_z, tmp13_z, zsize_f(1),zsize_f(1),zsize_f(2),zsize_f(2),n3, NS_Q1_BC3)
 
         ! ATTENTION
         if ((BC3==NOSLIP).or.(BC3==FREESLIP)) then
 
-            do i=zstart_e(1), zend_e(1)
-                do j=zstart_e(2), zend_e(2)
+            do i=zstart_f(1), zend_f(1)
+                do j=zstart_f(2), zend_f(2)
                     ! p23_z(i, j,  1)   =p23_z(i, j, 1)   * q2_wall30(i, j)
                     ! p23_z(i, j, n3)   =p23_z(i, j, n3)  * q2_wall31(i, j)
 
@@ -1287,4 +1237,4 @@ contains
 
     end subroutine finalize
 
-end module embedded_velocity_solver
+end module following_velocity_solver

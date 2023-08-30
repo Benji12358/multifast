@@ -8,7 +8,8 @@ module FRINGE_initializer
     use boundaries
     use physical_fields
 
-    use SCALAR_data, only: SCA_state, delta_T, sca_x
+    use SCALAR_data, only: SCA_state, delta_T, sca_x, init_type, prandtl
+    use SCALAR_data, only: CLASSIC_INIT, KAWAMURA_INIT
 
 !
     implicit none
@@ -34,14 +35,6 @@ contains
 
         initial_flowrate=0.d0
 
-        ! do k=xstart(3),min(xend(3),n3-1)
-        !     do j=xstart(2),min(xend(2),n2-1)
-
-        !         initial_flowrate = initial_flowrate + q1_inflow(j,k)*(Y(j+1)-Y(j))*dx3
-
-        !     enddo
-        ! enddo
-
         return
 
         contains
@@ -49,50 +42,97 @@ contains
             subroutine default_inflow()
                 implicit none
 
+                real*8 :: ut1
+                integer :: mpi_err
+                logical :: pair_n2
+                real*8, dimension(n2) :: tmp_profile
+
                 select case (inflow_type)
                     case (POISEUILLE_INFLOW)
 
-                      if (nrank==0) write(*,*)'PERFORMING default poiseuille inflow'
+                        if (nrank==0) write(*,*)'PERFORMING default poiseuille inflow'
 
-                      q1_inflow = 0.d0
-                      q2_inflow = 0.d0
-                      q3_inflow = 0.d0
-                      if (streamwise==1) call perform_stream1(q1_inflow, BC2, BC3)
-                      !if (streamwise==3) call perform_stream3(q3_inflow, BC1, BC2)
+                        q1_inflow = 0.d0
+                        q2_inflow = 0.d0
+                        q3_inflow = 0.d0
+                        if (streamwise==1) call perform_stream1(q1_inflow, BC2, BC3)
+                        !if (streamwise==3) call perform_stream3(q3_inflow, BC1, BC2)
 
-                      ! q1_inflow = q1_x(1,:,:)
+                        ! q1_inflow = q1_x(1,:,:)
 
                     case (SQUARE_INFLOW)
 
-                      if (nrank==0) write(*,*)'PERFORMING default square inflow'
+                        if (nrank==0) write(*,*)'PERFORMING default square inflow'
 
-                      q1_inflow = 0.d0
-                      q2_inflow = 0.d0
-                      q3_inflow = 0.d0
-                      ! if (streamwise==1) q1_inflow(:,:)=1.d0
-                      ! if (streamwise==3) q3_inflow(:,:)=1.d0
-                      if (streamwise==1) call perform_boundary_layer_1(q1_inflow, Yc(4)) ! BLASIUS BOUNDARY LAYER ON 4 NODES 
-                      if (streamwise==3) call perform_boundary_layer_3(q3_inflow, Yc(4)) ! BLASIUS BOUNDARY LAYER ON 4 NODES 
-
-                      if (SCA_state==1) then
+                        q1_inflow = 0.d0
+                        q2_inflow = 0.d0
+                        q3_inflow = 0.d0
+                        ! if (streamwise==1) q1_inflow(:,:)=1.d0
+                        ! if (streamwise==3) q3_inflow(:,:)=1.d0
+                        if (streamwise==1) call perform_boundary_layer_1(q1_inflow, Yc(4)) ! BLASIUS BOUNDARY LAYER ON 4 NODES 
+                        if (streamwise==3) call perform_boundary_layer_3(q3_inflow, Yc(4)) ! BLASIUS BOUNDARY LAYER ON 4 NODES 
 
                         do k = xstart(3), min(n3-1, xend(3))
                             do j = xstart(2), min(n2-1, xend(2))
-                                sca_inflow(j,k)=(-delta_T)+(Yc(j)/L2)*2.d0*delta_T
+                                square_q1_inflow(j)=q1_inflow(j,k)
                             end do
                         end do
 
-                      endif
+                        ! Perform the flowrate at the inlet...
+                        ut1=0.d0
+                        do k=xstart(3),min(xend(3),n3-1)
+                            do j=xstart(2),min(xend(2),n2-1)
+                                ut1=ut1+q1_inflow(j,k)*cell_size_Y(j)*dx3
+                            enddo
+                        enddo
+
+                        call MPI_ALLREDUCE(ut1, u_bulk_theo, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
+                        u_bulk_theo=u_bulk_theo/(2.d0*L3)
+
+                        if (SCA_state.eq.1) then
+
+                            if (init_type==KAWAMURA_INIT) then
+                                
+                                ! The Kawamura problem is solved (1998)
+                                pair_n2 = (mod(n2, 2)==0)
+
+                                tmp_profile = 0.d0
+                                do j=1,n2/2
+                                    tmp_profile(j) = prandtl*dsqrt(2*ren) * (1/8.d0 * Yc(j) **4 - 1/2.d0 * Yc(j) **3 + Yc(j))
+                                    tmp_profile(n2-j) = prandtl*dsqrt(2*ren) * (1/8.d0 * Yc(j) **4 - 1/2.d0 * Yc(j) **3 + Yc(j))
+                                enddo
+
+                                if (.not.pair_n2) then
+                                    j=n2/2+1
+                                    tmp_profile(j) = prandtl*dsqrt(2*ren) * (1/8.d0 * Yc(j) **4 - 1/2.d0 * Yc(j) **3 + Yc(j))
+                                endif
+
+                                do j=xstart(2),xend(2)
+                                    sca_inflow(j,:) = tmp_profile(j)
+                                enddo
+
+                            else
+
+                                ! The LYONS problem is solved (1991)
+                                do k = xstart(3), min(n3-1, xend(3))
+                                    do j = xstart(2), min(n2-1, xend(2))
+                                        sca_inflow(j,k)=(-delta_T)+(Yc(j)/L2)*2.d0*delta_T
+                                    end do
+                                end do
+
+                            endif
+
+                        endif
 
                     case (BOUNDARY_LAYER_INFLOW)
 
-                      if (nrank==0) write(*,*)'PERFORMING default boundary layer inflow with a boundary thickness:', delta_BL
+                        if (nrank==0) write(*,*)'PERFORMING default boundary layer inflow with a boundary thickness:', delta_BL
 
-                      q1_inflow = 0.d0
-                      q2_inflow = 0.d0
-                      q3_inflow = 0.d0
-                      if (streamwise==1) call perform_boundary_layer_1(q1_inflow, delta_BL)
-                      if (streamwise==3) call perform_boundary_layer_3(q3_inflow, delta_BL)
+                        q1_inflow = 0.d0
+                        q2_inflow = 0.d0
+                        q3_inflow = 0.d0
+                        if (streamwise==1) call perform_boundary_layer_1(q1_inflow, delta_BL)
+                        if (streamwise==3) call perform_boundary_layer_3(q3_inflow, delta_BL)
 
                 endselect
 
@@ -148,67 +188,69 @@ contains
 
                 real*8 :: delta, uc_inflow, coef
                 logical :: pair_n2
-                real*8, dimension(n2) :: inflow_profile
+                real*8, dimension(n2) :: tmp_profile
 
-                real*8 :: ut1, u_bulk_theo
+                real*8 :: ut1
 
                 u_bulk=0.d0
 
                 do j=xstart(2),min(n2m,xend(2))
                     do k=xstart(3),min(n3m,xend(3))
 
-                        u_bulk = u_bulk + q1_x(n1m,j,k)*(Y(j+1)-Y(j))*dx3
+                        u_bulk = u_bulk + q1_x(n1m,j,k)*cell_size_Y(j)*dx3
 
                     enddo
                 enddo
 
                 call MPI_ALLREDUCE(u_bulk, u_bulk_glob, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
-                u_bulk_glob = u_bulk_glob/(L3*L2)
+                u_bulk_glob = u_bulk_glob/(L3*2.d0)
 
-                q1_inflow = u_bulk_glob
+                ! q1_inflow = u_bulk_glob
                 q2_inflow = 0.d0
                 q3_inflow = 0.d0
 
-                !if (SCA_state==1) then
-                !    sca_inflow = sca_x(1,:,:)
-                !endif
+                if (SCA_state==1) then
+                   sca_inflow = sca_x(1,:,:)
+                endif
 
                 ! USING BLASIUS BOUNDARY LAYER
                 delta = Y(5) ! profile on 4 nodes
 
                 pair_n2 = (mod(n2, 2)==0)
 
-                do j=ystart(2),n2/2
+                do j=1,n2/2
                     if (Yc(j)<delta) then
-                        inflow_profile(j) = 2.d0 * (Yc(j)/delta) - 2.d0 * (Yc(j)/delta)**3 + 1.d0 * (Yc(j)/delta)**4
-                        inflow_profile(n2-j) = 2.d0 * (Yc(j)/delta) - 2.d0 * (Yc(j)/delta)**3 + 1.d0 * (Yc(j)/delta)**4
+                        tmp_profile(j) = 2.d0 * (Yc(j)/delta) - 2.d0 * (Yc(j)/delta)**3 + 1.d0 * (Yc(j)/delta)**4
+                        tmp_profile(n2-j) = 2.d0 * (Yc(j)/delta) - 2.d0 * (Yc(j)/delta)**3 + 1.d0 * (Yc(j)/delta)**4
                     else
-                        inflow_profile(j) = 1.d0
-                        inflow_profile(n2-j) = 1.d0
+                        tmp_profile(j) = 1.d0
+                        tmp_profile(n2-j) = 1.d0
                     endif
                 enddo
 
                 if (pair_n2) then
-                    inflow_profile(n2/2+1) = 1.d0
+                    tmp_profile(n2/2+1) = 1.d0
                 endif
+
+                do j=xstart(2),xend(2)
+                    square_q1_inflow(j) = tmp_profile(j)
+                enddo
 
                 ! Perform the flowrate at the inlet...
                 ut1=0.d0
                 do k=xstart(3),min(xend(3),n3-1)
                     do j=xstart(2),min(xend(2),n2-1)
-                        ut1=ut1+inflow_profile(j)*(Y(j+1)-Y(j))*dx3
+                        ut1=ut1+square_q1_inflow(j)*cell_size_Y(j)*dx3
                     enddo
                 enddo
 
                 call MPI_ALLREDUCE(ut1, u_bulk_theo, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, mpi_err)
-                u_bulk_theo=u_bulk_theo/(L3*L2)
+                u_bulk_theo=u_bulk_theo/(L3*2.d0)
 
-                coef = u_bulk/u_bulk_theo
-
-                inflow_profile(:) = inflow_profile(:) * coef
+                coef = u_bulk_glob/u_bulk_theo
 
                 do j=xstart(2),min(xend(2),n2m)
-                    q1_inflow(j,:) = inflow_profile(j)
+                    q1_inflow(j,:) = square_q1_inflow(j) * coef
                 enddo
 
             end subroutine inflow_from_prev_run

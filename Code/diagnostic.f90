@@ -26,6 +26,14 @@ contains
 
         use embedded_velocity_quality_criteriums, only: embedded_perform_stability=>perform_stability
 
+        use following_data
+        use following_physical_fields, only: \
+            following_q3_z => q3_z, \
+            following_q2_y => q2_y, \
+            following_q1_x => q1_x
+
+        use following_velocity_quality_criteriums, only: following_perform_stability=>perform_stability
+
         implicit none
 
         logical, intent(out)        :: error
@@ -33,6 +41,7 @@ contains
         real*8      :: divg1, divg2
         real*8    ::div_max, div_diff, div_mean, cflm, vmax(3)
         real*8    ::div_max_e, div_diff_e, div_mean_e, cflm_e
+        real*8    ::div_max_f, div_diff_f, div_mean_f, cflm_f
         integer   :: error_flag, l
         integer, parameter    :: NO_ERROR=0, MAX_DIV_REACHED=1, MAX_VELOCITY_IO_REACHED=2
         real*8, parameter    :: MAX_VEL=10000.d0, MAX_DIV=2.d-3
@@ -52,6 +61,7 @@ contains
         error=.false.
 
         if (use_embedded) call embedded_perform_stability(embedded_q3_z, embedded_q2_y, embedded_q1_x, cflm_e, div_max_e, div_diff_e, div_mean_e)
+        if (use_following) call following_perform_stability(following_q3_z, following_q2_y, following_q1_x, cflm_f, div_max_f, div_diff_f, div_mean_f)
         
         call perform_stability(q3_z, q2_y, q1_x, cflm, div_max, div_diff, div_mean)
         call perform_global_divergence(divg1, divg2, q3_z, q2_y, q1_x)

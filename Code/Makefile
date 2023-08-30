@@ -18,6 +18,8 @@ PHASE_AVG           = $(CORE)/phase_average
 PHASE_AVG_LIB       =-L $(PHASE_AVG)/.lib -lphaseaverage
 EMBEDDED            = $(CORE)/embedded
 EMBEDDED_LIB        =-L $(EMBEDDED)/.lib -lembedded
+FOLLOWING            = $(CORE)/following
+FOLLOWING_LIB        =-L $(FOLLOWING)/.lib -lfollowing
 
 # Flags _________________________________________________________________
 ifeq ($(COMPILER), mpixlf95_r)
@@ -40,7 +42,7 @@ DATA		= $(CORE)//common/data
 
 MESH		= $(CORE)/common/mesh
 
-INCS 		= $(FLAG_FFT) $(HDF5_INC) $(IO_INC) $(SOLVERS_INC) $(MISCELLANEOUS_INC) $(SCHEMES_INC) -I $(COMMON) -I $(SCALAR) -I $(MHD) -I $(FRINGE) -I $(BUBBLE) -I $(VELOCITY) -I $(PHASE_AVG) -I $(EMBEDDED)
+INCS 		= $(FLAG_FFT) $(HDF5_INC) $(IO_INC) $(SOLVERS_INC) $(MISCELLANEOUS_INC) $(SCHEMES_INC) -I $(COMMON) -I $(SCALAR) -I $(MHD) -I $(FRINGE) -I $(BUBBLE) -I $(VELOCITY) -I $(PHASE_AVG) -I $(EMBEDDED) -I $(FOLLOWING)
 
 OBJ		= main.o diagnostic.o multiphysics.o IO_handler.o \
 		   
@@ -51,13 +53,13 @@ OBJ		= main.o diagnostic.o multiphysics.o IO_handler.o \
 #$(SCALAR)/scalar_data.o 	: $(COMMON)/mesh_settings.o 
 
 
-main.o			: build_common build_scalar build_mhd build_fringe build_bubble build_velocity build_embedded build_phaseaverage build_core   
+main.o			: build_common build_scalar build_mhd build_fringe build_bubble build_velocity build_embedded build_following build_phaseaverage build_core   
 
 # Rules _________________________________________________________________
 $(EXEC_NAME): subsection_text=Linking objects files
 $(EXEC_NAME):	main.o    
 	@$(print_subsection);
-	$(FF) $(LDFLAG) $(EXEC_NAME) $(OBJ)  $(BUBBLE_LIB) $(SCALAR_LIB) $(MHD_LIB) $(FRINGE_LIB) $(VELOCITY_LIB) $(EMBEDDED_LIB) $(PHASE_AVG_LIB) $(COMMON_LIB) $(LIBS);
+	$(FF) $(LDFLAG) $(EXEC_NAME) $(OBJ)  $(BUBBLE_LIB) $(SCALAR_LIB) $(MHD_LIB) $(FRINGE_LIB) $(VELOCITY_LIB) $(EMBEDDED_LIB) $(FOLLOWING_LIB) $(PHASE_AVG_LIB) $(COMMON_LIB) $(LIBS);
 	@echo; echo;
 	
 build: $(EXEC_NAME)
@@ -71,6 +73,7 @@ clean:
 	make -C $(FRINGE) clean ;					\
 	make -C $(PHASE_AVG) clean ; \
 	make -C $(EMBEDDED) clean ; \
+	make -C $(FOLLOWING) clean ; \
 	make -C $(VELOCITY) clean ;					\
 	make -C $(BUBBLE) clean ;
 	
@@ -119,6 +122,11 @@ build_embedded :	subsection_text=Building embedded module
 build_embedded :	
 	@$(print_subsection);
 	$(MUTE)make -C $(EMBEDDED) ENVIRONMENT_FILE=$(ENVIRONMENT_FILE) COMMON=$(COMMON) CORE=$(CORE);
+
+build_following :	subsection_text=Building following module
+build_following :	
+	@$(print_subsection);
+	$(MUTE)make -C $(FOLLOWING) ENVIRONMENT_FILE=$(ENVIRONMENT_FILE) COMMON=$(COMMON) CORE=$(CORE);
 
 	
 %.o:	%.f90

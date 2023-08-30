@@ -52,7 +52,7 @@ module start_settings
 
     character*200       :: external_fields_path
     integer             :: start_source_type
-    logical             :: start_from_coarse_file
+    logical             :: start_from_coarse_file, export_outflow, import_inflow
     integer             :: n1c, n2c, n3c
     real*8              :: vper
 

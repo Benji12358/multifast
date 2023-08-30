@@ -649,6 +649,7 @@ contains
     !           check Fadlun 2000 (doi: 10.1006/jcph.2000.6484)
     subroutine perform_mask_antisymmetric(mask_objects, mask_kim, mask_fadlun, n1, n2, n2s,n2e,n3, n3s,n3e, X, Y, Z)
         use IBM_data
+        use IBM_settings, only: IBM_full_span
         use decomp_2d, only: nrank
         use mesh, only:L1,L2,L3,dx1,dx3,cell_size_Y
         implicit none
@@ -734,85 +735,160 @@ contains
         k_aft=k1
         if (k1.eq.n3) k_aft=1
 
-        ! CAUTION, THIS WILL NOT WORK FOR OBJECT PLACED AT THE INFLOW
-        do i=i0,i1
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        ! For object with a width of full span
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        if (IBM_full_span) then
+
+            k1 = n3
+
+            do i=i0,i1
+                do j = n2s, n2e
+                    do k = n3s, n3e
+
+                        ! For mask_objects, fill all points in the objects
+                        if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_objects(i,j,k)=1.d0
+
+                        ! For mask_kim, fill only points closest to the objects faces
+                        if ((i.eq.i0).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_kim(i,j,k)=1.d0
+                        if ((i.eq.i1).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_kim(i,j,k)=1.d0
+
+                        if ((j.eq.j0).and.(k.ge.k0).and.(k.le.k1)) mask_kim(i,j,k)=1.d0
+                        if ((j.eq.j1).and.(k.ge.k0).and.(k.le.k1)) mask_kim(i,j,k)=1.d0
+
+                    enddo
+                enddo
+            enddo
+
+            ! Construct Fadlun mask 
+            ! First, fill the mask with one extra point in x-direction
             do j = n2s, n2e
                 do k = n3s, n3e
 
-                    ! For mask_objects, fill all points in the objects
-                    if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_objects(i,j,k)=1.d0
-
-                    ! For mask_kim, fill only points closest to the objects faces
-                    if ((i.eq.i0).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_kim(i,j,k)=1.d0
-                    if ((i.eq.i1).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_kim(i,j,k)=1.d0
-
-                    if ((j.eq.j0).and.(k.ge.k0).and.(k.le.k1)) mask_kim(i,j,k)=1.d0
-                    if ((j.eq.j1).and.(k.ge.k0).and.(k.le.k1)) mask_kim(i,j,k)=1.d0
-
-                    if ((k.eq.k0).and.(j.ge.j0).and.(j.le.j1)) mask_kim(i,j,k)=1.d0
-                    ! For spanwise velocity and object on the wall, the side come back to k=1 ...
-                    if ((k.eq.k_aft).and.(j.ge.j0).and.(j.le.j1)) mask_kim(i,j,k)=1.d0
+                    
+                    if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_fadlun(i0-1,j,k)=1.d0
+                    if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_fadlun(i1+1,j,k)=1.d0
 
                 enddo
             enddo
-        enddo
 
-        ! Construct Fadlun mask 
-        ! First, fill the mask with one extra point in x-direction
-        do j = n2s, n2e
-            do k = n3s, n3e
+            ! Finally, complete with the extra point in y-direction
+            if (j0.eq.1) then
+                j_remaining=j1+1
+            else
+                j_remaining=j0-1
+            endif
 
-                
-                if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_fadlun(i0-1,j,k)=1.d0
-                if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_fadlun(i1+1,j,k)=1.d0
+            do j = n2s, n2e
+                do k = n3s, n3e
 
+                    if ((k.ge.k0).and.(k.le.k1).and.(j.eq.j_remaining)) mask_fadlun(i0:i1,j,k)=1.d0
+
+                enddo
             enddo
-        enddo
 
-        ! Then, with one extra point in z-direction
-        k_aft=k1+1
-        if (k1.ge.(n3-1)) k_aft=1
+            ! For mask_kim, we need to remove the residual points near the walls
+            if (j0.eq.1) j_2_remove=j0
+            if (j1.eq.(n2-1)) j_2_remove=j0
 
-        k_bef=k0-1
-        if (k0.eq.1) k_bef=n3-1
+            do i=i0+1,i1-1
+                do j = n2s, n2e
+                    do k = n3s, n3e
 
-        do j = n2s, n2e
-            do k = n3s, n3e
+                        if ((j.eq.j_2_remove).and.(k.ge.(k0)).and.(k.le.(k1))) mask_kim(i,j,k)=0.d0
 
-                    if ((j.ge.j0).and.(j.le.j1).and.(k.eq.k_aft)) mask_fadlun(i0:i1,j,k)=1.d0
-                    if ((j.ge.j0).and.(j.le.j1).and.(k.eq.k_bef)) mask_fadlun(i0:i1,j,k)=1.d0
-
+                    enddo
+                enddo
             enddo
-        enddo
 
-        ! Finally, complete with the extra point in y-direction
-        if (j0.eq.1) then
-            j_remaining=j1+1
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        ! For more conventional objects
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         else
-            j_remaining=j0-1
-        endif
 
-        do j = n2s, n2e
-            do k = n3s, n3e
+            ! CAUTION, THIS WILL NOT WORK FOR OBJECT PLACED AT THE INFLOW
+            do i=i0,i1
+                do j = n2s, n2e
+                    do k = n3s, n3e
 
-                if ((k.ge.k0).and.(k.le.k1).and.(j.eq.j_remaining)) mask_fadlun(i0:i1,j,k)=1.d0
+                        ! For mask_objects, fill all points in the objects
+                        if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_objects(i,j,k)=1.d0
 
+                        ! For mask_kim, fill only points closest to the objects faces
+                        if ((i.eq.i0).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_kim(i,j,k)=1.d0
+                        if ((i.eq.i1).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_kim(i,j,k)=1.d0
+
+                        if ((j.eq.j0).and.(k.ge.k0).and.(k.le.k1)) mask_kim(i,j,k)=1.d0
+                        if ((j.eq.j1).and.(k.ge.k0).and.(k.le.k1)) mask_kim(i,j,k)=1.d0
+
+                        if ((k.eq.k0).and.(j.ge.j0).and.(j.le.j1)) mask_kim(i,j,k)=1.d0
+                        ! For spanwise velocity and object on the wall, the side come back to k=1 ...
+                        if ((k.eq.k_aft).and.(j.ge.j0).and.(j.le.j1)) mask_kim(i,j,k)=1.d0
+
+                    enddo
+                enddo
             enddo
-        enddo
 
-        ! For mask_kim, we need to remove the residual points near the walls
-        if (j0.eq.1) j_2_remove=j0
-        if (j1.eq.(n2-1)) j_2_remove=j0
-
-        do i=i0+1,i1-1
+            ! Construct Fadlun mask 
+            ! First, fill the mask with one extra point in x-direction
             do j = n2s, n2e
                 do k = n3s, n3e
 
-                    if ((j.eq.j_2_remove).and.(k.ge.(k0+1)).and.(k.le.(k1-1))) mask_kim(i,j,k)=0.d0
+                    
+                    if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_fadlun(i0-1,j,k)=1.d0
+                    if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) mask_fadlun(i1+1,j,k)=1.d0
 
                 enddo
             enddo
-        enddo
+
+            ! Then, with one extra point in z-direction
+            k_aft=k1+1
+            if (k1.ge.(n3-1)) k_aft=1
+
+            k_bef=k0-1
+            if (k0.eq.1) k_bef=n3-1
+
+            do j = n2s, n2e
+                do k = n3s, n3e
+
+                        if ((j.ge.j0).and.(j.le.j1).and.(k.eq.k_aft)) mask_fadlun(i0:i1,j,k)=1.d0
+                        if ((j.ge.j0).and.(j.le.j1).and.(k.eq.k_bef)) mask_fadlun(i0:i1,j,k)=1.d0
+
+                enddo
+            enddo
+
+            ! Finally, complete with the extra point in y-direction
+            if (j0.eq.1) then
+                j_remaining=j1+1
+            else
+                j_remaining=j0-1
+            endif
+
+            do j = n2s, n2e
+                do k = n3s, n3e
+
+                    if ((k.ge.k0).and.(k.le.k1).and.(j.eq.j_remaining)) mask_fadlun(i0:i1,j,k)=1.d0
+
+                enddo
+            enddo
+
+            ! For mask_kim, we need to remove the residual points near the walls
+            if (j0.eq.1) j_2_remove=j0
+            if (j1.eq.(n2-1)) j_2_remove=j0
+
+            do i=i0+1,i1-1
+                do j = n2s, n2e
+                    do k = n3s, n3e
+
+                        if ((j.eq.j_2_remove).and.(k.ge.(k0+1)).and.(k.le.(k1-1))) mask_kim(i,j,k)=0.d0
+
+                    enddo
+                enddo
+            enddo
+
+        endif
+            
+
 
     end subroutine perform_mask_antisymmetric
 
@@ -820,6 +896,7 @@ contains
     ! THIS IS ONLY FOR THE USE OF KIM AND CHOI INTERPOLATION
     subroutine build_coeff_matrix_for_antisym_interpo(interpol_coef, n1, n2, n2s,n2e,n3, n3s,n3e, X, Y, Z)
         use IBM_data
+        use IBM_settings, only: IBM_full_span
         use decomp_2d, only: nrank
         use mesh, only:L1,L2,L3,dx1,dx3,cell_size_Y
         implicit none
@@ -905,138 +982,40 @@ contains
         if (j1.ge.(n2-1)) j_end=n2-1
 
 
-        ! CAUTION, THIS WILL NOT WORK FOR OBJECT PLACED AT THE INFLOW
-        do i=i0,i1
-            do j = n2s, n2e
-                do k = n3s, n3e
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        ! For object with a width of full span
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        if (IBM_full_span) then
 
-                    ! the faces
-                    if ((i.eq.i0).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) interpol_coef(i,j,k) = 1.d0
-                    if ((i.eq.i1).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) interpol_coef(i,j,k) = 1.d0
+            k1 = n3
 
-                    if ((k.eq.k0).and.(j.ge.j0).and.(j.le.j1).and.(i.ge.i0).and.(i.le.i1)) interpol_coef(i,j,k) = 1.d0
-                    if ((k.eq.k1).and.(j.ge.j0).and.(j.le.j1).and.(i.ge.i0).and.(i.le.i1)) interpol_coef(i,j,k) = 1.d0
-
-                    if ((j.eq.j_remaining).and.(k.ge.k0).and.(k.le.k1).and.(i.ge.i0).and.(i.le.i1)) interpol_coef(i,j,k) = 1.d0
-
-                    ! the edges
-                    if ((i.eq.i0).and.(j.eq.j_remaining).and.(k.gt.k0).and.(k.lt.k1)) interpol_coef(i,j,k) = (1.d0/2.d0)
-                    if ((i.eq.i1).and.(j.eq.j_remaining).and.(k.gt.k0).and.(k.lt.k1)) interpol_coef(i,j,k) = (1.d0/2.d0)
-
-                    if ((k.eq.k0).and.(j.eq.j_remaining).and.(i.gt.i0).and.(i.lt.i1)) interpol_coef(i,j,k) = (1.d0/2.d0)
-                    if ((k.eq.k_aft).and.(j.eq.j_remaining).and.(i.gt.i0).and.(i.lt.i1)) interpol_coef(i,j,k) = (1.d0/2.d0)
-
-                    if ((i.eq.i0).and.(k.eq.k0).and.(j.ge.j_start).and.(j.le.j_end)) interpol_coef(i,j,k) = (1.d0/2.d0)
-                    if ((i.eq.i0).and.(k.eq.k_aft).and.(j.ge.j_start).and.(j.le.j_end)) interpol_coef(i,j,k) = (1.d0/2.d0)
-                    if ((i.eq.i1).and.(k.eq.k0).and.(j.ge.j_start).and.(j.le.j_end)) interpol_coef(i,j,k) = (1.d0/2.d0)
-                    if ((i.eq.i1).and.(k.eq.k_aft).and.(j.ge.j_start).and.(j.le.j_end)) interpol_coef(i,j,k) = (1.d0/2.d0)
-
-                    ! the corners
-                    if ((i.eq.i0).and.(k.eq.k0).and.(j.eq.j_remaining)) interpol_coef(i,j,k) = (1.d0/3.d0)
-                    if ((i.eq.i0).and.(k.eq.k_aft).and.(j.eq.j_remaining)) interpol_coef(i,j,k) = (1.d0/3.d0)
-                    if ((i.eq.i1).and.(k.eq.k0).and.(j.eq.j_remaining)) interpol_coef(i,j,k) = (1.d0/3.d0)
-                    if ((i.eq.i1).and.(k.eq.k_aft).and.(j.eq.j_remaining)) interpol_coef(i,j,k) = (1.d0/3.d0)
-
-                enddo
-            enddo
-        enddo
-
-        ! If we are on a face, then the velocity should be 0
-        if (j0.eq.1) then
-
-            do i=i0+1,i1-1
-                do j = n2s, n2e
-                    do k = n3s, n3e
-
-                        if ((j.eq.j0).and.(k.ge.(k0+1)).and.(k.le.(k1-1))) interpol_coef(i,j,k)=0.d0
-
-                    enddo
-                enddo
-            enddo
-
-        endif
-
-        if (j1.eq.(n2-1)) then
-
-            do i=i0+1,i1-1
-                do j = n2s, n2e
-                    do k = n3s, n3e
-
-                        if ((j.eq.j1).and.(k.ge.(k0+1)).and.(k.le.(k1-1))) interpol_coef(i,j,k)=0.d0
-
-                    enddo
-                enddo
-            enddo
-
-        endif
-
-        ! upstream face
-        if (abs(X(i0)-xs).le.10e-5) then
-
-            do j = n2s, n2e
-                do k = n3s, n3e
-
-                    if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) interpol_coef(i0,j,k)=0.d0
-
-                enddo
-            enddo
-
-        endif
-
-        ! downstream face
-        if (abs(X(i1)-xe).le.10e-5) then
-
-            do j = n2s, n2e
-                do k = n3s, n3e
-
-                    if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) interpol_coef(i1,j,k)=0.d0
-
-                enddo
-            enddo
-
-        endif
-
-        ! upstream face
-        if (abs(Z(k0)-zs).le.10e-5) then
-
+            ! CAUTION, THIS WILL NOT WORK FOR OBJECT PLACED AT THE INFLOW
             do i=i0,i1
                 do j = n2s, n2e
                     do k = n3s, n3e
 
-                        if ((j.ge.j0).and.(j.le.j1).and.(k.eq.k0)) interpol_coef(i,j,k)=0.d0
+                        ! the faces
+                        if ((i.eq.i0).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) interpol_coef(i,j,k) = 1.d0
+                        if ((i.eq.i1).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) interpol_coef(i,j,k) = 1.d0
+
+                        if ((j.eq.j_remaining).and.(k.ge.k0).and.(k.le.k1).and.(i.ge.i0).and.(i.le.i1)) interpol_coef(i,j,k) = 1.d0
+
+                        ! the edges
+                        if ((i.eq.i0).and.(j.eq.j_remaining).and.(k.ge.k0).and.(k.le.k1)) interpol_coef(i,j,k) = (1.d0/2.d0)
+                        if ((i.eq.i1).and.(j.eq.j_remaining).and.(k.ge.k0).and.(k.le.k1)) interpol_coef(i,j,k) = (1.d0/2.d0)
 
                     enddo
                 enddo
             enddo
 
-        endif
+            ! If we are on a face, then the velocity should be 0
+            if (j0.eq.1) then
 
-        ! downstream face
-        if (abs(Z(k1)-ze).le.10e-5) then
-
-            do i=i0,i1
-                do j = n2s, n2e
-                    do k = n3s, n3e
-
-                        if ((j.ge.j0).and.(j.le.j1).and.(k.eq.k1)) interpol_coef(i,j,k)=0.d0
-
-                    enddo
-                enddo
-            enddo
-
-        endif
-
-
-        ! top/bottom face
-        if (j0.eq.1) then
-
-            if (abs(Y(j1)-ye).le.10e-5) then
-
-                do i=i0,i1
+                do i=i0+1,i1-1
                     do j = n2s, n2e
                         do k = n3s, n3e
 
-                            if ((k.ge.k0).and.(k.le.k1).and.(j.eq.j1)) interpol_coef(i,j,k)=0.d0
+                            if ((j.eq.j0).and.(k.ge.(k0+1)).and.(k.le.(k1-1))) interpol_coef(i,j,k)=0.d0
 
                         enddo
                     enddo
@@ -1044,19 +1023,241 @@ contains
 
             endif
 
+            if (j1.eq.(n2-1)) then
+
+                do i=i0+1,i1-1
+                    do j = n2s, n2e
+                        do k = n3s, n3e
+
+                            if ((j.eq.j1).and.(k.ge.(k0+1)).and.(k.le.(k1-1))) interpol_coef(i,j,k)=0.d0
+
+                        enddo
+                    enddo
+                enddo
+
+            endif
+
+            ! upstream face
+            if (abs(X(i0)-xs).le.10e-5) then
+
+                do j = n2s, n2e
+                    do k = n3s, n3e
+
+                        if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) interpol_coef(i0,j,k)=0.d0
+
+                    enddo
+                enddo
+
+            endif
+
+            ! downstream face
+            if (abs(X(i1)-xe).le.10e-5) then
+
+                do j = n2s, n2e
+                    do k = n3s, n3e
+
+                        if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) interpol_coef(i1,j,k)=0.d0
+
+                    enddo
+                enddo
+
+            endif
+
+
+            ! top/bottom face
+            if (j0.eq.1) then
+
+                if (abs(Y(j1)-ye).le.10e-5) then
+
+                    do i=i0,i1
+                        do j = n2s, n2e
+                            do k = n3s, n3e
+
+                                if ((k.ge.k0).and.(k.le.k1).and.(j.eq.j1)) interpol_coef(i,j,k)=0.d0
+
+                            enddo
+                        enddo
+                    enddo
+
+                endif
+
+            else
+
+                if (abs(Y(j0)-ys).le.10e-5) then
+
+                    do i=i0,i1
+                        do j = n2s, n2e
+                            do k = n3s, n3e
+
+                                if ((k.ge.k0).and.(k.le.k1).and.(j.eq.j0)) interpol_coef(i,j,k)=0.d0
+
+                            enddo
+                        enddo
+                    enddo
+
+                endif
+
+            endif
+
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        ! For more conventional objects
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         else
 
-            if (abs(Y(j0)-ys).le.10e-5) then
+            ! CAUTION, THIS WILL NOT WORK FOR OBJECT PLACED AT THE INFLOW
+            do i=i0,i1
+                do j = n2s, n2e
+                    do k = n3s, n3e
+
+                        ! the faces
+                        if ((i.eq.i0).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) interpol_coef(i,j,k) = 1.d0
+                        if ((i.eq.i1).and.(j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) interpol_coef(i,j,k) = 1.d0
+
+                        if ((k.eq.k0).and.(j.ge.j0).and.(j.le.j1).and.(i.ge.i0).and.(i.le.i1)) interpol_coef(i,j,k) = 1.d0
+                        if ((k.eq.k1).and.(j.ge.j0).and.(j.le.j1).and.(i.ge.i0).and.(i.le.i1)) interpol_coef(i,j,k) = 1.d0
+
+                        if ((j.eq.j_remaining).and.(k.ge.k0).and.(k.le.k1).and.(i.ge.i0).and.(i.le.i1)) interpol_coef(i,j,k) = 1.d0
+
+                        ! the edges
+                        if ((i.eq.i0).and.(j.eq.j_remaining).and.(k.gt.k0).and.(k.lt.k1)) interpol_coef(i,j,k) = (1.d0/2.d0)
+                        if ((i.eq.i1).and.(j.eq.j_remaining).and.(k.gt.k0).and.(k.lt.k1)) interpol_coef(i,j,k) = (1.d0/2.d0)
+
+                        if ((k.eq.k0).and.(j.eq.j_remaining).and.(i.gt.i0).and.(i.lt.i1)) interpol_coef(i,j,k) = (1.d0/2.d0)
+                        if ((k.eq.k_aft).and.(j.eq.j_remaining).and.(i.gt.i0).and.(i.lt.i1)) interpol_coef(i,j,k) = (1.d0/2.d0)
+
+                        if ((i.eq.i0).and.(k.eq.k0).and.(j.ge.j_start).and.(j.le.j_end)) interpol_coef(i,j,k) = (1.d0/2.d0)
+                        if ((i.eq.i0).and.(k.eq.k_aft).and.(j.ge.j_start).and.(j.le.j_end)) interpol_coef(i,j,k) = (1.d0/2.d0)
+                        if ((i.eq.i1).and.(k.eq.k0).and.(j.ge.j_start).and.(j.le.j_end)) interpol_coef(i,j,k) = (1.d0/2.d0)
+                        if ((i.eq.i1).and.(k.eq.k_aft).and.(j.ge.j_start).and.(j.le.j_end)) interpol_coef(i,j,k) = (1.d0/2.d0)
+
+                        ! the corners
+                        if ((i.eq.i0).and.(k.eq.k0).and.(j.eq.j_remaining)) interpol_coef(i,j,k) = (1.d0/3.d0)
+                        if ((i.eq.i0).and.(k.eq.k_aft).and.(j.eq.j_remaining)) interpol_coef(i,j,k) = (1.d0/3.d0)
+                        if ((i.eq.i1).and.(k.eq.k0).and.(j.eq.j_remaining)) interpol_coef(i,j,k) = (1.d0/3.d0)
+                        if ((i.eq.i1).and.(k.eq.k_aft).and.(j.eq.j_remaining)) interpol_coef(i,j,k) = (1.d0/3.d0)
+
+                    enddo
+                enddo
+            enddo
+
+            ! If we are on a face, then the velocity should be 0
+            if (j0.eq.1) then
+
+                do i=i0+1,i1-1
+                    do j = n2s, n2e
+                        do k = n3s, n3e
+
+                            if ((j.eq.j0).and.(k.ge.(k0+1)).and.(k.le.(k1-1))) interpol_coef(i,j,k)=0.d0
+
+                        enddo
+                    enddo
+                enddo
+
+            endif
+
+            if (j1.eq.(n2-1)) then
+
+                do i=i0+1,i1-1
+                    do j = n2s, n2e
+                        do k = n3s, n3e
+
+                            if ((j.eq.j1).and.(k.ge.(k0+1)).and.(k.le.(k1-1))) interpol_coef(i,j,k)=0.d0
+
+                        enddo
+                    enddo
+                enddo
+
+            endif
+
+            ! upstream face
+            if (abs(X(i0)-xs).le.10e-5) then
+
+                do j = n2s, n2e
+                    do k = n3s, n3e
+
+                        if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) interpol_coef(i0,j,k)=0.d0
+
+                    enddo
+                enddo
+
+            endif
+
+            ! downstream face
+            if (abs(X(i1)-xe).le.10e-5) then
+
+                do j = n2s, n2e
+                    do k = n3s, n3e
+
+                        if ((j.ge.j0).and.(j.le.j1).and.(k.ge.k0).and.(k.le.k1)) interpol_coef(i1,j,k)=0.d0
+
+                    enddo
+                enddo
+
+            endif
+
+            ! upstream face
+            if (abs(Z(k0)-zs).le.10e-5) then
 
                 do i=i0,i1
                     do j = n2s, n2e
                         do k = n3s, n3e
 
-                            if ((k.ge.k0).and.(k.le.k1).and.(j.eq.j0)) interpol_coef(i,j,k)=0.d0
+                            if ((j.ge.j0).and.(j.le.j1).and.(k.eq.k0)) interpol_coef(i,j,k)=0.d0
 
                         enddo
                     enddo
                 enddo
+
+            endif
+
+            ! downstream face
+            if (abs(Z(k1)-ze).le.10e-5) then
+
+                do i=i0,i1
+                    do j = n2s, n2e
+                        do k = n3s, n3e
+
+                            if ((j.ge.j0).and.(j.le.j1).and.(k.eq.k1)) interpol_coef(i,j,k)=0.d0
+
+                        enddo
+                    enddo
+                enddo
+
+            endif
+
+
+            ! top/bottom face
+            if (j0.eq.1) then
+
+                if (abs(Y(j1)-ye).le.10e-5) then
+
+                    do i=i0,i1
+                        do j = n2s, n2e
+                            do k = n3s, n3e
+
+                                if ((k.ge.k0).and.(k.le.k1).and.(j.eq.j1)) interpol_coef(i,j,k)=0.d0
+
+                            enddo
+                        enddo
+                    enddo
+
+                endif
+
+            else
+
+                if (abs(Y(j0)-ys).le.10e-5) then
+
+                    do i=i0,i1
+                        do j = n2s, n2e
+                            do k = n3s, n3e
+
+                                if ((k.ge.k0).and.(k.le.k1).and.(j.eq.j0)) interpol_coef(i,j,k)=0.d0
+
+                            enddo
+                        enddo
+                    enddo
+
+                endif
 
             endif
 
@@ -1909,6 +2110,12 @@ contains
         call transpose_x_to_y(mask_kim_sca_x,mask_kim_sca_y)
         call transpose_x_to_y(mask_fadlun_sca_x,mask_fadlun_sca_y)
 
+        ! For triple decomposition
+        call transpose_x_to_y(mask_objects_q1_x,mask_objects_q1_y)
+        call transpose_x_to_y(mask_objects_q2_x,mask_objects_q2_y)
+        call transpose_x_to_y(mask_objects_q3_x,mask_objects_q3_y)
+            
+
         if (interpol_type==ANTISYMMETRIC_INTERPOL) then
             allocate(mask_kim_q2_y(ystart(1):yend(1), ystart(2):yend(2), ystart(3):yend(3)))
             mask_kim_q2_y=0
@@ -1922,6 +2129,7 @@ contains
 
             call transpose_x_to_y(mask_kim_q3_x,mask_kim_q3_y)
             call transpose_y_to_z(mask_kim_q3_y,mask_kim_q3_z)
+
         endif
 
         ! FOR DEBUGGING, export the mask array in snapshot directory
@@ -2997,7 +3205,6 @@ contains
                         enddo
 
                     endif
-
                 endif
                 
                 call transpose_z_to_y(vel_term_z, vel_term_y)
@@ -4462,96 +4669,33 @@ contains
                 integer                                                                                     :: real_j0, real_j1, k_aft
                 integer                                                                                     :: mpi_err
 
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                ! For object with a width not equal to full span
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                if (.not.IBM_full_span) then
 
-                do n=1,number_of_objects
+                    do n=1,number_of_objects
 
-                    ! INTERPOLATION IN Z
-                    ! we begin with the upstream face
-                    h = abs(Z(k0(n))-zpos_start(n))
 
-                    if (k0(n).eq.1) then
-                        index_first_node_flowfield = n3-1
-                        index_second_node_flowfield = n3-2
-                    elseif (k0(n).eq.2) then
-                        index_first_node_flowfield = k0(n)-1
-                        index_second_node_flowfield = n3-1
-                    else
-                        index_first_node_flowfield = k0(n)-1
-                        index_second_node_flowfield = k0(n)-2
-                    endif
+                        ! INTERPOLATION IN Z
+                        ! we begin with the upstream face
+                        h = abs(Z(k0(n))-zpos_start(n))
 
-                    pos_first_node_flowfield = abs(Z(k0(n))-dx3-zpos_start(n))
-                    pos_second_node_flowfield = abs(Z(k0(n))-2.d0*dx3-zpos_start(n))
-
-                    ! Z-direction
-                    if (object_in_proc_z(n)) then
-
-                        if (h.le.pos_first_node_flowfield) then
-                    
-                            do i = zstart_ibm(n,1), zend_ibm(n,1)
-                                do j = zstart_ibm(n,2), zend_ibm(n,2)
-
-                                    if ((i.ge.i0(n)).and.(i.le.i1(n)).and.(j.ge.j0(n)).and.(j.le.j1(n))) vel_term_z(i,j,k0(n)) = vel_term_z(i,j,k0(n)) - (h/pos_first_node_flowfield) * q_z(i,j,index_first_node_flowfield)
-
-                                enddo
-                            enddo
-
+                        if (k0(n).eq.1) then
+                            index_first_node_flowfield = n3-1
+                            index_second_node_flowfield = n3-2
+                        elseif (k0(n).eq.2) then
+                            index_first_node_flowfield = k0(n)-1
+                            index_second_node_flowfield = n3-1
                         else
-                    
-                            do i = zstart_ibm(n,1), zend_ibm(n,1)
-                                do j = zstart_ibm(n,2), zend_ibm(n,2)
-
-                                    if ((i.ge.i0(n)).and.(i.le.i1(n)).and.(j.ge.j0(n)).and.(j.le.j1(n))) vel_term_z(i,j,k0(n)) = vel_term_z(i,j,k0(n)) - q_z(i,j,index_first_node_flowfield) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
-                                                       - q_z(i,j,index_second_node_flowfield) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
-
-                                enddo
-                            enddo
-
+                            index_first_node_flowfield = k0(n)-1
+                            index_second_node_flowfield = k0(n)-2
                         endif
 
-                    endif
+                        pos_first_node_flowfield = abs(Z(k0(n))-dx3-zpos_start(n))
+                        pos_second_node_flowfield = abs(Z(k0(n))-2.d0*dx3-zpos_start(n))
 
-                    ! Then we focus on the downstream face
-                    ! /!\ Here, we assume that if there is a roughness in the second part of the channel in the x3 direction
-                    ! It extends until L3
-                    ! Because the grid is staggered, is the roughness extends until L3, then that means q1 and q2 are defined from k=1,...,n3-1
-                    ! For q3, the fact that the roughness is extending until L3 means q3(k=n3) in on the bounds, so q3(k=1) by symmetry as k=n3 is non-physical
-
-                    if (k1(n).eq.n3) then
-                        ! we already know that we are on the wall
-                        ! no need to compute anything, we set the velocities equal to 0
-
-                        if (object_in_proc_z(n)) then
-                        
-                            do i = zstart_ibm(n,1), zend_ibm(n,1)
-                                do j = zstart_ibm(n,2), zend_ibm(n,2)
-
-                                    if ((i.ge.i0(n)).and.(i.le.i1(n)).and.(j.ge.j0(n)).and.(j.le.j1(n))) vel_term_z(i,j,1) = 0.d0
-
-                                enddo
-                            enddo
-
-                        endif
-
-
-                    else
-
-                        h = abs(Z(k1(n))-zpos_end(n))
-
-                        if (k1(n).eq.(n3-1)) then
-                            index_first_node_flowfield = 1
-                            index_second_node_flowfield = 2
-                        elseif (k1(n).eq.(n3-2)) then
-                            index_first_node_flowfield = k1(n)+1
-                            index_second_node_flowfield = 1
-                        else
-                            index_first_node_flowfield = k1(n)+1
-                            index_second_node_flowfield = k1(n)+2
-                        endif
-
-                        pos_first_node_flowfield = abs(Z(k1(n))+dx3-zpos_end(n))
-                        pos_second_node_flowfield = abs(Z(k1(n))+2.d0*dx3-zpos_end(n))
-
+                        ! Z-direction
                         if (object_in_proc_z(n)) then
 
                             if (h.le.pos_first_node_flowfield) then
@@ -4559,7 +4703,7 @@ contains
                                 do i = zstart_ibm(n,1), zend_ibm(n,1)
                                     do j = zstart_ibm(n,2), zend_ibm(n,2)
 
-                                        if ((i.ge.i0(n)).and.(i.le.i1(n)).and.(j.ge.j0(n)).and.(j.le.j1(n))) vel_term_z(i,j,k1(n)) = vel_term_z(i,j,k1(n)) - (h/pos_first_node_flowfield) * q_z(i,j,index_first_node_flowfield)
+                                        if ((i.ge.i0(n)).and.(i.le.i1(n)).and.(j.ge.j0(n)).and.(j.le.j1(n))) vel_term_z(i,j,k0(n)) = vel_term_z(i,j,k0(n)) - (h/pos_first_node_flowfield) * q_z(i,j,index_first_node_flowfield)
 
                                     enddo
                                 enddo
@@ -4569,7 +4713,7 @@ contains
                                 do i = zstart_ibm(n,1), zend_ibm(n,1)
                                     do j = zstart_ibm(n,2), zend_ibm(n,2)
 
-                                        if ((i.ge.i0(n)).and.(i.le.i1(n)).and.(j.ge.j0(n)).and.(j.le.j1(n))) vel_term_z(i,j,k1(n)) = vel_term_z(i,j,k1(n)) - q_z(i,j,index_first_node_flowfield) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
+                                        if ((i.ge.i0(n)).and.(i.le.i1(n)).and.(j.ge.j0(n)).and.(j.le.j1(n))) vel_term_z(i,j,k0(n)) = vel_term_z(i,j,k0(n)) - q_z(i,j,index_first_node_flowfield) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
                                                            - q_z(i,j,index_second_node_flowfield) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
 
                                     enddo
@@ -4579,9 +4723,79 @@ contains
 
                         endif
 
-                    endif
+                        ! Then we focus on the downstream face
+                        ! /!\ Here, we assume that if there is a roughness in the second part of the channel in the x3 direction
+                        ! It extends until L3
+                        ! Because the grid is staggered, is the roughness extends until L3, then that means q1 and q2 are defined from k=1,...,n3-1
+                        ! For q3, the fact that the roughness is extending until L3 means q3(k=n3) in on the bounds, so q3(k=1) by symmetry as k=n3 is non-physical
 
-                enddo
+                        if (k1(n).eq.n3) then
+                            ! we already know that we are on the wall
+                            ! no need to compute anything, we set the velocities equal to 0
+
+                            if (object_in_proc_z(n)) then
+                            
+                                do i = zstart_ibm(n,1), zend_ibm(n,1)
+                                    do j = zstart_ibm(n,2), zend_ibm(n,2)
+
+                                        if ((i.ge.i0(n)).and.(i.le.i1(n)).and.(j.ge.j0(n)).and.(j.le.j1(n))) vel_term_z(i,j,1) = 0.d0
+
+                                    enddo
+                                enddo
+
+                            endif
+
+
+                        else
+
+                            h = abs(Z(k1(n))-zpos_end(n))
+
+                            if (k1(n).eq.(n3-1)) then
+                                index_first_node_flowfield = 1
+                                index_second_node_flowfield = 2
+                            elseif (k1(n).eq.(n3-2)) then
+                                index_first_node_flowfield = k1(n)+1
+                                index_second_node_flowfield = 1
+                            else
+                                index_first_node_flowfield = k1(n)+1
+                                index_second_node_flowfield = k1(n)+2
+                            endif
+
+                            pos_first_node_flowfield = abs(Z(k1(n))+dx3-zpos_end(n))
+                            pos_second_node_flowfield = abs(Z(k1(n))+2.d0*dx3-zpos_end(n))
+
+                            if (object_in_proc_z(n)) then
+
+                                if (h.le.pos_first_node_flowfield) then
+                            
+                                    do i = zstart_ibm(n,1), zend_ibm(n,1)
+                                        do j = zstart_ibm(n,2), zend_ibm(n,2)
+
+                                            if ((i.ge.i0(n)).and.(i.le.i1(n)).and.(j.ge.j0(n)).and.(j.le.j1(n))) vel_term_z(i,j,k1(n)) = vel_term_z(i,j,k1(n)) - (h/pos_first_node_flowfield) * q_z(i,j,index_first_node_flowfield)
+
+                                        enddo
+                                    enddo
+
+                                else
+                            
+                                    do i = zstart_ibm(n,1), zend_ibm(n,1)
+                                        do j = zstart_ibm(n,2), zend_ibm(n,2)
+
+                                            if ((i.ge.i0(n)).and.(i.le.i1(n)).and.(j.ge.j0(n)).and.(j.le.j1(n))) vel_term_z(i,j,k1(n)) = vel_term_z(i,j,k1(n)) - q_z(i,j,index_first_node_flowfield) * (pos_second_node_flowfield-h)/(pos_second_node_flowfield-pos_first_node_flowfield) &
+                                                               - q_z(i,j,index_second_node_flowfield) * (h-pos_first_node_flowfield)/(pos_second_node_flowfield-pos_first_node_flowfield)
+
+                                        enddo
+                                    enddo
+
+                                endif
+
+                            endif
+
+                        endif
+
+                    enddo
+
+                endif
 
                 ! Y-direction
                 call transpose_z_to_y(vel_term_z, vel_term_y)
