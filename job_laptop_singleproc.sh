@@ -23,10 +23,29 @@ list_dir_to_create(){
 
 create_results_dir()
 {
+	# Create subfolders for the main channel
 	cd $TMPDIR/$DNS_NAME/Results/3D	
 
 	for numero in `seq $IT1 $EVERY $IT2`
     		do mkdir ./field"$numero"
+	done
+
+	cd -
+
+	# Create subfolders for the embedded channel
+	cd $TMPDIR/$DNS_NAME/Results/Embedded	
+
+	for numero in `seq $IT1 $EVERY $IT2`
+    		do mkdir ./field"$numero"
+	done
+
+	cd -
+
+	# Create subfolders for the following channel
+	cd $TMPDIR/$DNS_NAME/Results/following
+
+	for numero in `seq $IT1 $EVERY $IT2`
+		do mkdir ./field"$numero"
 	done
 
 	cd -
