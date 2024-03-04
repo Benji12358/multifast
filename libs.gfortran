@@ -1,4 +1,4 @@
-LAPACK_LIB=/libraries/lapack/liblapack.a /libraries/blas/libblas.a
+LAPACK_LIB=/libraries/lapack/liblapack.a /libraries/lapack/librefblas.a
 
 FLAG_FFT = -I /libraries/fftw/include/
 LIBS_FFT = -L /libraries/fftw/lib/ -lfftw3 -lm
