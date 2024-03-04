@@ -1,0 +1,10 @@
+LAPACK_LIB=/libraries/lapack/liblapack.a /libraries/blas/libblas.a
+
+FLAG_FFT = -I /libraries/fftw/include/
+LIBS_FFT = -L /libraries/fftw/lib/ -lfftw3 -lm
+
+DECOMP2D_INC=-I /libraries/2decomp_fft/include
+DECOMP2D_LIB=-L /libraries/2decomp_fft/lib -l2decomp_fft
+
+HDF5_INC=-I /libraries/hdf5/include
+HDF5_LIB=/libraries/hdf5/lib/libhdf5_fortran.a /libraries/hdf5/lib/libhdf5.a -L/libraries/zlib/lib -lz -ldl	

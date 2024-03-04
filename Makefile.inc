@@ -16,9 +16,9 @@
 # In most case, you only have to edit this section
 
 
-ROOT				    =/fsnet/people/arrondea7b/project/21MULTIFAST/WORKSPACE
-CODES_PATH			    =$(ROOT)/Codes
-MULTIFAST_PATH			=$(CODES_PATH)/DNS/multifast
+ROOT				    =/workspace
+CODES_PATH			    =$(ROOT)
+MULTIFAST_PATH			=$(CODES_PATH)
 ENVIRONMENT_FILE		=$(MULTIFAST_PATH)/Makefile.inc
 
 
