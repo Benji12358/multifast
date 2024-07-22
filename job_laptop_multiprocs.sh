@@ -104,22 +104,16 @@ save_simulation(){
 TEXT_LEVEL1="---------"
 TEXT_LEVEL2="-------------"
 
-
-#DNS_NAME=TEST_Laminar_Olivier
 DNS_NAME=$1
 DNS_OUTPUT=OUT_DNS
 DNS_TIME=700000
-#JOB_NAME=job
-#DNS_PROCS=4
-#PROC_BY_NODE=16
 PROW=0
 PCOL=0
 NPROCS=4
 
-
-DNS_CODE=/home/users/arrondea7b/WORKSPACE/Codes/DNS/MULTIFAST_MHD_v2_IBM
-TMPDIR=/data/$DNS_NAME
-SIMULATION_DIR=/home/users/arrondea7b/WORKSPACE/Codes/DNS/Simulations/$DNS_NAME
+DNS_CODE=/workspace
+TMPDIR=/sim_data/$DNS_NAME
+SIMULATION_DIR=/workspace/Simulation/$DNS_NAME
 IT1=$2
 EVERY=$4
 IT2=$3
