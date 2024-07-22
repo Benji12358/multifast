@@ -16,14 +16,12 @@
 # In most case, you only have to edit this section
 
 
-ROOT				    =/fsnet/people/arrondea7b/project/21MULTIFAST/WORKSPACE
-CODES_PATH			    =$(ROOT)/Codes
-MULTIFAST_PATH			=$(CODES_PATH)/DNS/multifast
-ENVIRONMENT_FILE		=$(MULTIFAST_PATH)/Makefile.inc
+ROOT				    =/workspace
+ENVIRONMENT_FILE		=$(ROOT)/Makefile.inc
 
 
 COMPILER				=gfortran
-COMPILER_OPTIONS_FILE	=$(MULTIFAST_PATH)/compiler_options/LEGI/$(COMPILER).conf
+COMPILER_OPTIONS_FILE	=$(ROOT)/compiler_options/LEGI/$(COMPILER).conf
 COMPIL_OPT_LEVEL		= HIGH
 COMPIL_CHECK_LEVEL		= ZERO
 
@@ -40,19 +38,15 @@ MUTE=@
 ##########################################  TO NOT CHANGE   ########################################################################
 
 
-TMPDIR=$(MULTIFAST_PATH)/TMP
-SIMULATION_DIR=$(MULTIFAST_PATH)/Simulations
+SYSTEM_INFO_FILE=$(ROOT)/system.info
 
-
-SYSTEM_INFO_FILE=$(CODES_PATH)/system.info
-
-EXTERN_LIBS=$(CODES_PATH)/libs.$(COMPILER)
+EXTERN_LIBS=$(ROOT)/libs.$(COMPILER)
 
 
 
 # Utilities paths *************************************************************************************
 
-UTILITIES=$(MULTIFAST_PATH)/Code/Utilities
+UTILITIES=$(ROOT)/Code/Utilities
 
 LOC_SOLVERS= $(UTILITIES)/Matrix_solver
 LOC_SCHEMES=$(UTILITIES)/Schemes
@@ -83,7 +77,7 @@ include $(EXTERN_LIBS)
 ####################################################################################################################################
 ####################################################################################################################################
 
-SCRIPTS_DIR=$(MULTIFAST_PATH)/scripts
+SCRIPTS_DIR=$(ROOT)/scripts
 
 JUSTIFY=$(SCRIPTS_DIR)/justify.sh
 TEST_HANDLER=$(SCRIPTS_DIR)/texthandler.sh
