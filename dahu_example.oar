@@ -1,0 +1,37 @@
+# en ayant installé openmpi 4.1.1 avec nix au préalable
+source /applis/site/nix_nur.sh
+nix-env --switch-profile $NIX_USER_PROFILE_DIR/test_profile
+
+export DNS_CODE_host=/home/arrondeb/WORKSPACE/Codes/DNS/multifast_test
+
+# pour lancer une instance sur chaque noeud de calcul
+mpirun -npernode 1 \
+        --machinefile $OAR_NODE_FILE \
+        -mca btl_openib_allow_ib "true" \
+        -mca plm_rsh_agent "oarsh" \
+        --prefix $HOME/.nix-profile \
+        apptainer instance start \
+        --bind $DNS_CODE_host/:/workspace \
+        --bind /bettik/arrondeb/sim_data/:/sim_data \
+        apptainer_multifast_dahu_light_v10.sif multifast
+
+# pour lancer une simulation
+./job_multiprocs_apptainer.sh test_sim_64_procs 500 1000 500
+
+# pour lancer les instances de chaque noeud
+mpirun -npernode 1 \
+        --machinefile $OAR_NODE_FILE \
+        -mca btl_openib_allow_ib "true" \
+        -mca plm_rsh_agent "oarsh" \
+        --prefix $HOME/.nix-profile \
+        apptainer instance stop multifast
+
+################## et la commande mpirun
+mpirun -np `cat $OAR_FILE_NODES|wc -l` \
+                --machinefile $OAR_NODE_FILE \
+                -mca btl_openib_allow_ib "true" \
+                -mca plm_rsh_agent "oarsh" \
+                -mca opx ofi \
+                --prefix $HOME/.nix-profile \
+                apptainer exec instance://multifast \
+                /bin/bash -c "cd $TMPDIR; $TMPDIR/DNS_EXEC $DNS_NAME $DNS_TIME $PROW $PCOL 0 > $DNS_OUTPUT 2>temp_arrays.log"
