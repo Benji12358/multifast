@@ -1,0 +1,160 @@
+Bootstrap: docker  
+From: debian:stable-slim
+
+%setup
+
+%files
+
+%environment
+  export LIB_DIR=/libraries
+  export PATH="$LIB_DIR/openmpi/bin:$WORK_DIR/.local/bin:$PATH"
+  export LD_LIBRARY_PATH="$LIB_DIR/openmpi/lib:$LD_LIBRARY_PATH"
+  export PATH="$LIB_DIR/zlib/bin:$PATH"
+  export LD_LIBRARY_PATH="$LIB_DIR/zlib/lib:$LD_LIBRARY_PATH"
+  export PATH="$LIB_DIR/hdf5/bin:$PATH"
+  export LD_LIBRARY_PATH="$LIB_DIR/hdf5/lib:$LD_LIBRARY_PATH"
+  
+%post
+##### define local environment variables
+  export LIB_DIR=/libraries
+  export WORK_DIR=/workspace
+  export SIMDATA_DIR=/sim_data
+  mkdir -p $LIB_DIR
+  mkdir -p $WORK_DIR
+  mkdir -p $SIMDATA_DIR
+  echo "export WORK_DIR=\"${WORK_DIR}\"" >> $APPTAINER_ENVIRONMENT
+  echo "export SIMDATA_DIR=\"${SIMDATA_DIR}\"" >> $APPTAINER_ENVIRONMENT
+  NOW=`date`  
+  echo "export NOW=\"${NOW}\"" >> $SINGULARITY_ENVIRONMENT
+##### install needed packages
+  apt-get update -y
+  apt-get install -y gfortran gcc g++ libgomp1
+  apt-get install make 
+  apt-get install unzip bzip2
+  apt-get install -y libinput-dev 
+  apt-get install -y wget
+  apt-get install -y oar-node
+  apt-get install -y rdma-core libibverbs-dev libibverbs1
+  apt-get install -y ibacm infiniband-diags librdmacm1 librdmacm-dev
+  apt-get install -y libibnetdisc-dev 
+  apt-get install -y libnuma-dev libfabric-dev libpsm2-2-compat libpsm2-dev
+  apt-get install -y libtool opensm libopensm-dev
+  apt-get install python3 -y
+
+##### 1. make openmpi ...
+  cd ${APPTAINER_CONTAINER}/tmp
+  wget https://download.open-mpi.org/release/open-mpi/v4.1/openmpi-4.1.1.tar.gz
+  tar -xvf openmpi-4.1.1.tar.gz
+  cd openmpi-4.1.1
+  mkdir -p $LIB_DIR/openmpi
+  ./configure --prefix=$LIB_DIR/openmpi \
+    --with-libfabric --with-psm2 \
+    --disable-mca-dso --disable-static --disable-dependency-tracking --enable-mpi-cxx \
+    --enable-openib-control-hdr-padding \
+    --enable-openib-dynamic-sl \
+    --enable-openib-udcm \
+    --enable-openib-rdmacm \
+    --enable-openib-rdmacm-ibaddr \
+    --with-pmix=internal
+  make -j4
+  make install
+  export PATH="$LIB_DIR/openmpi/bin:$WORK_DIR/.local/bin:$PATH"
+  export LD_LIBRARY_PATH="$LIB_DIR/openmpi/lib:$LD_LIBRARY_PATH"
+
+##### 2. make blas ...
+  cd ${APPTAINER_CONTAINER}/tmp
+  wget http://www.netlib.org/blas/blas-3.12.0.tgz
+  tar -xvf ./blas-3.12.0.tgz
+  cd BLAS-3.12.0
+  make -j4
+  mkdir -p $LIB_DIR/blas
+  cp blas_LINUX.a $LIB_DIR/blas/libblas.a
+
+##### 3. make lapack ...
+  cd ${APPTAINER_CONTAINER}/tmp
+  wget https://github.com/Reference-LAPACK/lapack/archive/refs/tags/v3.12.0.tar.gz
+  tar -xvf ./v3.12.0.tar.gz
+  cd lapack-3.12.0
+  mv make.inc.example make.inc
+  sed -i 's@$(TOPSRCDIR)/librefblas.a@/libraries/blas/libblas.a@g' make.inc
+  make -j4
+  mkdir -p $LIB_DIR/lapack
+  cp liblapack.a $LIB_DIR/lapack
+
+##### 4. make fftw
+  cd ${APPTAINER_CONTAINER}/tmp
+  wget https://fftw.org/pub/fftw/fftw-3.3.10.tar.gz
+  tar -xvf ./fftw-3.3.10.tar.gz
+  cd fftw-3.3.10
+  mkdir -p $LIB_DIR/fftw
+  ./configure --prefix=$LIB_DIR/fftw
+  make -j4
+  make install
+
+##### 5. make 2decomp_fft
+  cd ${APPTAINER_CONTAINER}/tmp
+  wget https://github.com/certik/2decomp_fft/archive/refs/heads/master.zip
+  unzip ./master.zip
+  cd 2decomp_fft-master/
+  mv src/Makefile.inc.x86 src/Makefile.inc
+  mkdir -p include/
+  sed -i 's@/opt/fftw-3.3@/libraries/fftw@g' src/Makefile.inc
+  make clean
+  make
+  cd $LIB_DIR
+  mv ${APPTAINER_CONTAINER}/tmp/2decomp_fft-master ./2decomp_fft
+
+##### 6. make zlib
+  cd ${APPTAINER_CONTAINER}/tmp
+  wget https://github.com//madler/zlib/archive/refs/tags/v1.2.11.tar.gz
+  tar -xvf v1.2.11.tar.gz
+  cd zlib-1.2.11
+  mkdir -p $LIB_DIR/zlib
+  ./configure --prefix=$LIB_DIR/zlib
+  make -j4
+  make install
+  export PATH="$LIB_DIR/zlib/bin:$PATH"
+  export LD_LIBRARY_PATH="$LIB_DIR/zlib/lib:$LD_LIBRARY_PATH"
+
+##### 7. make hdf5
+  cd ${APPTAINER_CONTAINER}/tmp
+  wget https://hdf-wordpress-1.s3.amazonaws.com/wp-content/uploads/manual/HDF5/HDF5_1_14_3/src/hdf5-1.14.3.tar.gz
+  tar -xvf hdf5-1.14.3.tar.gz
+  cd hdf5-1.14.3
+  mkdir -p $LIB_DIR/hdf5
+  export CC=mpicc
+  export CCP="mpicc -E"
+  export CFLAGS="-O3"
+  export FC="mpif90"
+  export FCFLAGS="-O3"
+  export LIBS="-lz"
+  export LDFLAGS="-L$LIB_DIR/zlib/lib"
+  export CPPFLAGS="-I$LIB_DIR/zlib/include"
+  ./configure --prefix=$LIB_DIR/hdf5 --enable-fortran --enable-parallel --with-zlib=$LIB_DIR/zlib
+  make -j4
+  make install
+  export PATH="$LIB_DIR/hdf5/bin:$PATH"
+  export LD_LIBRARY_PATH="$LIB_DIR/hdf5/lib:$LD_LIBRARY_PATH"
+
+##### finally clean everything
+  apt-get autoremove -y unzip python3 wget
+  apt-get clean
+  rm -r ${APPTAINER_CONTAINER}/tmp/*
+  
+%runscript  
+  echo "Container was created $NOW"
+  cd $WORK_DIR
+  make clean_all
+  make
+  ldd DNS_EXEC
+  
+%startscript  
+  echo "Container was created $NOW"
+  cd $WORK_DIR
+  
+%labels  
+  Author Benjamin Arrondeau
+  Version v1  
+  
+%help  
+  This is a demo container used for MULTIFAST.
