@@ -8,21 +8,26 @@ To use MULTIFAST++, here are the steps to follow to setup the local environment.
 
 #### STEP 1
 
-First download all libraries listed in a folder libraries:
+First, install packages required for compilation 
 
-- gfortran/gcc/g++
-- openmpi
-- blas
+If you are using Ubuntu or any other Debian-based OS
+```bash
+apt-get update
+apt-get install -y git gfortran gcc g++ make python3 
+```
+
+Then proceed to download listed dependencies source code.
+- openmpi with version == 4.1.X
 - lapack
 - fftw
-- 2decomp_fft
+- 2decomp_fft from this repo : https://github.com/certik/2decomp_fft (no archive, you'll need to clone the repo)
 - zlib
 - hdf5
 
 #### STEP 2 : Install openmpi
 
 ```bash
-tar -xvf openmpi.tar.gz
+tar -xvf openmpi[version].tar.gz
 cd openmpi/
 mkdir -p /path/to/libraries/openmpi/openmpi
 ./configure --prefix=/path/to/libraries/openmpi/openmpi
@@ -49,49 +54,22 @@ Finally, update the path by sourcing the .bashrc file.
 source ~/.bashrc
 ```
 
-#### STEP 3 : Install blas
+#### STEP 3 : Install lapack
 
 ```bash
-tar -xvf blas.tar.gz
-cd BLAS
-make
-cp blas_LINUX.a libblas.a
-mkdir -p /path/to/libraries/blas/blas
-cp libblas.a /path/to/libraries/blas/blas/
-```
-
-#### STEP 4 : Install lapack
-
-```bash
-tar -xvf lapack.tgz
+tar -xvf lapack[version].tgz
 cd lapack
 cp make.inc.example make.inc
-vi make.inc
-```
-
-Edit the following line
-
-```bash
-BLASLIB=../../librefblas.a
-```
-to
-
-```bash
-BLASLIB=/path/to/libraries/blas/blas/libblas.a
-```
-
-Then,
-
-```bash
 make
 mkdir -p /path/to/libraries/lapack/lapack
 cp liblapack.a /path/to/libraries/lapack/lapack/
+cp librefblas.a /path/to/libraries/lapack/lapack/
 ```
 
-#### STEP 5 : Install fftw
+#### STEP 4 : Install fftw
 
 ```bash
-tar -xvf fftw.tar.gz
+tar -xvf fftw[version].tar.gz
 cd fftw
 mkdir -p /path/to/libraries/fftw/fftw
 ./configure --prefix=/path/to/libraries/fftw/fftw
@@ -99,7 +77,7 @@ make
 make install
 ```
 
-#### STEP 6 : Install 2decomp_fft
+#### STEP 5 : Install 2decomp_fft
 
 ```bash
 tar -xvf 2decomp_fft.tar.gz
@@ -129,10 +107,10 @@ cd ../
 cp -r 2decomp_fft /path/to/libraries/
 ```
 
-#### STEP 7 : Install zlib
+#### STEP 6 : Install zlib
 
 ```bash
-tar -xvf zlib.tar.gz
+tar -xvf zlib[version].tar.gz
 cd zlib
 mkdir -p /path/to/libraries/zlib/zlib
 ./configure --prefix=/path/to/libraries/zlib/zlib
@@ -141,32 +119,13 @@ make check
 make install
 ```
 
-Then, zlib needs to be added to the path. Proceed as follows:
+#### STEP 7 : Install hdf5
 
 ```bash
-vi ~/.bashrc
-```
-
-Add those lines at the end of the file:
-
-```bash
-export PATH="/path/to/libraries/zlib/zlib/bin:$PATH"
-export LD_LIBRARY_PATH="/path/to/libraries/zlib/zlib/lib:$LD_LIBRARY_PATH"
-```
-
-Finally, update the path by sourcing the .bashrc file.
-
-```bash
-source ~/.bashrc
-```
-
-#### STEP 8 : Install hdf5
-
-```bash
-tar -xvf hdf5.tar.gz
+tar -xvf hdf5[version].tar.gz
 cd hdf5
 mkdir -p /path/to/libraries/hdf5/hdf5
-export CC=mpicc
+export CC="mpicc"
 export CCP="mpicc -E"
 export CFLAGS="-O3"
 export FC="mpif90"
@@ -199,13 +158,13 @@ Finally, update the path by sourcing the .bashrc file.
 source ~/.bashrc
 ```
 
-#### STEP 9 : Compiling the code
+#### STEP 8 : Compiling the code
 
 Create a folder named WORKSPACE/Codes. Here, create a file libs.gfortran. This file will contain all the path to the local libraries which are necessary for the code to work successfully. Modify this file as follow:
 
 
 ```bash
-LAPACK_LIB=/path/to/libraries/lapack/lapack-3.4.2/liblapack.a /home/benj/libraries/blas/blas-3.8.0/libblas.a
+LAPACK_LIB=/path/to/libraries/lapack/lapack-3.4.2/liblapack.a path/to/libraries/lapack/lapack-3.4.2/librefblas.a
 
 FLAG_FFT = -I /path/to/libraries/fftw/fftw/include/
 LIBS_FFT = -L /path/to/libraries/fftw/fftw/lib/ -lfftw3 -lm
